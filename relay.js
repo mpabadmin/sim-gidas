@@ -4,8 +4,8 @@
 // todėl nereikia bendro Wi-Fi ir neveikia Wi-Fi klientų izoliacija ar NAT. Siunčiami tik treniruotės rodikliai.
 // Jungiamasi prie kelių brokerių vienu metu – žinutės siunčiamos per visus, dublikatai atmetami.
 const RELAY = (() => {
-  // [adresas, naudotojas, slaptažodis]; shiftr.io – per 443 prievadą (kai tinklas blokuoja kitus prievadus). SIM_BROKERS – tik testams.
-const BROKERS = window.SIM_BROKERS || [['wss://broker.hivemq.com:8884/mqtt'], ['wss://broker.emqx.io:8084/mqtt'], ['wss://public.cloud.shiftr.io', 'public', 'public']];
+  // [adresas, naudotojas, slaptažodis]. SIM_BROKERS – tik testams.
+const BROKERS = window.SIM_BROKERS || [['wss://broker.hivemq.com:8884/mqtt'], ['wss://broker.emqx.io:8084/mqtt']];
   const PRE = 'lt1040sim/v1/';
   const AL = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let role = '', room = '', conns = [], onMsg = null, onState = null, state = 'off', peerT = 0, tick = 0, hb = 0;
