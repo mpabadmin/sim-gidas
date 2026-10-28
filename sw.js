@@ -1,5 +1,5 @@
-const VERSION = 'sim-gidas-v1';
-const FILES = ['./', './index.html', './app.js', './sim.js', './rtc.js', './scen.js', './scen-import.js', './vendor/qrcode.min.js', './vendor/jsqr.min.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './favicon-32.png', './favicon-64.png', './img/logo-balt.png', './img/logo-juod.png'];
+const VERSION = 'sim-gidas-v2';
+const FILES = ['./', './index.html', './app.js', './sim.js', './rtc.js', './relay.js', './scen.js', './scen-import.js', './vendor/qrcode.min.js', './vendor/jsqr.min.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './favicon-32.png', './favicon-64.png', './img/logo-balt.png', './img/logo-juod.png'];
 self.addEventListener('install', e => {
   // cache: 'reload' – apeiti naršyklės HTTP talpyklą, kad nauja versija gautų naujus failus
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES.map(u => new Request(u, { cache: 'reload' })))));

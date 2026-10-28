@@ -58,7 +58,9 @@ a{color:var(--acc)}
 .note{background:var(--bg);border-left:3px solid var(--acc);padding:8px 10px;border-radius:6px;font-size:14px;margin:10px 0 0}
 .qr{background:#fff;border-radius:12px;padding:8px;max-width:340px;margin:8px auto}.qr svg{display:block;width:100%;height:auto}
 .scan{margin:8px 0}.cam{position:relative;margin:8px 0;border-radius:12px;overflow:hidden;background:#000;max-width:420px}.cam video{display:block;width:100%}.camst{position:absolute;left:0;right:0;bottom:0;padding:6px;background:rgba(0,0,0,.6);font-size:14px;text-align:center}
-.paste{display:flex;gap:6px;margin-top:8px}.paste .btn{flex:none}
+.paste{display:flex;gap:6px;margin-top:8px}
+.room{text-align:center;font:700 34px/1.2 ui-monospace,monospace;letter-spacing:4px;margin:4px 0}
+.roomin{font:700 22px ui-monospace,monospace;letter-spacing:3px;text-transform:uppercase;text-align:center}.paste .btn{flex:none}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(120px);background:#F1EFE8;color:#1C1C1B;padding:10px 16px;border-radius:12px;font-weight:600;z-index:50;transition:transform .2s;max-width:90vw;text-align:center}
 #toast.on{transform:translateX(-50%) translateY(0)}
 /* ── monitorius ── */
@@ -103,6 +105,7 @@ body.monmode #app{max-width:none;padding:0;margin:0}
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="sim.js"></script>
 <script src="rtc.js"></script>
+<script src="relay.js"></script>
 <script src="scen.js"></script>
 <script src="scen-import.js"></script>
 <script src="app.js"></script>

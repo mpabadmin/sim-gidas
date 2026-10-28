@@ -1,6 +1,6 @@
 'use strict';
 // ───────── SIM – programėlės eiga: pradžia, monitorius, instruktoriaus valdymas, scenarijai ─────────
-const VER = 'v1 · 2026-10-28';
+const VER = 'v2 · 2026-10-28';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
 const LSg = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
@@ -33,16 +33,35 @@ function exec(o) {
   }
 }
 const sig = s => s ? JSON.stringify([s.rhythm, s.probe, s.nibp.mode, s.sound, s.beep, s.alarms, s.label, s.stage, s.t]) : '';
-RTC.onMsg = o => {
-  if (RTC.role() === 'host') { exec(o); return; }
+function onLinkMsg(host, o) {
+  if (host) { exec(o); return; }
   if (o.c !== 'snap') return;
   const old = sig(remoteSnap); remoteSnap = o.s; remoteT = Date.now(); mirror();
   const ae = document.activeElement;
   if (route() === 'instruktorius' && sig(remoteSnap) !== old && !(ae && ae.classList && (ae.classList.contains('pv') || ae.id === 'scq'))) rerenderPanel();
+}
+RTC.onMsg = o => onLinkMsg(RTC.role() === 'host', o);
+RELAY.onMsg = o => onLinkMsg(RELAY.role() === 'host', o);
+let remoteSnap = null, remoteT = 0, rtcState = 'off', relState = 'off';
+const isHost = () => RELAY.role() === 'host' || RTC.role() === 'host';
+const linkOn = () => RTC.open() || RELAY.open();
+RTC.onState = s => { rtcState = s; if (s === 'on') toast(RTC.role() === 'host' ? 'Instruktorius prijungtas' : 'Prijungta prie monitoriaus'); if (s === 'lost' || s === 'off') { if (RTC.role()) toast('Ryšys nutrūko'); } refresh(); };
+RELAY.onState = s => {
+  const prev = relState; relState = s;
+  if (s === 'on' && prev !== 'on') toast(RELAY.role() === 'host' ? 'Instruktorius prijungtas' : 'Prijungta prie monitoriaus');
+  if (prev === 'on' && s !== 'on' && RELAY.role()) toast(RELAY.role() === 'host' ? 'Instruktorius neprisijungęs' : 'Ryšys su monitoriumi nutrūko – jungiamasi iš naujo');
+  refresh();
 };
-let remoteSnap = null, remoteT = 0, rtcState = 'off';
-RTC.onState = s => { rtcState = s; if (s === 'on') toast(RTC.role() === 'host' ? 'Instruktorius prijungtas' : 'Prijungta prie monitoriaus'); if (s === 'lost' || s === 'off') { if (RTC.role()) toast('Ryšys nutrūko'); } render(); };
-setInterval(() => { if (RTC.role() === 'host' && RTC.open()) RTC.send({ c: 'snap', s: SIM.snapshot() }); }, 1000);
+function refresh() { if (route() === 'monitorius') { if ($('#drawer.on')) rerenderPanel(); } else if (route() === 'instruktorius') { const ae = document.activeElement; if (!(ae && ae.classList && ae.classList.contains('pv'))) render(); } }
+setInterval(() => {
+  if (route() !== 'monitorius') return;
+  const sn = { c: 'snap', s: SIM.snapshot() };
+  if (RTC.role() === 'host' && RTC.open()) RTC.send(sn);
+  if (RELAY.role() === 'host' && RELAY.up()) RELAY.send(sn);
+}, 1000);
+const joinUrl = code => location.origin + location.pathname + '#/instruktorius?k=' + code;
+const fmtRoom = c => c.slice(0, 3) + '-' + c.slice(3);
+const isHostRoute = () => route() === 'monitorius';
 
 // ── instruktoriaus pultas (bendras: vietinis ir nuotolinis) ──
 const LB = { hr: ['ŠSD', 'k./min', 5], spo2: ['SpO₂', '%', 1], sys: ['AKS sist.', 'mm Hg', 5], dia: ['AKS diast.', 'mm Hg', 5], rr: ['KD', 'k./min', 2], temp: ['T', '°C', 0.1] };
@@ -50,7 +69,7 @@ const DUR = [[0, 'Iš karto'], [30, '30 s'], [60, '1 min'], [120, '2 min'], [300
 let draft = {}, dur = LSg('sim-dur', 30), scen = LSg('sim-scen', null), scenList = false, scenQ = '';
 const mode = () => route() === 'monitorius' ? 'local' : 'remote';
 const snap = () => mode() === 'local' ? SIM.snapshot() : remoteSnap;
-const send = o => { if (mode() === 'local') { exec(o); setTimeout(mirror, 30); return true; } if (!RTC.send(o)) { toast('Nėra ryšio su monitoriumi'); return false; } return true; };
+const send = o => { if (mode() === 'local') { exec(o); setTimeout(mirror, 30); return true; } if ((RTC.open() && RTC.send(o)) || (RELAY.role() === 'ctrl' && RELAY.send(o))) return true; toast('Nėra ryšio su monitoriumi'); return false; };
 const allScen = () => (window.SIMS || []).map(s => Object.assign({ src: 'SIM' }, s)).concat(window.SIMX || []);
 const findScen = () => scen ? allScen().find(s => s.id === scen.id && s.src === scen.src) : null;
 const f1 = (k, v) => k === 'temp' ? (+v).toFixed(1).replace('.', ',') : String(Math.round(v));
@@ -114,7 +133,7 @@ function home() {
     `<a class="tile" href="#/instruktorius">${ICO.ctrl}<b>Instruktorius</b><small>Valdyti kitą telefoną</small></a></div>` +
     `<details class="hlp"><summary>Kaip naudoti</summary><ol>` +
     `<li><b>Vienas telefonas:</b> Monitorius → <span class="ki">${ICO.gear}</span> (kairėje viršuje) – pultas virš monitoriaus.</li>` +
-    `<li><b>Du telefonai:</b> abu tame pačiame Wi-Fi arba vieno telefono interneto prieigos taške. Monitoriuje: pultas → <b>Prijungti instruktorių</b>. Instruktoriaus telefone: <b>Instruktorius</b> → nuskaitykite monitoriaus kodą → parodykite savo kodą monitoriui.</li>` +
+    `<li><b>Du telefonai</b> (abiem reikia interneto, bendro Wi-Fi nereikia): monitoriuje pultas → <b>Prijungti instruktorių</b>. Instruktoriaus telefono kamera nuskaitykite QR kodą arba SIM → <b>Instruktorius</b> ir įveskite kodą.</li>` +
     `<li>Pasirinkite scenarijų ir etapą arba keiskite rodiklius. <b>Pokytis per</b> – per kiek laiko monitorius pasieks naujas reikšmes.</li>` +
     `<li>Garsas įsijungia palietus monitoriaus ekraną. Ekranas neužgęsta, kol monitorius atidarytas.</li></ol></details>` +
     `<details class="hlp"><summary>Apie</summary><p>Versija ${VER}. Parengė 1040 medkuopa. Mokymo priemonė – ne medicinos prietaisas; rodikliai ir kreivės sugeneruoti.</p>` +
@@ -124,13 +143,21 @@ function home() {
 function pairHost() {
   // monitoriaus pusė – rodomas pultas
   let h = '<section class="pnl"><h2>Nuotolinis valdymas</h2>';
-  if (rtcState === 'on' && RTC.role() === 'host') h += '<p class="ok">✓ Instruktorius prijungtas.</p><button class="btn" data-act="rtc-close">Atjungti</button>';
-  else if (hostCode) {
-    h += '<p class="muted mt0">1. Instruktoriaus telefone: <b>Instruktorius</b> → nuskaitykite šį kodą.</p><div class="qr" id="qrh"></div>' +
+  if (RELAY.role() === 'host') {
+    const code = RELAY.room();
+    if (relState === 'on') h += '<p class="ok">✓ Instruktorius prijungtas (kodas ' + fmtRoom(code) + ').</p>';
+    else h += `<p class="mt0">${relState === 'conn' ? 'Jungiamasi prie interneto…' : 'Laukiama instruktoriaus…'}</p><div class="qr" id="qrh"></div><div class="room">${fmtRoom(code)}</div>` +
+      '<p class="muted">Instruktoriaus telefonu nuskaitykite QR kodą (telefono kamera) arba atidarykite SIM → <b>Instruktorius</b> ir įveskite kodą.</p>';
+    h += '<button class="btn" data-act="rel-stop">Atjungti</button>';
+  } else if (RTC.role() === 'host') {
+    if (rtcState === 'on') h += '<p class="ok">✓ Instruktorius prijungtas (be interneto).</p><button class="btn" data-act="rtc-close">Atjungti</button>';
+    else h += '<p class="muted mt0">1. Instruktoriaus telefone: <b>Instruktorius</b> → <b>Be interneto</b> → nuskaitykite šį kodą.</p><div class="qr" id="qrh"></div>' +
       `<details class="hlp"><summary>Be kameros – kopijuoti kodą</summary><textarea class="inp code" readonly>${esc(hostCode)}</textarea><button class="btn" data-act="copy" data-k="${esc(hostCode)}">Kopijuoti</button></details>` +
-      '<p class="muted">2. Tada nuskaitykite instruktoriaus kodą:</p>' + scanBox('hs') +
-      '<button class="btn" data-act="rtc-close">Atšaukti</button>';
-  } else h += '<p class="muted mt0">Kitas telefonas valdys šį monitorių. Reikia bendro Wi-Fi ar interneto prieigos taško.</p><button class="btn pri" data-act="rtc-host">Prijungti instruktorių</button>';
+      '<p class="muted">2. Tada nuskaitykite instruktoriaus kodą:</p>' + scanBox('hs') + '<button class="btn" data-act="rtc-close">Atšaukti</button>';
+  } else {
+    h += '<p class="muted mt0">Kitas telefonas valdys šį monitorių per internetą (mobilieji duomenys ar Wi-Fi) – bendro tinklo nereikia.</p><button class="btn pri" data-act="rel-host">Prijungti instruktorių</button>' +
+      '<details class="hlp"><summary>Be interneto (tas pats Wi-Fi) – bandomasis</summary><p class="muted">Veikia ne visuose tinkluose: daugelis Wi-Fi tinklų neleidžia telefonams jungtis tiesiogiai. Patikimiausia – vieno telefono interneto prieigos taškas.</p><button class="btn" data-act="rtc-host">Jungti be interneto</button></details>';
+  }
   return h + '</section>';
 }
 function scanBox(id) {
@@ -139,15 +166,24 @@ function scanBox(id) {
 }
 let hostCode = '', ctrlCode = '';
 function instructor() {
-  let h = `<div class="bar"><a class="ib" href="#/" aria-label="Atgal">${ICO.back}</a><h1>Instruktorius</h1><span class="cst ${rtcState === 'on' ? 'on' : ''}">${rtcState === 'on' ? '● Prijungta' : '○ Neprijungta'}</span></div>`;
-  if (rtcState === 'on' && RTC.role() === 'ctrl') return h + panel() + '<div class="acts"><button class="btn" data-act="rtc-close">Atjungti</button></div>';
+  const on = linkOn();
+  let h = `<div class="bar"><a class="ib" href="#/" aria-label="Atgal">${ICO.back}</a><h1>Instruktorius</h1><span class="cst ${on ? 'on' : ''}">${on ? '● Prijungta' : '○ Neprijungta'}</span></div>`;
+  if (on) return h + panel() + `<div class="acts"><button class="btn" data-act="${RTC.open() ? 'rtc-close' : 'rel-stop'}">Atjungti</button></div>`;
   h += '<section class="pnl">';
-  if (!ctrlCode) h += '<p class="mt0"><b>1.</b> Monitoriaus telefone: <b>Monitorius</b> → pultas → <b>Prijungti instruktorių</b>. Nuskaitykite jo kodą:</p>' + scanBox('cs');
-  else h += '<p class="mt0"><b>2.</b> Parodykite šį kodą monitoriaus kamerai:</p><div class="qr" id="qrc"></div>' +
-    `<details class="hlp"><summary>Be kameros – kopijuoti kodą</summary><textarea class="inp code" readonly>${esc(ctrlCode)}</textarea><button class="btn" data-act="copy" data-k="${esc(ctrlCode)}">Kopijuoti</button></details>` +
-    '<p class="muted">Jungiamasi…</p><button class="btn" data-act="rtc-close">Pradėti iš naujo</button>';
-  h += '</section><p class="muted">Abu telefonai turi būti tame pačiame Wi-Fi arba viename interneto prieigos taške (pvz., monitoriaus telefonas – prieigos taškas). Be ryšio naudokite pultą pačiame monitoriuje.</p>';
-  return h;
+  if (RELAY.role() === 'ctrl') {
+    h += `<p class="mt0"><b>Kodas ${fmtRoom(RELAY.room())}</b> – ${relState === 'conn' ? 'jungiamasi prie interneto…' : 'laukiama monitoriaus…'}</p>` +
+      '<p class="muted">Monitoriuje turi būti atidarytas pultas su šiuo kodu. Patikrinkite, ar abu telefonai turi internetą.</p><button class="btn" data-act="rel-stop">Atšaukti</button>';
+  } else if (RTC.role() === 'ctrl' || ctrlCode) {
+    h += '<p class="mt0"><b>2.</b> Parodykite šį kodą monitoriaus kamerai:</p><div class="qr" id="qrc"></div>' +
+      `<details class="hlp"><summary>Be kameros – kopijuoti kodą</summary><textarea class="inp code" readonly>${esc(ctrlCode)}</textarea><button class="btn" data-act="copy" data-k="${esc(ctrlCode)}">Kopijuoti</button></details>` +
+      '<p class="muted">Jungiamasi…</p><button class="btn" data-act="rtc-close">Pradėti iš naujo</button>';
+  } else {
+    h += '<p class="mt0">Monitoriuje: pultas → <b>Prijungti instruktorių</b>. Nuskaitykite jo QR kodą telefono kamera arba įveskite kodą:</p>' +
+      '<div class="paste"><input class="inp roomin" id="room" placeholder="ABC-123" maxlength="7" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Monitoriaus kodas"><button class="btn pri" data-act="rel-join">Jungtis</button></div>' +
+      '<p class="muted">Reikia interneto abiem telefonams; bendro Wi-Fi nereikia.</p>' +
+      '<details class="hlp"><summary>Be interneto (tas pats Wi-Fi) – bandomasis</summary><p class="muted">Monitoriuje: pultas → Be interneto → Jungti be interneto. Tada nuskaitykite jo kodą:</p>' + scanBox('cs') + '</details>';
+  }
+  return h + '</section>';
 }
 function monitor() {
   return `<div id="monroot"></div><button class="mbtn mg" data-act="drawer" aria-label="Instruktoriaus pultas">${ICO.gear}</button><button class="mbtn mm" data-act="mute" aria-label="Nutildyti aliarmus 2 min">${ICO.mute}</button>` +
@@ -161,19 +197,25 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 let lastRoute = null;
 function render() {
   const r = route(), app = $('#app');
-  if (r !== lastRoute) { if (lastRoute === 'monitorius') { SIM.stop(); if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); if (wl) { try { wl.release(); } catch (e) {} wl = null; } } RTC.scanStop(); }
+  if (r !== lastRoute) { if (lastRoute === 'monitorius') { SIM.stop(); if (RELAY.role() === 'host') { RELAY.stop(true); relState = 'off'; } if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); if (wl) { try { wl.release(); } catch (e) {} wl = null; } } RTC.scanStop(); }
   document.body.classList.toggle('monmode', r === 'monitorius');
   if (r === 'monitorius') {
-    if (lastRoute !== 'monitorius') { app.innerHTML = monitor(); SIM.mount($('#monroot')); wake(); }
+    if (lastRoute !== 'monitorius') { app.innerHTML = monitor(); SIM.mount($('#monroot')); wake(); const hr = LSg('sim-room-host', ''); if (hr && !RELAY.role() && RELAY.valid(hr)) RELAY.host(hr); }
     const d = $('#dbd'); if (d && $('#drawer.on')) d.innerHTML = panel() + pairHost();
-    if (hostCode && rtcState !== 'on') drawQr('qrh', hostCode);
+    qrHost();
   } else if (r === 'instruktorius') {
-    app.innerHTML = instructor(); if (ctrlCode && rtcState !== 'on') drawQr('qrc', ctrlCode);
+    autoJoin(); app.innerHTML = instructor(); if (ctrlCode && rtcState !== 'on') drawQr('qrc', ctrlCode);
   } else app.innerHTML = home();
   lastRoute = r;
 }
+function qrHost() { if (RELAY.role() === 'host' && relState !== 'on') drawQr('qrh', joinUrl(RELAY.room())); else if (hostCode && rtcState !== 'on') drawQr('qrh', hostCode); }
+function autoJoin() {
+  const m = /[?&]k=([A-Za-z0-9-]+)/.exec(location.hash);
+  if (m) { const c = RELAY.norm(m[1]); history.replaceState(null, '', '#/instruktorius'); if (RELAY.valid(c)) { RTC.close(); ctrlCode = ''; RELAY.join(c); LSs('sim-room-ctrl', c); } return; }
+  const saved = LSg('sim-room-ctrl', ''); if (saved && !RELAY.role() && !RTC.role() && RELAY.valid(saved)) RELAY.join(saved);
+}
 async function drawQr(id, code) { const el = document.getElementById(id); if (!el) return; try { el.innerHTML = await RTC.qrSvg(code); } catch (e) { el.innerHTML = '<p class="muted">' + esc(e.message) + '</p>'; } }
-function rerenderPanel() { if (route() === 'monitorius') { const d = $('#dbd'); if (d) { const y = d.scrollTop; d.innerHTML = panel() + pairHost(); d.scrollTop = y; if (hostCode && rtcState !== 'on') drawQr('qrh', hostCode); } } else { const y = scrollY; render(); scrollTo(0, y); } }
+function rerenderPanel() { if (route() === 'monitorius') { const d = $('#dbd'); if (d) { const y = d.scrollTop; d.innerHTML = panel() + pairHost(); d.scrollTop = y; qrHost(); } } else { const y = scrollY; render(); scrollTo(0, y); } }
 
 async function onCode(id, code) {
   try {
@@ -187,7 +229,7 @@ document.addEventListener('click', async e => {
   SIM.audio();
   switch (a) {
     case 'sound-on': el.remove(); try { const d = document.documentElement; if (d.requestFullscreen && !document.fullscreenElement && !matchMedia('(display-mode: standalone)').matches) d.requestFullscreen().catch(() => {}); } catch (x) {} return;
-    case 'drawer': { const d = $('#drawer'); d.classList.toggle('on'); if (d.classList.contains('on')) $('#dbd').innerHTML = panel() + pairHost(); const ts = $('#tapsound'); if (ts) ts.remove(); return; }
+    case 'drawer': { const d = $('#drawer'); d.classList.toggle('on'); if (d.classList.contains('on')) { $('#dbd').innerHTML = panel() + pairHost(); qrHost(); } const ts = $('#tapsound'); if (ts) ts.remove(); return; }
     case 'mute': send({ c: 'mute' }); toast('Aliarmai nutildyti 2 min'); return;
     case 'dur': dur = +k; LSs('sim-dur', dur); break;
     case 'd-': case 'd+': { const T = (snap() || {}).t || SIM.targets(), st = LB[k][2], v0 = k in draft ? draft[k] : T[k]; let v = Math.round((v0 + (a === 'd+' ? st : -st)) * 10) / 10; v = Math.max(SIM.LIM[k][0], Math.min(SIM.LIM[k][1], v)); if (v === T[k]) delete draft[k]; else draft[k] = v; break; }
@@ -204,7 +246,10 @@ document.addEventListener('click', async e => {
     case 'sc-none': scen = null; LSs('sim-scen', null); send({ c: 'label', l: '', s: '' }); break;
     case 'sc-pick': { const [src, id] = k.split('|'); scen = { src, id }; LSs('sim-scen', scen); scenList = false; const sc = findScen(); if (sc) { const p = stagePayload(sc, 0); p.d = 0; if (sc.src === 'SIM') p.r = sc.st[0].v.r || 'sinus'; else p.r = 'sinus'; send(p); toast(sc.st[0].n + ' – nustatyta'); } draft = {}; break; }
     case 'sc-st': { const sc = findScen(); if (!sc) return; const p = stagePayload(sc, +k); if (sc.src === 'SIM') { let r = null; for (let i = +k; i >= 0 && !r; i--) r = sc.st[i].v.r; p.r = r || 'sinus'; } if (send(p)) toast(sc.st[+k].n + (dur ? ' – per ' + DUR.find(x => x[0] === dur)[1] : '')); draft = {}; break; }
-    case 'rtc-host': try { el.disabled = true; el.textContent = 'Ruošiama…'; hostCode = await RTC.host(); } catch (x) { toast('Nepavyko: ' + (x.message || x)); } break;
+    case 'rel-host': RTC.close(); hostCode = ''; LSs('sim-room-host', RELAY.host()); break;
+    case 'rel-join': { const c = RELAY.norm(($('#room') || {}).value); if (!RELAY.valid(c)) { toast('Kodas – 6 raidės ar skaitmenys'); return; } RTC.close(); ctrlCode = ''; RELAY.join(c); LSs('sim-room-ctrl', c); render(); return; }
+    case 'rel-stop': RELAY.stop(); LSs(isHostRoute() ? 'sim-room-host' : 'sim-room-ctrl', ''); if (route() === 'instruktorius') { remoteSnap = null; render(); return; } break;
+    case 'rtc-host': RELAY.stop(); LSs('sim-room-host', ''); try { el.disabled = true; el.textContent = 'Ruošiama…'; hostCode = await RTC.host(); } catch (x) { toast('Nepavyko: ' + (x.message || x)); } break;
     case 'rtc-close': RTC.close(); hostCode = ''; ctrlCode = ''; render(); return;
     case 'copy': try { await navigator.clipboard.writeText(k); toast('Nukopijuota'); } catch (x) { toast('Nepavyko nukopijuoti – pažymėkite tekstą'); } return;
     case 'paste': { const v = (document.getElementById('paste-' + k) || {}).value || ''; if (v.trim()) onCode(k, v.trim()); return; }
