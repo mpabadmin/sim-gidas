@@ -161,7 +161,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 let lastRoute = null;
 function render() {
   const r = route(), app = $('#app');
-  if (r !== lastRoute) { if (lastRoute === 'monitorius') { SIM.stop(); if (wl) { try { wl.release(); } catch (e) {} wl = null; } } RTC.scanStop(); }
+  if (r !== lastRoute) { if (lastRoute === 'monitorius') { SIM.stop(); if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); if (wl) { try { wl.release(); } catch (e) {} wl = null; } } RTC.scanStop(); }
   document.body.classList.toggle('monmode', r === 'monitorius');
   if (r === 'monitorius') {
     if (lastRoute !== 'monitorius') { app.innerHTML = monitor(); SIM.mount($('#monroot')); wake(); }
@@ -186,7 +186,7 @@ document.addEventListener('click', async e => {
   const a = el.dataset.act, k = el.dataset.k;
   SIM.audio();
   switch (a) {
-    case 'sound-on': el.remove(); return;
+    case 'sound-on': el.remove(); try { const d = document.documentElement; if (d.requestFullscreen && !document.fullscreenElement && !matchMedia('(display-mode: standalone)').matches) d.requestFullscreen().catch(() => {}); } catch (x) {} return;
     case 'drawer': { const d = $('#drawer'); d.classList.toggle('on'); if (d.classList.contains('on')) $('#dbd').innerHTML = panel() + pairHost(); const ts = $('#tapsound'); if (ts) ts.remove(); return; }
     case 'mute': send({ c: 'mute' }); toast('Aliarmai nutildyti 2 min'); return;
     case 'dur': dur = +k; LSs('sim-dur', dur); break;
