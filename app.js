@@ -1,6 +1,6 @@
 'use strict';
 // ───────── SIM – programėlės eiga: pradžia, monitorius, instruktoriaus valdymas, scenarijai ─────────
-const VER = 'v3 · 2026-10-28';
+const VER = 'v4 · 2026-10-28';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
 const LSg = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
@@ -273,4 +273,10 @@ document.addEventListener('input', e => {
 window.addEventListener('hashchange', render);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { const d = $('#drawer.on'); if (d) d.classList.remove('on'); } });
 render();
-if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  const had = !!navigator.serviceWorker.controller; let pend = false;
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+  // nauja versija įdiegta – perkrauti (monitoriaus metu – tik išėjus iš jo)
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!had) return; if (route() === 'monitorius') { pend = true; toast('Atnaujinta – nauja versija įsijungs išėjus iš monitoriaus'); } else location.reload(); });
+  window.addEventListener('hashchange', () => { if (pend && route() !== 'monitorius') location.reload(); });
+}
