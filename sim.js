@@ -7,7 +7,7 @@ const SIM = (() => {
   const P = ['hr', 'spo2', 'sys', 'dia', 'rr', 'temp'];
   const LIM = { hr: [0, 250], spo2: [40, 100], sys: [0, 260], dia: [0, 180], rr: [0, 60], temp: [25, 43] };
   const DEF = { hr: 80, spo2: 98, sys: 122, dia: 78, rr: 14, temp: 36.6 };
-  const RH = [['sinus', 'Sinusinis'], ['af', 'Prieširdžių virpėjimas'], ['svt', 'SVT'], ['jun', 'Mazginis ritmas'], ['avb3', 'AV blokada III°'], ['vt', 'Skilvelinė tachikardija'], ['vf', 'Skilvelių virpėjimas'], ['asys', 'Asistolija'], ['pea', 'BEA (be pulso)']];
+  const RH = [['sinus', 'Sinusinis'], ['af', 'Prieširdžių virpėjimas'], ['svt', 'SVT'], ['jun', 'Mazginis ritmas'], ['avb3', 'AV blokada III°'], ['hyk', 'Hiperkalemija (platūs QRS)'], ['vt', 'Skilvelinė tachikardija'], ['vf', 'Skilvelių virpėjimas'], ['asys', 'Asistolija'], ['pea', 'BEA (be pulso)']];
   const NOPULSE = { vf: 1, asys: 1, pea: 1 };
   const RMIN = { vt: 140, svt: 150 };
   const clamp = (k, v) => Math.max(LIM[k][0], Math.min(LIM[k][1], +v));
@@ -18,7 +18,7 @@ const SIM = (() => {
   // aliarmų ribos: [žema (vid.), aukšta (vid.), žema (aukšto prior.), aukšta (aukšto prior.)]; null – išjungta
   const LIM0 = { hr: [50, 120, 40, 150], spo2: [90, null, 85, null], sys: [90, 180, 70, null], rr: [8, 30, 5, 40], temp: [35, 38.5, 32, 40] };
   const SPEEDS = [12.5, 25, 50], GAINS = [0.5, 1, 1.5, 2], SCHEMES = ['classic', 'hc'];
-  const CFG0 = () => ({ lim: JSON.parse(JSON.stringify(LIM0)), avol: 70, bvol: 60, speed: 25, gain: 1, show: { pleth: 1, resp: 1, rr: 1, temp: 1 }, big: 0, scheme: 'classic', clock: 0, scen: 0, pat: '', wake: 1 });
+  const CFG0 = () => ({ lim: JSON.parse(JSON.stringify(LIM0)), avol: 70, bvol: 60, speed: 25, gain: 1, show: { pleth: 1, resp: 1, rr: 1, temp: 1 }, big: 0, scheme: 'classic', clock: 0, scen: 0, rhy: 0, pat: '', wake: 1 });
   function mergeCfg(o, b) {
     if (!o || typeof o !== 'object') return b;
     if (o.lim === 'def') b.lim = JSON.parse(JSON.stringify(LIM0));
@@ -30,7 +30,7 @@ const SIM = (() => {
     if (SPEEDS.indexOf(+o.speed) >= 0) b.speed = +o.speed;
     if (GAINS.indexOf(+o.gain) >= 0) b.gain = +o.gain;
     if (o.show && typeof o.show === 'object') Object.keys(b.show).forEach(k => { if (k in o.show) b.show[k] = o.show[k] ? 1 : 0; });
-    ['big', 'clock', 'scen', 'wake'].forEach(k => { if (k in o) b[k] = o[k] ? 1 : 0; });
+    ['big', 'clock', 'scen', 'rhy', 'wake'].forEach(k => { if (k in o) b[k] = o[k] ? 1 : 0; });
     if (SCHEMES.indexOf(o.scheme) >= 0) b.scheme = o.scheme;
     if (typeof o.pat === 'string') b.pat = o.pat.slice(0, 40);
     return b;
@@ -41,7 +41,7 @@ const SIM = (() => {
     CFG = mergeCfg(o === 'def' ? CFG0() : o, o === 'def' ? CFG0() : CFG);
     try { localStorage.setItem(KCFG, JSON.stringify(CFG)); } catch (e) {}
     if (run && mroot && JSON.stringify([CFG.show, CFG.big, CFG.scheme]) !== old) { build(); size(); }
-    if (run) { lastNumKey = ''; Object.keys(boxes).forEach(k => { boxes[k]._b = boxes[k]._s = boxes[k]._c = null; }); }
+    if (run) { chLabel(); lastNumKey = ''; Object.keys(boxes).forEach(k => { boxes[k]._b = boxes[k]._s = boxes[k]._c = null; }); }
     fire();
   }
 
@@ -89,7 +89,7 @@ const SIM = (() => {
     save(); fire();
   }
   function resetBeats() { beats.length = 0; nextBeat = 0; spikes.length = 0; nextSpike = 0; }
-  function setRhythm(r) { if (!RH.some(x => x[0] === r)) return; S.rhythm = r; resetBeats(); save(); fire(); }
+  function setRhythm(r) { if (!RH.some(x => x[0] === r) || r === S.rhythm) return; S.rhythm = r; resetBeats(); save(); fire(); }
   function setProbe(k, on) { if (k in S.probe) { S.probe[k] = on ? 1 : 0; save(); fire(); } }
   function setArt(k, on) { if (k in S.art) { S.art[k] = on ? 1 : 0; save(); fire(); } }
   function setOpt(k, v) { if (['alarms', 'sound', 'beep'].indexOf(k) >= 0) { S[k] = v ? 1 : 0; save(); fire(); } }
@@ -204,6 +204,7 @@ const SIM = (() => {
     const r = S.rhythm;
     if (r === 'vt') return -0.5 * g(d, -0.02, 0.035) + 1.25 * g(d, 0.05, 0.045) - 0.55 * g(d, 0.16, 0.06);
     if (r === 'avb3') return 0.85 * g(d, 0, 0.03) - 0.32 * g(d, 0.07, 0.03) + 0.3 * g(d, 0.36, 0.08);
+    if (r === 'hyk') return 0.75 * g(d, 0.01, 0.03) - 0.28 * g(d, 0.075, 0.032) + 0.62 * g(d, 0.3, 0.042);
     if (r === 'pea') return 0.7 * g(d, 0, 0.022) - 0.2 * g(d, 0.05, 0.02) + 0.18 * g(d, 0.32, 0.07);
     const qt = Math.min(0.42, 0.36 * Math.sqrt(Math.max(0.25, rr)));
     let v = 1.05 * g(d, 0, 0.011) - 0.12 * g(d, -0.028, 0.009) - 0.26 * g(d, 0.03, 0.011) + 0.28 * g(d, qt * 0.78, 0.05);
@@ -275,12 +276,13 @@ const SIM = (() => {
       else if (S.rhythm === 'vt' && !cap()) out.push([2, 'SKILVELINĖ TACHIKARDIJA']);
     } else out.push([1, 'EKG elektrodai atjungti']);
     const chk = (k, v, nm) => { const L = L0[k]; if (v == null || !L) return; if (L[2] != null && v < L[2]) out.push([2, nm + ' ' + fmt(k, v) + ' ↓']); else if (L[3] != null && v > L[3]) out.push([2, nm + ' ' + fmt(k, v) + ' ↑']); else if (L[0] != null && v < L[0]) out.push([1, nm + ' ' + fmt(k, v) + ' ↓']); else if (L[1] != null && v > L[1]) out.push([1, nm + ' ' + fmt(k, v) + ' ↑']); };
-    if (S.probe.ecg && (cap() || (!NOPULSE[S.rhythm] && S.rhythm !== 'vt'))) chk('hr', hrShown(c), 'ŠSD');
+    // ŠSD ribos tikrinamos ir BEA metu (elektrinis dažnis); SkV, asistolija, SkT – savi aliarmai
+    if (S.probe.ecg && (cap() || ['vf', 'asys', 'vt'].indexOf(S.rhythm) < 0)) chk('hr', hrShown(c), 'ŠSD');
     if (!S.probe.spo2) out.push([1, 'SpO₂ zondas nuimtas']);
     else if (pf <= 0) out.push([1, 'SpO₂ – nėra pulso signalo']);
     else { if (pf < 0.15) out.push([1, 'SpO₂ – silpnas signalas']); chk('spo2', c.spo2, 'SpO₂'); }
     if (S.nibp.last && S.nibp.last.ok && Date.now() - S.nibp.last.t < 20 * 60000) chk('sys', S.nibp.last.sys, 'AKS sist.');
-    if (CFG.show.rr) { chk('rr', c.rr, 'KD'); if (c.rr === 0) out.push([2, 'APNĖJA']); }
+    if (CFG.show.rr) { if (c.rr === 0) out.push([2, 'APNĖJA']); else chk('rr', c.rr, 'KD'); }
     if (CFG.show.temp) chk('temp', c.temp, 'T');
     return out.sort((a, b) => b[0] - a[0]);
   }
@@ -288,7 +290,7 @@ const SIM = (() => {
   function limPri(k, v) { const L = CFG.lim[k]; if (!S.alarms || v == null || !L) return 0; return (L[2] != null && v < L[2]) || (L[3] != null && v > L[3]) ? 2 : (L[0] != null && v < L[0]) || (L[1] != null && v > L[1]) ? 1 : 0; }
 
   // ── AKS matavimas ──
-  function nibpStart() { if (S.nibp.meas || S.pause) return; S.nibp.meas = Date.now(); fire(); }
+  function nibpStart() { if (S.nibp.meas || S.pause) return; S.nibp.meas = Date.now(); S.nibp.peak = Math.max(180, cur().sys + 30); fire(); }
   function nibpStat() { S.nibp.stat = Date.now() + 5 * 60000; if (!S.nibp.meas) nibpStart(); fire(); }
   function nibpTick(c) {
     const N = S.nibp;
@@ -304,11 +306,11 @@ const SIM = (() => {
       }
     }
   }
-  function cuff() { const N = S.nibp; if (!N.meas) return 0; const e = (Date.now() - N.meas) / 1000; return e < 6 ? Math.round(e / 6 * 180) : Math.max(0, Math.round(180 - (e - 6) * 9)); }
+  function cuff() { const N = S.nibp, pk = N.peak || 180; if (!N.meas) return 0; const e = (Date.now() - N.meas) / 1000; return e < 6 ? Math.round(e / 6 * pk) : Math.max(0, Math.round(pk - (e - 6) * 9)); }
 
   // ── defibriliacija ──
-  function shock(j, r, v) {
-    S.shk = now(); S.shkJ = Math.max(1, Math.min(400, Math.round(+j || 200)));
+  function shock(j, r, v, sync) {
+    S.shk = now(); S.shkJ = Math.max(1, Math.min(400, Math.round(+j || 200))); S.shkS = sync ? 1 : 0;
     if (r && RH.some(x => x[0] === r)) S.rhythm = r;
     resetBeats();
     if (v && typeof v === 'object') apply(v, 0);
@@ -324,7 +326,7 @@ const SIM = (() => {
       alarms: S.alarms, sound: S.sound, beep: S.beep, a: A.map(x => x[1]), ap: A.map(x => x[0]), pri: A.length ? A[0][0] : 0, label: S.label, stage: S.stage,
       trend: P.some(k => S.tr[k].dur && now() - S.tr[k].t0 < S.tr[k].dur), hrs: hrShown(c), cfg: JSON.parse(JSON.stringify(CFG)), art: Object.assign({}, S.art),
       pace: { on: S.pace.on, rate: S.pace.rate, ma: S.pace.ma, cap: cap() ? 1 : 0 }, pause: S.pause, mute: muted() ? Math.ceil((S.mute - Date.now()) / 1000) : 0,
-      el: elapsed(), son: J.ses.on, ln: J.n, lg: J.log.slice(-4) };
+      el: elapsed(), son: J.ses.on, ln: J.n, lg: J.log.slice(-4), au: ac && ac.state === 'running' ? 1 : 0 };
   }
   function journal() { return { log: J.log.slice(), tr: J.tr.slice(), ses: { on: J.ses.on, el: elapsed(), start: J.ses.start }, n: J.n }; }
 
@@ -345,9 +347,9 @@ const SIM = (() => {
       `<div class="mnum" id="mnum" style="--n:${BX.length}">${BX.map(([k, l, col, u]) => `<div class="mbx" data-k="${k}"${k === 'nibp' ? ' data-act="mon-nibp"' : ''}><span class="mbl" style="color:${col}">${l}</span><b style="color:${col}"></b><span class="mbu"></span><span class="mbn">${u}</span></div>`).join('')}</div></div>`;
     ch = CH.map(([k, l, col]) => { const cv = mroot.querySelector(`canvas[data-ch="${k}"]`); return { k, col, cv, cx: cv.getContext('2d', { alpha: false }), x: 0, py: null, w: 0, h: 0, dpr: 1, frac: 0 }; });
     boxes = {}; BX.forEach(([k]) => { const el = mroot.querySelector(`.mbx[data-k="${k}"]`); boxes[k] = { el, b: el.querySelector('b'), u: el.querySelector('.mbu') }; });
-    const e = document.getElementById('chl-ecg'); if (e) e.textContent = 'II  ×' + String(CFG.gain).replace('.', ',') + '  ' + String(CFG.speed).replace('.', ',') + ' mm/s';
-    lastNum = 0;
+    chLabel(); lastNum = 0;
   }
+  function chLabel() { const e = document.getElementById('chl-ecg'); if (e) e.textContent = 'II  ×' + String(CFG.gain).replace('.', ',') + '  ' + String(CFG.speed).replace('.', ',') + ' mm/s'; }
   function size() {
     ch.forEach(c => { const r = c.cv.getBoundingClientRect(), d = window.devicePixelRatio || 1; c.dpr = d; c.w = Math.max(10, Math.round(r.width * d)); c.h = Math.max(10, Math.round(r.height * d)); c.cv.width = c.w; c.cv.height = c.h; c.x = 0; c.py = null; c.cx.fillStyle = '#000'; c.cx.fillRect(0, 0, c.w, c.h); });
   }
@@ -373,7 +375,7 @@ const SIM = (() => {
     if (C.w < 20) return;
     const mm = C.k === 'resp' ? CFG.speed / 4 : CFG.speed;
     const px = mm * PXMM() * dt + C.frac; let n = Math.floor(px); C.frac = px - n; if (n < 1) return; n = Math.min(n, C.w);
-    const cx = C.cx, gap = Math.round(14 * C.dpr), mid = C.h / 2, amp = C.h * 0.36, sdt = dt / n, gain = CFG.gain;
+    const cx = C.cx, gap = Math.round(14 * C.dpr), amp = C.h * 0.36, sdt = dt / n, gain = CFG.gain;
     // išvalyti priekį (su tarpu)
     cx.fillStyle = '#000';
     const x0 = C.x, w0 = n + gap;
@@ -382,7 +384,7 @@ const SIM = (() => {
     let open = false;
     for (let i = 0; i < n; i++) {
       const ts = t - dt + sdt * (i + 1); let v;
-      if (C.k === 'ecg') v = mid - ecg(ts, sdt) * amp * 0.95 * gain + amp * 0.15;
+      if (C.k === 'ecg') v = C.h * 0.62 - ecg(ts, sdt) * amp * 0.95 * gain;
       else if (C.k === 'pleth') v = C.h * 0.85 - pleth(ts, pf) * C.h * 0.62;
       else v = C.h * 0.82 - resp(ts) * C.h * 0.6;
       v = Math.max(lw * C.dpr, Math.min(C.h - lw * C.dpr, v));
@@ -419,8 +421,8 @@ const SIM = (() => {
     if (N.meas) { bp = '<small>' + cuff() + '</small>'; bsub = 'Matuojama…'; }
     else if (L && L.ok) { bp = L.sys + '/' + L.dia; bsub = '(' + L.map + ') · ' + hhmm(L.t) + ' · ' + auto; bw = limPri('sys', L.sys); }
     else if (L) { bsub = L.why + ' · ' + hhmm(L.t); bw = 1; }
-    const hrw = !S.probe.ecg ? 0 : cap() ? limPri('hr', h) : S.rhythm === 'asys' || S.rhythm === 'vf' || S.rhythm === 'vt' ? 2 : NOPULSE[S.rhythm] ? 0 : limPri('hr', h);
-    const hsub = cap() ? 'Stimuliacija ' + S.pace.ma + ' mA' : S.pace.on ? 'Stim. – nėra pagavimo' : rhName();
+    const hrw = !S.probe.ecg ? 0 : cap() ? limPri('hr', h) : S.rhythm === 'asys' || S.rhythm === 'vf' || S.rhythm === 'vt' ? 2 : limPri('hr', h);
+    const hsub = cap() ? 'Stimuliacija ' + S.pace.ma + ' mA' : S.pace.on ? 'Stim. – nėra pagavimo' : CFG.rhy ? rhName() : '';
     setBox('hr', hr, hsub, hrw);
     setBox('spo2', sp, S.probe.spo2 && pf > 0 ? bar(pf) : S.probe.spo2 ? '' : 'Zondas nuimtas', sp === '--' ? 1 : limPri('spo2', c.spo2));
     setBox('nibp', bp, bsub, bw);
@@ -433,8 +435,8 @@ const SIM = (() => {
     const mu = muted(), shk = now() - S.shk < 3;
     let msg = '', cls = 'mal';
     if (S.pause) { msg = 'PAUZĖ'; cls += ' p0'; }
-    else if (shk) { msg = '⚡ IŠKROVA ' + S.shkJ + ' J'; cls += ' p1'; }
-    else if (A.length) { const i = Math.floor(Date.now() / 2500) % A.length; msg = A[i][1] + (A.length > 1 ? '  ' + (i + 1) + '/' + A.length : ''); cls += ' p' + A[i][0]; }
+    else if (shk) { msg = '⚡ ' + (S.shkS ? 'KARDIOVERSIJA ' : 'IŠKROVA ') + S.shkJ + ' J'; cls += ' p1'; }
+    else if (A.length) { const G = A.filter(a => a[0] === A[0][0]), i = Math.floor(Date.now() / 2500) % G.length; msg = G[i][1] + (G.length > 1 ? '  ' + (i + 1) + '/' + G.length : '') + (A.length > G.length ? '  +' + (A.length - G.length) : ''); cls += ' p' + G[i][0]; }
     if (mu && A.length && !S.pause) msg += '  🔕 ' + mmss(S.mute - Date.now());
     if (mal) { if (mal.textContent !== msg) mal.textContent = msg; if (mal.className !== cls) mal.className = cls; }
     if (A.length && !mu && !S.pause && ac) { const per = A[0][0] === 2 ? 5 : 15; if (Date.now() - lastAlarm > per * 1000 || alarmShown !== A[0][1] && Date.now() - lastAlarm > 2500) { lastAlarm = Date.now(); alarmShown = A[0][1]; alarmTone(A[0][0]); } }
@@ -461,5 +463,5 @@ const SIM = (() => {
   return { P, DEF, LIM, RH, LIM0, SPEEDS, GAINS, CFG0, apply, setRhythm, setProbe, setArt, setOpt, setLabel, setNibpMode, setPace, nibpStart, nibpStat, reset, shock, snapshot, targets, on, mount, stop, audio, testSound,
     muteAlarms, unmute, cur, perf: () => perf(cur()), state: () => S, cfg: () => CFG, setCfg, alarmList, rhName, mmss,
     log, journal, elapsed, sesStart, sesNew, setPause,
-    _ecg: ecg, _alarms: () => alarms(cur(), perf(cur())), _ff: ff };
+    _ecg: ecg, _alarms: () => alarms(cur(), perf(cur())), _ff: ff, _beats: () => beats.slice() };
 })();

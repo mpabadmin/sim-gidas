@@ -1,6 +1,6 @@
 'use strict';
 // ───────── SIM – programėlės eiga: pradžia, monitorius, instruktoriaus pultas, scenarijai, žurnalas, nustatymai ─────────
-const VER = 'v5 · 2026-10-28';
+const VER = 'v6 · 2026-10-28';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
 const LSg = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
@@ -32,7 +32,7 @@ function stageCmd(sc, i, d, useD) {
   const x = sc && sc.st[i]; if (!x) return null;
   const v = {}; SIM.P.forEach(k => { if (x.v && x.v[k] != null) v[k] = x.v[k]; });
   let r = null;
-  if (sc.src === 'SIM') { for (let j = i; j >= 0 && !r; j--) r = sc.st[j].v && sc.st[j].v.r; r = r || 'sinus'; } else if (i === 0) r = 'sinus';
+  if (sc.src === 'SIM') { for (let j = i; j >= 0 && !r; j--) r = sc.st[j].v && sc.st[j].v.r; r = r || 'sinus'; } else r = (x.v && x.v.r) || (i === 0 ? 'sinus' : null);
   const dd = useD && x.d != null && isFinite(x.d) ? Math.max(0, +x.d) : (+d || 0);
   return { c: 'apply', v, d: dd, td: +d || 0, r, l: sc.pav, s: x.n, sc: { src: sc.src, id: sc.id, i } };
 }
@@ -42,7 +42,7 @@ const LB = { hr: ['ŠSD', 'k./min', 5, 0, 220, 1], spo2: ['SpO₂', '%', 1, 50, 
 const f1 = (k, v) => k === 'temp' ? (+v).toFixed(1).replace('.', ',') : String(Math.round(v));
 const PRB = { ecg: ['EKG elektrodai prijungti', 'EKG elektrodai atjungti'], spo2: ['SpO₂ zondas uždėtas', 'SpO₂ zondas nuimtas'], nibp: ['AKS manžetė uždėta', 'AKS manžetė nuimta'] };
 const OPTN = { sound: 'Garsas', beep: 'Pulso pyptelėjimas', alarms: 'Aliarmai' };
-let PLAY = LSg('sim-play', null), PREF = Object.assign({ auto: 0, useD: 0 }, LSg('sim-playpref', {}));
+let PLAY = LSg('sim-play', null), PREF = Object.assign({ auto: 0, useD: 1 }, LSg('sim-playpref6', {}));
 function setPlay(p) { PLAY = p; LSs('sim-play', p); }
 function diffTxt(a, b) { return SIM.P.filter(k => Math.abs(a[k] - b[k]) > 0.05).map(k => LB[k][0] + ' ' + f1(k, a[k]) + '→' + f1(k, b[k])).join(', '); }
 function exec(o) {
@@ -73,17 +73,22 @@ function exec(o) {
     case 'nmode': SIM.setNibpMode(o.m); L('cfg', 'AKS: ' + (+o.m ? 'auto ' + (+o.m) + ' min' : 'rankinis')); break;
     case 'label': SIM.setLabel(o.l, o.s); if (o.l === '') { if (PLAY) L('stage', 'Scenarijus baigtas'); setPlay(null); } break;
     case 'mute': if (o.off) { SIM.unmute(); L('sys', 'Aliarmų garsas grąžintas'); } else { const m = Math.max(1, Math.min(10, +o.m || 2)); SIM.muteAlarms(m); L('sys', 'Aliarmai nutildyti ' + m + ' min'); } break;
-    case 'reset': SIM.reset(); setPlay(null); L('set', 'Atstatyta norma'); break;
+    case 'reset': SIM.reset(); setPlay(null); L('set', 'Atkurta norma'); break;
     case 'cfg': SIM.setCfg(o.v === 'def' ? 'def' : o.v); if (route() === 'monitorius') wake(); break;
     case 'mark': { const x = String(o.x || '').trim().slice(0, 80); if (x) { SIM.sesStart(); L('mark', x); } break; }
-    case 'shock': SIM.sesStart(); SIM.shock(o.j, okR(o.r) ? o.r : null, o.v); L('shock', 'Defibriliacija ' + SIM.state().shkJ + ' J' + (okR(o.r) && o.r !== r0 ? ' → ' + SIM.rhName(o.r) : '')); break;
+    case 'shock':
+      if (o.sync && ['vf', 'asys', 'pea'].indexOf(r0) >= 0) { L('shock', 'Kardioversija neįvyko – nėra R bangų (' + SIM.rhName(r0) + ')'); break; }
+      SIM.sesStart(); SIM.shock(o.j, okR(o.r) ? o.r : null, o.v, o.sync); L('shock', (o.sync ? 'Kardioversija ' : 'Defibriliacija ') + SIM.state().shkJ + ' J' + (okR(o.r) && o.r !== r0 ? ' → ' + SIM.rhName(o.r) : '')); break;
     case 'pace': { const a = JSON.stringify(st.pace); SIM.setPace(o); const p = SIM.state().pace; if (JSON.stringify(p) !== a) L('set', p.on ? 'Stimuliacija ' + p.rate + '/min, ' + p.ma + ' mA' : 'Stimuliacija išjungta'); break; }
     case 'pause': if (!!o.on !== !!st.pause) { SIM.setPause(o.on); L('sys', o.on ? 'Pauzė' : 'Tęsiama'); } break;
-    case 'ses': if (o.a === 'new') SIM.sesNew(); else if (!SIM.journal().ses.on) { SIM.sesStart(); L('sys', 'Sesija pradėta'); } break;
+    case 'ses':
+      if (o.a === 'new') { SIM.sesNew(); SIM.sesStart(); if (PLAY) { PLAY.at = 0; PLAY.dur = 0; setPlay(PLAY); } L('sys', 'Nauja sesija'); }
+      else if (!SIM.journal().ses.on) { SIM.sesStart(); L('sys', 'Sesija pradėta'); }
+      break;
     case 'play':
       if ('auto' in o) { PREF.auto = o.auto ? 1 : 0; if (PLAY && PREF.auto) { PLAY.at = SIM.elapsed(); PLAY.dur = 0; setPlay(PLAY); } L('sys', 'Automatinis etapų keitimas ' + (PREF.auto ? 'įjungtas' : 'išjungtas')); }
       if ('useD' in o) PREF.useD = o.useD ? 1 : 0;
-      LSs('sim-playpref', PREF); break;
+      LSs('sim-playpref6', PREF); break;
     case 'test': SIM.testSound(); break;
   }
 }
@@ -156,10 +161,18 @@ const isHostRoute = () => route() === 'monitorius';
 const DUR = [[0, 'Iš karto'], [30, '30 s'], [60, '1 min'], [120, '2 min'], [300, '5 min']];
 const MAC = [['worse', 'Blogėja'], ['better', 'Gerėja'], ['shock', 'Šokas ↑'], ['hypox', 'Hipoksija ↑'], ['stab', 'Stabilizuoti']];
 const MARKS = ['Turniketas', 'Tamponada / tvarstis', 'Dekompresija', 'Kvėpavimo takai', 'Intubacija', 'Krikotiroidotomija', 'Deguonis', 'IV / IO prieiga', 'TXA', 'Kraujas', 'Skysčiai', 'Kalcis', 'Adrenalinas', 'Analgezija', 'Šildymas', 'KPR pradėtas', 'KPR baigtas', 'Evakuacija'];
-const TABS = [['ctl', 'Rodikliai'], ['sc', 'Scenarijus'], ['act', 'Veiksmai'], ['log', 'Žurnalas'], ['set', 'Nustatymai'], ['link', 'Ryšys']];
+const TABS = [['ctl', 'Rodikliai', 'Rodikl.'], ['sc', 'Scenarijus', 'Scen.'], ['act', 'Veiksmai', 'Veiksm.'], ['log', 'Žurnalas', 'Žurn.'], ['set', 'Nustatymai', 'Nust.'], ['link', 'Ryšys', 'Ryšys']];
+const TICO = {
+  ctl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l2.5-6 4 12 2.5-6H22"/></svg>',
+  sc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 6h10M10 12h10M10 18h10"/><circle cx="5" cy="6" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="5" cy="18" r="1.5"/></svg>',
+  act: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.5l2.5 2.5 4.5-5.5"/></svg>',
+  log: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 19V5M4 19h16"/><path d="M7 15l4-5 3 3 5-6"/></svg>',
+  link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>'
+};
 const SHR = [['', 'Nekinta'], ['sinus', 'Sinusinis'], ['vf', 'Skilv. virpėjimas'], ['asys', 'Asistolija'], ['pea', 'BEA']];
+const plural = (n, a, b, c) => n % 10 === 1 && n % 100 !== 11 ? a : n % 10 >= 2 && (n % 100 < 10 || n % 100 >= 20) ? b : c;
 let draft = {}, dur = LSg('sim-dur', 30), scen = LSg('sim-scen', null), scenList = false, scenQ = '', favs = LSg('sim-fav', []), markTxt = '';
-let UI = Object.assign({ live: 0, sl: 1, tab: 'ctl', alm: 0, favEdit: 0, shJ: 200, shR: '' }, LSg('sim-ui', {}));
+let UI = Object.assign({ live: 0, sl: 1, tab: 'ctl', alm: 0, favEdit: 0, shJ: 200, shR: '', sync: 0, so: {}, ssrc: '', stema: '' }, LSg('sim-ui', {}));
 const saveUI = () => LSs('sim-ui', UI);
 // kur siunčiamos komandos: monitoriuje ir neprisijungus nustatymuose – vietoje, kitaip – nuotoliniam monitoriui
 const tgt = () => route() === 'monitorius' ? 'local' : route() === 'nustatymai' && !ctrlOn() ? 'local' : 'remote';
@@ -187,23 +200,28 @@ function mirrorHtml() {
   return `<div class="mir">${cell('ŠSD', hrOf(s), 'k./min')}${cell('SpO₂', s.probe.spo2 && s.pf > 0 ? c.spo2 : '--', '%')}` +
     `${cell('AKS', s.nibp.meas ? '…' : L && L.ok ? L.sys + '/' + L.dia : '---', L && L.ok ? 'išm. ' + new Date(L.t).toTimeString().slice(0, 5) : 'mm Hg')}${cell('KD', c.rr, 'k./min')}${cell('T', f1('temp', c.temp), '°C')}</div>` +
     `<div class="mirs">${esc(SIM.rhName(s.rhythm))}${ex.length ? ' · ' + ex.join(' · ') : ''}</div>` +
-    (s.a && s.a.length ? `<div class="mira p${s.pri}">${s.a.map(esc).join(' · ')}</div>` : '');
+    (s.a && s.a.length ? `<div class="mira p${s.pri}">${s.a.map(esc).join(' · ')}</div>` : '') +
+    (s.au === 0 && s.sound ? '<div class="mira p1">⚠ Monitoriaus garsas neįjungtas – palieskite monitoriaus ekraną</div>' : '');
 }
 function mirror() { const el = $('#mirror'); if (el) el.innerHTML = mirrorHtml(); }
 function cstHtml() {
   if (!linkOn() || isHost()) return '<span class="cst" id="cst">○ Neprijungta</span>';
   const age = remoteT ? Math.round((Date.now() - remoteT) / 1000) : null, stale = age == null || age > 3;
-  return `<span class="cst ${stale ? 'warn' : 'on'}" id="cst">● Prijungta${stale ? ' · ' + (age == null ? 'laukiama duomenų' : 'duomenys prieš ' + age + ' s') : rtt ? ' · ' + rtt + ' ms' : ''}</span>`;
+  return `<span class="cst ${stale ? 'warn' : 'on'}" id="cst">● Prijungta<small>${stale ? (age == null ? 'laukiama duomenų' : 'duomenys prieš ' + age + ' s') : rtt ? rtt + ' ms' : ''}</small></span>`;
 }
 function chip(act, k, on, t, extra) { return `<button class="chip${on ? ' on' : ''}" data-act="${act}" data-k="${esc(k)}" aria-pressed="${on ? 'true' : 'false'}"${extra || ''}>${t}</button>`; }
 const tog = (act, k, on, t) => chip(act, k, on, (on ? '✓ ' : '') + t);
 const tabs = () => TABS.filter(t => t[0] !== 'link' || tgt() === 'local' && route() === 'monitorius');
 function tabsHtml() {
   if (!tabs().some(t => t[0] === UI.tab)) UI.tab = 'ctl';
-  return '<nav class="tabs" role="tablist">' + tabs().map(([k, t]) => `<button class="tab${UI.tab === k ? ' on' : ''}" data-act="tab" data-k="${k}" role="tab" aria-selected="${UI.tab === k}">${t}</button>`).join('') + '</nav>';
+  const L = tabs();
+  return `<nav class="tabs n${L.length}" role="tablist">` + L.map(([k, t, sh]) => `<button class="tab${UI.tab === k ? ' on' : ''}" data-act="tab" data-k="${k}" role="tab" aria-selected="${UI.tab === k}" aria-label="${t}">${TICO[k] || ICO.cog}<span class="tl">${t}</span><span class="ts">${sh}</span></button>`).join('') + '</nav>';
 }
-function stripHtml() {
+function stripHtml(compact) {
   const s = snap() || {};
+  if (compact) return `<span class="tmr">${ICO.clock}<b id="tmrv">${s.son ? SIM.mmss(s.el) : '--:--'}</b></span>` +
+    `<button class="sb ic${s.pause ? ' on' : ''}" data-act="pause" aria-label="${s.pause ? 'Tęsti' : 'Pauzė'}">${s.pause ? ICO.play : ICO.pause}</button>` +
+    `<button class="sb ic${s.mute ? ' on' : ''}" data-act="${s.mute ? 'unmute' : 'mute'}" aria-label="Aliarmų nutildymas">${ICO.mute}<span id="mutv">${s.mute ? SIM.mmss(s.mute * 1000) : ''}</span></button>`;
   return `<div class="strip"><span class="tmr">${ICO.clock}<b id="tmrv">${s.son ? SIM.mmss(s.el) : '--:--'}</b></span>` +
     `<button class="sb${s.pause ? ' on' : ''}" data-act="pause" aria-label="${s.pause ? 'Tęsti' : 'Pauzė'}">${s.pause ? ICO.play + 'Tęsti' : ICO.pause + 'Pauzė'}</button>` +
     `<button class="sb${s.mute ? ' on' : ''}" data-act="${s.mute ? 'unmute' : 'mute'}" aria-label="Aliarmų nutildymas">${ICO.mute}<span id="mutv">${s.mute ? SIM.mmss(s.mute * 1000) : '2 min'}</span></button></div>`;
@@ -229,9 +247,9 @@ function ctlTab() {
   if (!UI.live) h += `<div class="acts"><button class="btn pri" data-act="apply"${n ? '' : ' disabled'}>Taikyti${n ? ' (' + n + ')' : ''}</button><button class="btn" data-act="undo"${n ? '' : ' disabled'}>Atšaukti</button></div>`;
   h += '</section>';
   h += '<section class="pnl"><h2>Ritmas</h2><div class="chips">' + SIM.RH.map(([k, t]) => chip('rh', k, rh === k, t)).join('') + '</div>';
-  h += '<h2>Defibriliacija</h2><div class="chips">' + [120, 150, 200, 360].map(j => chip('shj', j, UI.shJ === j, j + ' J')).join('') + '</div>' +
+  h += '<h2>Defibriliacija / kardioversija</h2><div class="chips">' + [50, 100, 120, 150, 200, 360].map(j => chip('shj', j, UI.shJ === j, j + ' J')).join('') + tog('sync', 1, !!UI.sync, 'Sinchronizuota') + '</div>' +
     '<p class="lbl">Ritmas po iškrovos</p><div class="chips">' + SHR.map(([k, t]) => chip('shr', k, UI.shR === k, t)).join('') + '</div>' +
-    `<div class="acts"><button class="btn shk" data-act="shock">${ICO.bolt}Iškrova ${UI.shJ} J</button></div></section>`;
+    `<div class="acts"><button class="btn shk" data-act="shock">${ICO.bolt}${UI.sync ? 'Kardioversija' : 'Iškrova'} ${UI.shJ} J</button></div>` + (UI.sync ? '<p class="muted">Sinchronizuota iškrova – SkT, SVT, PV (su pulsu). Skilvelių virpėjimo metu neįvyksta.</p>' : '') + '</section>';
   h += '<section class="pnl"><h2>Mėgstami</h2>' + (favs.length ? '<div class="chips">' + favs.map((f, i) => `<span class="fav">${chip('fav-go', i, false, esc(f.n))}${UI.favEdit ? `<button class="fx" data-act="fav-del" data-k="${i}" aria-label="Ištrinti ${esc(f.n)}">${ICO.x}</button>` : ''}</span>`).join('') + '</div>' : '<p class="muted mt0">Įsiminkite dabartines reikšmes ir ritmą – vėliau pritaikysite vienu paspaudimu.</p>') +
     `<div class="acts"><button class="btn" data-act="fav-add">＋ Įsiminti</button>${favs.length ? `<button class="btn" data-act="fav-edit">${UI.favEdit ? 'Baigti' : 'Tvarkyti'}</button>` : ''}</div></section>`;
   return h;
@@ -253,10 +271,16 @@ function scTab() {
   const s = snap(), sc = curScen(s), idx = curIdx(sc, s), pl = (s && s.pl) || {};
   let h = '<section class="pnl"><h2>Scenarijus</h2>';
   if (scenList) {
-    const q = scenQ.trim().toLowerCase(), L = allScen().filter(x => !q || (x.pav + ' ' + x.id + ' ' + x.src + ' ' + (x.tema || '') + ' ' + (x.sal || '')).toLowerCase().includes(q));
-    h += `<input class="inp" id="scq" placeholder="Paieška (pvz. šokas, m12, ETC)" value="${esc(scenQ)}" autocomplete="off" aria-label="Scenarijų paieška">`;
+    const q = scenQ.trim().toLowerCase(), A = allScen().filter(x => !UI.ssrc || x.src === UI.ssrc);
+    const TM = { A: 'A – kvėp. takai', B: 'B – kvėpavimas', C: 'C – kraujotaka', D: 'D – neurologija', E: 'E – aplinka', PCC: 'PCC' };
+    const tms = [...new Set(A.map(x => x.tema).filter(t => t && t !== '–'))];
+    if (UI.stema && tms.indexOf(UI.stema) < 0) UI.stema = '';
+    const L = A.filter(x => (!UI.stema || x.tema === UI.stema) && (!q || (x.pav + ' ' + x.id + ' ' + x.src + ' ' + (x.tema || '') + ' ' + (x.sal || '') + ' ' + (x.aprasas || '')).toLowerCase().includes(q)));
+    h += `<input class="inp" id="scq" placeholder="Paieška (pvz. šokas, m12, kraujavimas)" value="${esc(scenQ)}" autocomplete="off" aria-label="Scenarijų paieška">`;
+    h += '<div class="chips mt">' + [['', 'Visi'], ['SIM', 'SIM'], ['ETC', 'ETC'], ['March', 'March']].map(([k, t]) => chip('sc-src', k, UI.ssrc === k, t)).join('') + '</div>';
+    if (tms.length > 1 && tms.length <= 16) h += '<div class="chips mt">' + chip('sc-tema', '', !UI.stema, 'Visos temos') + tms.sort().map(t => chip('sc-tema', t, UI.stema === t, esc(TM[t] || t))).join('') + '</div>';
     const grp = [['SIM', 'Monitoriaus scenarijai'], ['ETC', 'ETC gido scenarijai'], ['March', 'March gido scenarijai']];
-    grp.forEach(([src, t]) => { const a = L.filter(x => x.src === src); if (a.length) h += `<h3>${t}</h3>` + a.map(x => `<button class="row" data-act="sc-pick" data-k="${esc(x.src + '|' + x.id)}"><span>${esc(x.pav)}<small>${esc(x.src === 'SIM' ? [x.st.length + ' etapai', x.tema && x.tema !== '–' ? x.tema : '', x.sal].filter(Boolean).join(' · ') : x.id + (x.lygis ? ' · ' + x.lygis : '') + ' · ' + x.st.length + ' klausimai')}</small></span><i>›</i></button>`).join(''); });
+    grp.forEach(([src, t]) => { const a = L.filter(x => x.src === src); if (a.length) h += `<h3>${t} (${a.length})</h3>` + a.map(x => `<button class="row" data-act="sc-pick" data-k="${esc(x.src + '|' + x.id)}"><span>${esc(x.pav)}<small>${esc(x.src === 'SIM' ? [x.st.length + ' ' + plural(x.st.length, 'etapas', 'etapai', 'etapų'), x.tema && x.tema !== '–' ? x.tema : '', x.sal].filter(Boolean).join(' · ') : x.id + (x.tema ? ' · ' + x.tema : '') + (x.lygis ? ' · ' + x.lygis : '') + ' · ' + x.st.length + ' ' + plural(x.st.length, 'klausimas', 'klausimai', 'klausimų'))}</small></span><i>›</i></button>`).join(''); });
     if (!L.length) h += '<p class="muted">Nieko nerasta.</p>';
     h += '<div class="acts"><button class="btn" data-act="sc-close">Uždaryti sąrašą</button></div>';
   } else if (sc) {
@@ -269,7 +293,7 @@ function scTab() {
       (hasAuto ? `<button class="btn tlb${pl.auto ? ' pri' : ''}" data-act="sc-auto" aria-pressed="${pl.auto ? 'true' : 'false'}">${pl.auto ? ICO.pause + 'Auto' : ICO.play + 'Auto'}</button>` : '') +
       `<button class="btn tlb pri2" data-act="sc-next"${idx >= sc.st.length - 1 ? ' disabled' : ''}>${ICO.next}Kitas etapas</button></div>`;
     h += `<p class="plc" id="plc">${plcTxt(s, sc)}</p>`;
-    if (hasD) h += '<div class="chips">' + tog('sc-used', 1, !!pl.useD, 'Scenarijaus laikai') + '</div>';
+    if (hasD) h += '<div class="chips">' + tog('sc-used', 1, !!pl.useD, 'Scenarijaus tempas (etapų laikai)') + '</div>';
     h += '<h2>Pokytis per</h2>' + durChips();
     h += '<div class="stg">' + sc.st.map((x, i) => { const m = [x.d != null && pl.useD ? 'per ' + durTxt(x.d) : '', x.auto != null ? 'auto ' + durTxt(x.auto) + (x.nx != null && +x.nx !== i + 1 ? ' → ' + (+x.nx + 1) : '') : ''].filter(Boolean).join(' · '); return `<button class="stb${i === idx ? ' on' : ''}" data-act="sc-st" data-k="${i}"><b>${i + 1}</b><span>${esc(x.n)}${m ? '<small>' + m + '</small>' : ''}</span></button>`; }).join('') + '</div>';
     const cur = sc.st[idx];
@@ -299,9 +323,7 @@ function actTab() {
     `<div class="prm"><div class="pr"><span class="prl">Dažnis<small>/min</small></span><button class="pb" data-act="pace-r" data-k="-10" aria-label="Dažnis mažiau">−</button><span class="pv">${pc.rate}</span><button class="pb" data-act="pace-r" data-k="10" aria-label="Dažnis daugiau">+</button></div>` +
     `<div class="pr"><span class="prl">Srovė<small>mA</small></span><button class="pb" data-act="pace-m" data-k="-10" aria-label="Srovė mažiau">−</button><span class="pv">${pc.ma}</span><button class="pb" data-act="pace-m" data-k="10" aria-label="Srovė daugiau">+</button></div></div>` +
     `<p class="muted">${pc.on ? (pc.cap ? '✓ Pagavimas – ŠSD lygus stimuliacijos dažniui.' : 'Nėra pagavimo – didinkite srovę (slenkstis 60 mA).') : 'Pagavimas, kai srovė ≥ 60 mA (ne skilvelių virpėjimo metu).'}</p></section>`;
-  const o = s.sound != null ? s : { sound: 1, beep: 1, alarms: 1 };
-  h += '<section class="pnl"><h2>Monitorius</h2><div class="chips">' + tog('opt', 'sound', !!o.sound, 'Garsas') + tog('opt', 'beep', !!o.beep, 'Pulso pyptelėjimas') + tog('opt', 'alarms', !!o.alarms, 'Aliarmai') + '</div>' +
-    '<div class="acts"><button class="btn" data-act="reset">Atstatyti normą</button></div></section>';
+  h += '<section class="pnl"><h2>Atkūrimas</h2><p class="muted mt0">Normalūs rodikliai, sinusinis ritmas, jutikliai uždėti, artefaktai ir stimuliacija išjungti.</p><div class="acts"><button class="btn" data-act="reset">Atkurti normą</button></div></section>';
   return h;
 }
 
@@ -316,7 +338,7 @@ function logTab() {
   if (!J) { if (tgt() === 'remote' && Date.now() - dumpReqT > 1500) { dumpReqT = Date.now(); setTimeout(() => rsend({ c: 'dump' }), 0); } return h + '<section class="pnl"><p class="muted">Kraunamas žurnalas iš monitoriaus…</p></section>'; }
   h += '<section class="pnl"><h2>Tendencijos</h2>' + chartHtml(J.tr, J.log) + '</section>';
   h += `<section class="pnl"><h2>Įvykiai</h2><div class="chips">${tog('alm', 1, !!UI.alm, 'Rodyti aliarmus ir AKS')}</div>${logList(J.log)}` +
-    '<div class="acts"><button class="btn" data-act="log-copy">Kopijuoti</button><button class="btn" data-act="log-share">Dalintis</button></div></section>';
+    '<div class="acts"><button class="btn" data-act="log-copy">Kopijuoti</button><button class="btn" data-act="log-share">Dalytis</button></div></section>';
   logTab.n = J.n;
   return h;
 }
@@ -369,29 +391,33 @@ async function copyText(t) {
 function setTab() {
   const s = snap(), local = tgt() === 'local';
   const c = local ? SIM.cfg() : s && s.cfg;
+  const sec = (k, title, sum, body) => `<details class="pnl sec" data-sec="${k}"${UI.so[k] ? ' open' : ''}><summary><span><b>${title}</b><small>${sum}</small></span><i>›</i></summary>${body}</details>`;
   let h = '';
   if (!c) h += `<section class="pnl"><p class="muted">${s ? 'Prijungto monitoriaus programėlė senesnė – atnaujinkite ją, kad galėtumėte keisti nustatymus nuotoliniu būdu.' : 'Laukiama duomenų iš monitoriaus…'}</p></section>`;
   else {
-    const lim = c.lim, LN = [['hr', 'ŠSD'], ['spo2', 'SpO₂'], ['sys', 'sAKS'], ['rr', 'KD'], ['temp', 'T']], vv = (k, i) => lim[k][i] == null ? '' : f1(k === 'temp' ? 'temp' : 'x', lim[k][i]);
-    h += '<section class="pnl"><h2>Aliarmų ribos</h2><div class="limt"><span></span><b class="r">‼ ↓</b><b class="y">! ↓</b><b class="y">! ↑</b><b class="r">‼ ↑</b>' +
+    const lim = c.lim, LN = [['hr', 'ŠSD'], ['spo2', 'SpO₂'], ['sys', 'AKS sist.'], ['rr', 'KD'], ['temp', 'T']], vv = (k, i) => lim[k][i] == null ? '' : f1(k === 'temp' ? 'temp' : 'x', lim[k][i]);
+    const rg = k => lim[k][0] != null && lim[k][1] != null ? vv(k, 0) + '–' + vv(k, 1) : lim[k][0] != null ? '≥ ' + vv(k, 0) : lim[k][1] != null ? '≤ ' + vv(k, 1) : 'išj.';
+    h += sec('lim', 'Aliarmų ribos', 'ŠSD ' + rg('hr') + ' · SpO₂ ' + rg('spo2') + ' · AKS ' + rg('sys'),
+      '<div class="limt"><span></span><b class="r">‼ ↓</b><b class="y">! ↓</b><b class="y">! ↑</b><b class="r">‼ ↑</b>' +
       LN.map(([k, l]) => `<span>${l}</span>` + [2, 0, 1, 3].map(i => `<input class="inp li" data-lim="${k}" data-i="${i}" inputmode="decimal" value="${vv(k, i)}" aria-label="${l} riba ${i}">`).join('')).join('') + '</div>' +
-      '<p class="muted">! – vidutinis (geltonas), ‼ – aukštas (raudonas) prioritetas. Tuščias laukelis – riba išjungta.</p><div class="acts"><button class="btn" data-act="lim-def">Numatytosios ribos</button></div></section>';
+      '<p class="muted">! – vidutinis (geltonas), ‼ – aukštas (raudonas) prioritetas. Tuščias laukelis – riba išjungta.</p><div class="acts"><button class="btn" data-act="lim-def">Numatytosios ribos</button></div>');
     const o = local ? SIM.state() : s;
-    h += '<section class="pnl"><h2>Garsas</h2><div class="chips">' + tog('opt', 'sound', !!o.sound, 'Garsas') + tog('opt', 'beep', !!o.beep, 'Pulso pyptelėjimas') + tog('opt', 'alarms', !!o.alarms, 'Aliarmai') + '</div>' +
+    h += sec('snd', 'Garsas', !o.sound ? 'išjungtas' : 'aliarmai ' + c.avol + ' % · pyptelėjimas ' + (o.beep ? c.bvol + ' %' : 'išj.') + (o.alarms ? '' : ' · aliarmai išj.'),
+      '<div class="chips">' + tog('opt', 'sound', !!o.sound, 'Garsas') + tog('opt', 'beep', !!o.beep, 'Pulso pyptelėjimas') + tog('opt', 'alarms', !!o.alarms, 'Aliarmai') + '</div>' +
       `<label class="rl">Aliarmų garsumas <b id="rv-avol">${c.avol}%</b><input type="range" class="rng" data-cfg="avol" min="0" max="100" step="5" value="${c.avol}"></label>` +
       `<label class="rl">Pyptelėjimo garsumas <b id="rv-bvol">${c.bvol}%</b><input type="range" class="rng" data-cfg="bvol" min="0" max="100" step="5" value="${c.bvol}"></label>` +
-      '<div class="acts"><button class="btn" data-act="test-sound">Išbandyti garsą</button></div></section>';
-    h += '<section class="pnl"><h2>Ekranas</h2><p class="lbl">Kreivės greitis</p><div class="chips">' + SIM.SPEEDS.map(v => chip('cfg', 'speed:' + v, c.speed === v, String(v).replace('.', ',') + ' mm/s')).join('') + '</div>' +
+      '<div class="acts"><button class="btn" data-act="test-sound">Išbandyti garsą</button></div>');
+    h += sec('scr', 'Ekranas', String(c.speed).replace('.', ',') + ' mm/s · EKG ×' + String(c.gain).replace('.', ',') + (c.big ? ' · dideli skaičiai' : '') + (c.scheme === 'hc' ? ' · kontrastingos' : '') + (c.pat ? ' · ' + esc(c.pat) : ''),
+      '<p class="lbl mt0">Kreivės greitis</p><div class="chips">' + SIM.SPEEDS.map(v => chip('cfg', 'speed:' + v, c.speed === v, String(v).replace('.', ',') + ' mm/s')).join('') + '</div>' +
       '<p class="lbl">EKG amplitudė</p><div class="chips">' + SIM.GAINS.map(v => chip('cfg', 'gain:' + v, c.gain === v, '×' + String(v).replace('.', ','))).join('') + '</div>' +
-      '<p class="lbl">Rodyti</p><div class="chips">' + [['pleth', 'Pleth kreivė'], ['resp', 'Kvėpavimo kreivė'], ['rr', 'KD'], ['temp', 'Temperatūra']].map(([k, t]) => tog('cfgt', 'show.' + k, !!c.show[k], t)).join('') + '</div>' +
+      '<p class="lbl">Rodyti</p><div class="chips">' + [['pleth', 'Pleth kreivė'], ['resp', 'Kvėpavimo kreivė'], ['rr', 'KD'], ['temp', 'Temperatūra']].map(([k, t]) => tog('cfgt', 'show.' + k, !!c.show[k], t)).join('') + tog('cfgt', 'rhy', !!c.rhy, 'Ritmo pavadinimas') + '</div>' +
       '<p class="lbl">Išdėstymas ir spalvos</p><div class="chips">' + tog('cfgt', 'big', !!c.big, 'Dideli skaičiai') + chip('cfg', 'scheme:classic', c.scheme === 'classic', 'Klasikinės spalvos') + chip('cfg', 'scheme:hc', c.scheme === 'hc', 'Kontrastingos') + '</div>' +
       '<p class="lbl">Viršutinė juosta</p><div class="chips">' + tog('cfgt', 'clock', !!c.clock, 'Sesijos laikmatis') + tog('cfgt', 'scen', !!c.scen, 'Scenarijaus pavadinimas') + tog('cfgt', 'wake', !!c.wake, 'Ekranas neužgęsta') + '</div>' +
-      `<label class="rl">Paciento žymė<input class="inp" data-cfg="pat" maxlength="40" placeholder="pvz. Lova 2 · Karys A" value="${esc(c.pat)}"></label></section>`;
-    const nm = (s && s.nibp) ? s.nibp.mode : 0;
-    h += '<section class="pnl"><h2>AKS automatinis matavimas</h2><div class="chips">' + [0, 3, 5, 10, 15].map(m => chip('nmode', m, nm === m, m ? 'Kas ' + m + ' min' : 'Rankinis')).join('') + '</div></section>';
+      `<label class="rl">Paciento žymė<input class="inp" data-cfg="pat" maxlength="40" placeholder="pvz. Lova 2 · Karys A" value="${esc(c.pat)}"></label>` +
+      '<p class="muted">Ritmo ir scenarijaus pavadinimai monitoriuje numatytai paslėpti, kad neatskleistų diagnozės; instruktorius juos mato visada.</p>');
   }
-  h += '<section class="pnl"><h2>Pultas (šiame telefone)</h2><p class="lbl">Numatytasis pokytis</p>' + durChips() +
-    '<div class="chips mt">' + tog('ui', 'live', !!UI.live, 'Keisti iš karto (be „Taikyti“)') + tog('ui', 'sl', !!UI.sl, 'Slankikliai') + '</div></section>';
+  h += sec('pul', 'Pultas (šiame telefone)', 'pokytis ' + (DUR.find(x => x[0] === dur) || [0, dur + ' s'])[1].toLowerCase() + (UI.live ? ' · iš karto' : '') + (UI.sl ? ' · slankikliai' : ''),
+    '<p class="lbl mt0">Numatytasis pokytis</p>' + durChips() + '<div class="chips mt">' + tog('ui', 'live', !!UI.live, 'Keisti iš karto (be „Taikyti“)') + tog('ui', 'sl', !!UI.sl, 'Slankikliai') + '</div>');
   if (c) h += '<div class="acts"><button class="btn" data-act="cfg-def">Atkurti numatytuosius nustatymus</button></div>';
   return h;
 }
@@ -445,8 +471,9 @@ function scanBox(id) {
 let hostCode = '', ctrlCode = '';
 function instructor() {
   const on = linkOn();
-  let h = `<div class="bar"><a class="ib" href="#/" aria-label="Atgal">${ICO.back}</a><h1>Instruktorius</h1>${on ? cstHtml() : '<span class="cst" id="cst">○ Neprijungta</span>'}</div>`;
-  if (on) return h + `<div class="rhead">${headHtml()}${tabsHtml()}</div><div id="tabc">${tabBody()}</div>` + `<div class="acts"><button class="btn" data-act="${RTC.open() ? 'rtc-close' : 'rel-stop'}">Atjungti</button></div>`;
+  if (on) return `<div class="rhead"><div class="bar cbar"><a class="ib" href="#/" aria-label="Atgal">${ICO.back}</a><h1 class="vh">Instruktorius</h1>${stripHtml(true)}${cstHtml()}</div><div id="mirror" class="mirw">${mirrorHtml()}</div>${tabsHtml()}</div>` +
+    `<div id="tabc">${tabBody()}</div><div class="acts"><button class="btn" data-act="${RTC.open() ? 'rtc-close' : 'rel-stop'}">Atjungti</button></div>`;
+  let h = `<div class="bar"><a class="ib" href="#/" aria-label="Atgal">${ICO.back}</a><h1>Instruktorius</h1><span class="cst" id="cst">○ Neprijungta</span></div>`;
   h += '<section class="pnl">';
   if (RELAY.role() === 'ctrl') {
     h += `<p class="mt0"><b>Kodas ${fmtRoom(RELAY.room())}</b> – ${relState === 'conn' ? 'jungiamasi prie interneto…' : 'laukiama monitoriaus…'}</p>` +
@@ -522,7 +549,7 @@ setInterval(() => {
   const s = snap();
   const tv = $('#tmrv'); if (tv) tv.textContent = s && s.son ? SIM.mmss(s.el) : '--:--';
   const tb = $('#tmrbig'); if (tb) tb.textContent = s && s.son ? SIM.mmss(s.el) : '00:00';
-  const mv = $('#mutv'); if (mv && s) mv.textContent = s.mute ? SIM.mmss(s.mute * 1000) : '2 min';
+  const mv = $('#mutv'); if (mv && s) mv.textContent = s.mute ? SIM.mmss(s.mute * 1000) : mv.closest('.cbar') ? '' : '2 min';
   const pc = $('#plc'); if (pc) pc.innerHTML = plcTxt(s);
   const cs = $('#cst'); if (cs && r !== 'monitorius') cs.outerHTML = cstHtml();
   if (UI.tab === 'log' && s && !inputBusy() && !(Date.now() - (chartPoint.t || 0) < 15000)) {
@@ -599,11 +626,13 @@ document.addEventListener('click', async e => {
     case 'mac': { const m = MAC.find(x => x[0] === k); if (!m) return; const o = { c: 'apply', v: macro(k, T()), d: dur, mk: m[1] }; if (k === 'stab') o.r = 'sinus'; if (send(o)) toast(m[1] + (dur ? ' – per ' + DUR.find(x => x[0] === dur)[1] : '')); draft = {}; break; }
     case 'rh': send({ c: 'rh', r: k }); break;
     case 'shj': UI.shJ = +k; saveUI(); break;
+    case 'sync': UI.sync = UI.sync ? 0 : 1; saveUI(); break;
     case 'shr': UI.shR = k; saveUI(); break;
     case 'shock': {
       const o = { c: 'shock', j: UI.shJ, r: UI.shR || null }, t = T();
-      if (UI.shR === 'sinus' && (t.hr < 40 || t.sys < 60)) o.v = { hr: 104, spo2: Math.max(92, t.spo2), sys: 96, dia: 60, rr: Math.max(12, t.rr) };
-      if (send(o)) { toast('Iškrova ' + UI.shJ + ' J'); if (navigator.vibrate) navigator.vibrate(80); } break;
+      if (UI.sync) { o.sync = 1; if (s && ['vf', 'asys', 'pea'].indexOf(s.rhythm) >= 0) { toast('Sinchronizuota iškrova neįvyksta – nėra R bangų'); return; } if (UI.shR === 'sinus' && t.hr > 120) o.v = { hr: 96 }; }
+      else if (UI.shR === 'sinus' && (t.hr < 40 || t.sys < 60)) o.v = { hr: 104, spo2: Math.max(92, t.spo2), sys: 96, dia: 60, rr: Math.max(12, t.rr) };
+      if (send(o)) { toast((UI.sync ? 'Kardioversija ' : 'Iškrova ') + UI.shJ + ' J'); if (navigator.vibrate) navigator.vibrate(80); } break;
     }
     case 'probe': send({ c: 'probe', k, on: !(s && s.probe[k]) }); break;
     case 'art': send({ c: 'art', k, on: !(s && s.art && s.art[k]) }); break;
@@ -616,7 +645,7 @@ document.addEventListener('click', async e => {
     case 'pace-m': { const p = (s && s.pace) || { ma: 70 }; send({ c: 'pace', ma: p.ma + (+k) }); break; }
     case 'mark': if (send({ c: 'mark', x: k })) toast('Pažymėta: ' + k); if (navigator.vibrate) navigator.vibrate(20); return;
     case 'mark-c': { const x = (($('#markx') || {}).value || '').trim(); if (!x) { toast('Įrašykite veiksmą'); return; } if (send({ c: 'mark', x })) { toast('Pažymėta: ' + x); markTxt = ''; } break; }
-    case 'reset': if (!confirm('Atstatyti normalius rodiklius?')) return; send({ c: 'reset' }); draft = {}; break;
+    case 'reset': if (!confirm('Atkurti normalius rodiklius, jutiklius ir artefaktus?')) return; send({ c: 'reset' }); draft = {}; break;
     case 'ses-start': send({ c: 'ses', a: 'start' }); break;
     case 'ses-new': if (!confirm('Pradėti naują sesiją? Žurnalas ir grafikas bus išvalyti.')) return; send({ c: 'ses', a: 'new' }); remoteDump = null; break;
     case 'log-copy': case 'log-share': {
@@ -634,6 +663,8 @@ document.addEventListener('click', async e => {
     case 'fav-edit': UI.favEdit = UI.favEdit ? 0 : 1; saveUI(); break;
     case 'sc-list': scenList = true; break;
     case 'sc-close': scenList = false; break;
+    case 'sc-src': UI.ssrc = k; UI.stema = ''; saveUI(); break;
+    case 'sc-tema': UI.stema = k; saveUI(); break;
     case 'sc-none': scen = null; LSs('sim-scen', null); send({ c: 'label', l: '', s: '' }); break;
     case 'sc-pick': { const [src, id] = k.split('|'); scen = { src, id }; LSs('sim-scen', scen); scenList = false; const sc = findScen(); if (sc) { const p = stageCmd(sc, 0, 0, false); p.r = p.r || 'sinus'; send(p); toast(sc.st[0].n + ' – nustatyta'); } draft = {}; break; }
     case 'sc-st': case 'sc-next': case 'sc-prev': {
@@ -644,7 +675,13 @@ document.addEventListener('click', async e => {
     }
     case 'sc-auto': send({ c: 'play', auto: !(s && s.pl && s.pl.auto) }); break;
     case 'sc-used': send({ c: 'play', useD: !(s && s.pl && s.pl.useD) }); break;
-    case 'sc-ev': { const sc = curScen(s); const ev = sc && sc.ev && sc.ev[+k]; if (!ev) return; if (ev.st != null && sc.st[ev.st]) { const p = stageCmd(sc, +ev.st, dur, s && s.pl && s.pl.useD); p.ev = ev.n; send(p); } else send({ c: 'mark', x: ev.n }); toast(ev.n); draft = {}; break; }
+    case 'sc-ev': {
+      const sc = curScen(s); const ev = sc && sc.ev && sc.ev[+k]; if (!ev) return;
+      const p = ev.st != null && sc.st[ev.st] ? stageCmd(sc, +ev.st, dur, s && s.pl && s.pl.useD) : null;
+      if (ev.shock) send({ c: 'shock', j: UI.shJ, r: p && p.r ? p.r : null });
+      if (p) { p.ev = ev.n; send(p); } else send({ c: 'mark', x: ev.n });
+      toast(ev.n); draft = {}; break;
+    }
     case 'cfg': { const [ck, cv] = k.split(':'); send({ c: 'cfg', v: { [ck]: ck === 'scheme' ? cv : +cv } }); break; }
     case 'cfgt': { const c = (tgt() === 'local' ? SIM.cfg() : s && s.cfg) || {}; if (k.startsWith('show.')) { const sk = k.slice(5); send({ c: 'cfg', v: { show: { [sk]: !(c.show && c.show[sk]) } } }); } else send({ c: 'cfg', v: { [k]: !c[k] } }); break; }
     case 'lim-def': send({ c: 'cfg', v: { lim: 'def' } }); toast('Numatytosios aliarmų ribos'); break;
@@ -653,9 +690,9 @@ document.addEventListener('click', async e => {
     case 'ui': UI[k] = UI[k] ? 0 : 1; saveUI(); break;
     case 'rel-host': RTC.close(); hostCode = ''; LSs('sim-room-host', RELAY.host()); break;
     case 'rel-join': { const c = RELAY.norm(($('#room') || {}).value); if (!RELAY.valid(c)) { toast('Kodas – 6 raidės ar skaitmenys'); return; } RTC.close(); ctrlCode = ''; RELAY.join(c); LSs('sim-room-ctrl', c); render(); return; }
-    case 'rel-stop': RELAY.stop(); LSs(isHostRoute() ? 'sim-room-host' : 'sim-room-ctrl', ''); if (route() === 'instruktorius') { remoteSnap = null; remoteDump = null; render(); return; } break;
+    case 'rel-stop': if (linkOn() && !confirm('Atjungti nuotolinį ryšį?')) return; RELAY.stop(); LSs(isHostRoute() ? 'sim-room-host' : 'sim-room-ctrl', ''); if (route() === 'instruktorius') { remoteSnap = null; remoteDump = null; render(); return; } break;
     case 'rtc-host': RELAY.stop(); LSs('sim-room-host', ''); try { el.disabled = true; el.textContent = 'Ruošiama…'; hostCode = await RTC.host(); } catch (x) { toast('Nepavyko: ' + (x.message || x)); } break;
-    case 'rtc-close': RTC.close(); hostCode = ''; ctrlCode = ''; render(); return;
+    case 'rtc-close': if (linkOn() && !confirm('Atjungti nuotolinį ryšį?')) return; RTC.close(); hostCode = ''; ctrlCode = ''; render(); return;
     case 'copy': toast(await copyText(k) ? 'Nukopijuota' : 'Nepavyko nukopijuoti – pažymėkite tekstą'); return;
     case 'paste': { const v = (document.getElementById('paste-' + k) || {}).value || ''; if (v.trim()) onCode(k, v.trim()); return; }
     case 'scan': { const box = document.getElementById('cam-' + k); if (!box) return; box.hidden = false; const stEl = box.querySelector('.camst'); RTC.scan(box.querySelector('video'), code => { box.hidden = true; onCode(k, code); }, msg => { stEl.textContent = msg; }); return; }
@@ -689,6 +726,7 @@ document.addEventListener('change', e => {
   }
   if (t.dataset && t.dataset.cfg === 'pat') { send({ c: 'cfg', v: { pat: t.value } }); return; }
 });
+document.addEventListener('toggle', e => { const d = e.target; if (d && d.classList && d.classList.contains('sec')) { UI.so[d.dataset.sec] = d.open ? 1 : 0; saveUI(); } }, true);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { const d = $('#drawer.on'); if (d) d.classList.remove('on'); const al = $('#alist'); if (al) al.hidden = true; }
   if (e.key === 'Enter' && e.target.id === 'markx') { const b = document.querySelector('[data-act="mark-c"]'); if (b) b.click(); }

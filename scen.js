@@ -2,7 +2,7 @@
 // ───────── SIM – įtaisyti treniruočių scenarijai (kariniai) ─────────
 // Etapas: n – pavadinimas, v – tikslinės monitoriaus reikšmės (hr, spo2, sys, dia, rr, temp, r – ritmas), p – pastaba instruktoriui,
 // d – sek. pasiekti etapą iš ankstesnio (trendo trukmė), auto – sek. iki automatinio kito etapo, jei negydoma (kitas = i+1, arba nx, jei nurodyta).
-// ev – instruktoriaus veiksmai: { n, st – etapo indeksas }. sal / url – pagrindinis viešas šaltinis (išsamiau: scen-saltiniai.md).
+// ev – instruktoriaus veiksmai: { n, st – etapo indeksas, shock – prieš tai iškrova }. sal / url – pagrindinis viešas šaltinis (išsamiau: scen-saltiniai.md).
 // Reikšmės – mokymo tikslams, išvestos iš viešų šaltinių (ATLS, JTS/TCCC, ERC, tyrimai); laikas daug kur suspaustas (pažymėta „⏱“). Tai ne klinikinės gairės.
 window.SIMS = [
   { id: 'hem', pav: 'Hemoraginis šokas I→IV kl. – šlaunies skeveldra', tema: 'C', sal: 'ATLS šoko klasės (8–9 leid.); Schiller/Convertino 2017 (LBNP)', url: 'https://www.ebm-journal.org/journals/experimental-biology-and-medicine/articles/10.1177/1535370217694099/full',
@@ -143,7 +143,7 @@ window.SIMS = [
   { id: 'brn', pav: 'Nudegimai 40 % + įkvėpimo trauma (val. suspaustos)', tema: 'E', sal: 'JTS Burn Resuscitation Flowsheet (2025); JTS Burn CPG', url: 'https://jts.health.mil/assets/docs/forms/JTS_Burn_Resuscitation_Flowchart.pdf',
     aprasas: 'Šarvuočio gaisras, 40 % KPP, suodžiai, užkimimas. Per valandas – nudegimų šokas ir kvėpavimo takų edema; laikas suspaustas (1 etapas ≈ 1–2 val.).',
     st: [
-      { n: 'Po 15 min', v: { hr: 118, spo2: 95, sys: 132, dia: 84, rr: 24, temp: 36.4, r: 'sinus' }, p: 'Skausmas, tachikardija, AKS dar normalus. Apdegę antakiai, suodžiai – planuoti ankstyvą intubaciją.', d: 0, auto: 180 },
+      { n: 'Po 15 min', v: { hr: 118, spo2: 95, sys: 132, dia: 84, rr: 24, temp: 36.4, r: 'sinus' }, p: 'Skausmas, tachikardija, AKS dar normalus. Apdegę antakiai, suodžiai – planuoti ankstyvą intubaciją. SpO₂ gali būti klaidingai normali apsinuodijus CO (pulsoksimetras neskiria karboksihemoglobino).', d: 0, auto: 180 },
       { n: 'Po 1–2 val.', v: { hr: 128, spo2: 92, sys: 118, dia: 76, rr: 28, temp: 35.9, r: 'sinus' }, p: 'Užkimimas stiprėja. Laukiama: RL 40 × 10 = 400 ml/val. („dešimties taisyklė“, 40–80 kg), šildymas.', d: 180, auto: 180 },
       { n: 'Po 4–6 val. be skysčių', v: { hr: 142, spo2: 86, sys: 88, dia: 58, rr: 34, temp: 35.3, r: 'sinus' }, p: 'Nudegimų šokas: diurezė <30 ml/val., stridoras. ⏱ Suspausta.', d: 180, auto: 180 },
       { n: 'Kvėpavimo takų obstrukcija', v: { hr: 150, spo2: 74, sys: 80, dia: 52, rr: 40, temp: 35.0, r: 'sinus' }, p: 'Edema – intubacija nebeįmanoma: krikotirotomija.', d: 120 },
@@ -180,7 +180,7 @@ window.SIMS = [
       { n: 'Para 2 – rytas', v: { hr: 108, spo2: 95, sys: 112, dia: 66, rr: 22, temp: 38.6, r: 'sinus' }, p: 'Žaizda parausta, pūliuoja. KD 22 – jau 1 qSOFA kriterijus.', d: 0, auto: 300 },
       { n: 'Sepsis (qSOFA ≥2)', v: { hr: 122, spo2: 93, sys: 96, dia: 52, rr: 26, temp: 39.4, r: 'sinus' }, p: 'Sumišęs, diurezė mažėja. Laukiama: antibiotikai per 1 val., žaizdos revizija, telekonsultacija. ⏱ ~6–12 val. suspausta.', d: 240, auto: 300 },
       { n: 'Septinis šokas', v: { hr: 136, spo2: 90, sys: 78, dia: 40, rr: 30, temp: 39.8, r: 'sinus' }, p: 'VAS ~53. Skysčiai (iki 30 ml/kg), vazopresorius iki VAS ≥65 (SSC 2021).', d: 240, auto: 300 },
-      { n: 'Refrakterinis šokas', v: { hr: 148, spo2: 86, sys: 66, dia: 34, rr: 34, temp: 35.8, r: 'sinus' }, p: 'Hipotermija – blogas prognozinis požymis. Evakuacijos prioritetas – urgentinis.', d: 240 },
+      { n: 'Refrakterinis šokas', v: { hr: 148, spo2: 86, sys: 66, dia: 34, rr: 34, temp: 37.5, r: 'sinus' }, p: 'Temperatūra krenta – blogas prognozinis požymis (gali pereiti į hipotermiją). Evakuacijos prioritetas – urgentinis.', d: 240 },
       { n: 'Antibiotikai + skysčiai', v: { hr: 112, spo2: 95, sys: 102, dia: 58, rr: 22, temp: 38.4, r: 'sinus' }, p: 'VAS ~73. Stebėti kas 15–30 min, diurezę.', d: 300 }
     ],
     ev: [{ n: 'Antibiotikai + skysčiai (+ vazopresorius)', st: 4 }] },
@@ -190,12 +190,12 @@ window.SIMS = [
     st: [
       { n: 'Prispaustas', v: { hr: 104, spo2: 96, sys: 122, dia: 78, rr: 22, temp: 35.8, r: 'sinus' }, p: 'Prieš išlaisvinimą: IV/IO, 2 l kristaloidų bolusas, paruošti Ca gliukonatą.', d: 0 },
       { n: 'Išlaisvintas – reperfuzija', v: { hr: 120, spo2: 95, sys: 92, dia: 58, rr: 24, temp: 35.8, r: 'sinus' }, p: 'Skystis „išteka“ į galūnę, K⁺ patenka į kraujotaką.', d: 30, auto: 60 },
-      { n: 'Hiperkalemija – bradikardija', v: { hr: 44, spo2: 94, sys: 78, dia: 46, rr: 22, temp: 35.8, r: 'sinus' }, p: 'EKG: smailūs T, ilgas PR, platėjantys QRS, VES (JTS). Laukiama: Ca gliukonatas 10 % 10 ml per 2–3 min, insulinas + gliukozė, salbutamolis.', d: 45, auto: 60 },
+      { n: 'Hiperkalemija – bradikardija', v: { hr: 44, spo2: 94, sys: 78, dia: 46, rr: 22, temp: 35.8, r: 'hyk' }, p: 'Monitoriuje: bradikardija, P bangų nebėra, platūs QRS, aukšti smailūs T (hiperkalemija, JTS). Laukiama: Ca gliukonatas 10 % 10 ml per 2–3 min, insulinas + gliukozė, salbutamolis.', d: 45, auto: 60 },
       { n: 'Skilvelinė tachikardija', v: { hr: 170, spo2: 90, sys: 70, dia: 40, rr: 24, temp: 35.8, r: 'vt' }, p: 'Plačių kompleksų tachikardija.', d: 20, auto: 45 },
       { n: 'VF', v: { hr: 0, spo2: 80, sys: 0, dia: 0, rr: 0, temp: 35.8, r: 'vf' }, p: 'Defibriliacija + Ca IV + hiperkalemijos gydymas.', d: 15 },
       { n: 'Po Ca + insulino/gliukozės', v: { hr: 92, spo2: 96, sys: 108, dia: 66, rr: 20, temp: 35.9, r: 'sinus' }, p: 'Ca veikia iš karto, 30–60 min; insulinas – po ~20 min, 4–6 val. Gali tekti kartoti. Diurezė 100–200 ml/val.', d: 60 }
     ],
-    ev: [{ n: 'Išlaisvinimas', st: 1 }, { n: 'Ca gliukonatas + insulinas/gliukozė', st: 5 }, { n: 'Defibriliacija + Ca', st: 5 }] },
+    ev: [{ n: 'Išlaisvinimas', st: 1 }, { n: 'Ca gliukonatas + insulinas/gliukozė', st: 5 }, { n: 'Defibriliacija + Ca', st: 5, shock: true }] },
 
   { id: 'ehs', pav: 'Šilumos smūgis – žygis su apranga', tema: 'E', sal: 'WikEM „Heat stroke“ (šaltinis – ACSM/CHAMP); Korey Stringer Institute', url: 'https://wikem.org/wiki/Heat_Stroke',
     aprasas: 'Karys sukniubo 12 km žygio pabaigoje karštą dieną. Temperatūra >40 °C + CNS sutrikimas; šaldymas vandenyje ~0,2 °C/min – vienintelis lemiamas veiksmas.',
@@ -229,7 +229,7 @@ window.SIMS = [
       { n: 'Po defibriliacijos – ROSC', v: { hr: 112, spo2: 92, sys: 98, dia: 60, rr: 10, temp: 36.4, r: 'sinus' }, p: 'Grįžo savaiminė kraujotaka. Ventiliacija, 12 der. EKG, ieškoti nudegimų (įėjimo/išėjimo).', d: 20 },
       { n: 'Stabilizuotas', v: { hr: 96, spo2: 97, sys: 118, dia: 72, rr: 14, temp: 36.4, r: 'sinus' }, p: 'Monitoruoti – galimos vėlyvos aritmijos (rizika maža po 24–48 val.).', d: 120 }
     ],
-    ev: [{ n: 'Defibriliacija + KPR', st: 2 }] },
+    ev: [{ n: 'Defibriliacija + KPR', st: 2, shock: true }] },
 
   { id: 'tca', pav: 'Trauminis sustojimas – BEA (HOTT)', tema: 'C', sal: 'JK GM CGO „Traumatic Cardiac Arrest“; FPHC RCSEd 2024', url: 'https://cgo.mod.uk/clinical-guidelines-for-operations/resuscitation-guidelines/traumatic-cardiac-arrest/',
     aprasas: 'Sprogimas: kojų amputacijos ir krūtinės sužalojimas. Mokoma HOTT sekos: kraujavimas → kvėpavimo takai → abipusė torakostomija → kraujas; paspaudimai – antraeiliai.',
