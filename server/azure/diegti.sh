@@ -2,13 +2,17 @@
 # SIM Pulse serverio diegimas į Azure Container Apps. Paleisti Azure Cloud Shell (Bash) – nieko diegti kompiuteryje nereikia:
 #   git clone https://github.com/mpabadmin/sim-gidas && bash sim-gidas/server/azure/diegti.sh
 # Pakartotinis paleidimas atnaujina serverį (nauja versija) ir išsaugo tą patį adresą bei žetoną.
-# Nustatymai (nebūtina): LOC=westeurope CPU=1 MEM=2Gi MIN=0 DOCKERFILE=Dockerfile bash diegti.sh
+# Nustatymai (nebūtina): LOC=swedencentral CPU=1 MEM=2Gi MIN=0 DOCKERFILE=Dockerfile bash diegti.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."            # server/
 CFG="$HOME/.sim-pulse.env"
+LOC_ARG=${LOC:-}
 [ -f "$CFG" ] && . "$CFG"
+[ -n "$LOC_ARG" ] && LOC=$LOC_ARG          # komandinėje eilutėje nurodytas regionas svarbiau už išsaugotą
 RG=${RG:-sim-pulse-rg}
-LOC=${LOC:-westeurope}
+LOC=${LOC:-swedencentral}
+# regionai, bandomi iš eilės, jei pasirinktas nepriima naujų išteklių (dažna rėmimo / ne pelno prenumeratose)
+REGIONS="$LOC swedencentral northeurope germanywestcentral polandcentral francecentral uksouth westeurope norwayeast"
 APP=${APP:-sim-pulse}
 ENVN=${ENVN:-sim-pulse-env}
 ACR=${ACR:-simpulse$(openssl rand -hex 3)}
@@ -24,11 +28,27 @@ say "1/6 Azure plėtiniai ir paslaugų registracija (pirmą kartą – kelios mi
 az extension add --name containerapp --upgrade -y --only-show-errors >/dev/null
 for p in Microsoft.App Microsoft.OperationalInsights Microsoft.ContainerRegistry; do az provider register -n "$p" --wait --only-show-errors; done
 
-say "2/6 Išteklių grupė $RG ($LOC)"
-az group create -n "$RG" -l "$LOC" --only-show-errors -o none
+say "2/6 Išteklių grupė $RG"
+az group show -n "$RG" -o none 2>/dev/null || az group create -n "$RG" -l "$LOC" --only-show-errors -o none
+
+# bando sukurti išteklių kiekviename regione, kol pavyksta; $1 – pavadinimas, toliau – komanda be -l
+try_regions() {
+  local what=$1; shift
+  for r in $REGIONS; do
+    echo "   bandomas regionas: $r"
+    if OUT=$("$@" -l "$r" --only-show-errors -o none 2>&1); then LOC=$r; echo "   ✓ $r"; return 0; fi
+    if echo "$OUT" | grep -qiE 'RequestDisallowedByAzure|not accepting|LocationNotAvailable|NoRegisteredProviderFound|not available|RequestDisallowedByPolicy|SkuNotAvailable|LocationIsOfferRestricted'; then
+      echo "   ✕ $r nepriima ($what)"; continue
+    fi
+    echo "$OUT"; return 1
+  done
+  echo "Nė vienas regionas nepriėmė: $what. Patikrinkite prenumeratos apribojimus (https://aka.ms/locationineligible)."; return 1
+}
 
 say "3/6 Konteinerių registras $ACR"
-az acr show -n "$ACR" -g "$RG" -o none 2>/dev/null || az acr create -n "$ACR" -g "$RG" --sku Basic --admin-enabled true --only-show-errors -o none
+if ! az acr show -n "$ACR" -g "$RG" -o none 2>/dev/null; then
+  try_regions "konteinerių registras" az acr create -n "$ACR" -g "$RG" --sku Basic --admin-enabled true
+fi
 
 say "4/6 Statomas atvaizdas Azure debesyje ($DOCKERFILE) – 5–15 min. (Pulse atvaizdas ~1,3 GB)"
 TAG="v$(date +%Y%m%d%H%M)"
@@ -38,7 +58,9 @@ USR=$(az acr credential show -n "$ACR" --query username -o tsv)
 PWD_ACR=$(az acr credential show -n "$ACR" --query 'passwords[0].value' -o tsv)
 
 say "5/6 Container Apps aplinka ir programa $APP"
-az containerapp env show -n "$ENVN" -g "$RG" -o none 2>/dev/null || az containerapp env create -n "$ENVN" -g "$RG" -l "$LOC" --only-show-errors -o none
+if ! az containerapp env show -n "$ENVN" -g "$RG" -o none 2>/dev/null; then
+  try_regions "Container Apps aplinka" az containerapp env create -n "$ENVN" -g "$RG"
+fi
 if az containerapp show -n "$APP" -g "$RG" -o none 2>/dev/null; then
   az containerapp secret set -n "$APP" -g "$RG" --secrets "simtoken=$TOKEN" -o none
   az containerapp update -n "$APP" -g "$RG" --image "$IMG" --cpu "$CPU" --memory "$MEM" --min-replicas "$MIN" --max-replicas 1 \
@@ -49,6 +71,7 @@ else
      --target-port 8080 --ingress external --transport auto --cpu "$CPU" --memory "$MEM" \
      --min-replicas "$MIN" --max-replicas 1 --secrets "simtoken=$TOKEN" --env-vars "SIM_TOKEN=secretref:simtoken" "MAX_SESSIONS=3" -o none
 fi
+printf 'RG=%s\nLOC=%s\nAPP=%s\nENVN=%s\nACR=%s\nTOKEN=%s\n' "$RG" "$LOC" "$APP" "$ENVN" "$ACR" "$TOKEN" > "$CFG"
 FQDN=$(az containerapp show -n "$APP" -g "$RG" --query properties.configuration.ingress.fqdn -o tsv)
 
 say "6/6 Tikrinama (pirmas paleidimas gali užtrukti 1–3 min.)"
