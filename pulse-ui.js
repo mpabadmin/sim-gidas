@@ -165,7 +165,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
     const txa = PSCEN.drugT(sc, 'txa'), bleeding = sc.inj.some(j => j.k === 'bleed' || j.k === 'htx');
     if (txa != null) C.push(`<span class="pxchip">TXA ✓ prieš ${Math.round((t - txa) / 60)} min</span>`);
     else if (bleeding && t < 10800) { const r1 = sc.set === 'role1' && t < 5400, lim = r1 ? 5400 : 10800; C.push(`<span class="pxchip amb">TXA liko ${Math.round((lim - t) / 60)} min (${r1 ? 'ETC ≤ 90 min' : '≤ 3 val.'})</span>`); }
-    (sc.inf || []).forEach(f => { const left = f.tot - Math.max(0, t - f.t0); if (left > 0) C.push(`<span class="pxchip blu">${E(f.n.replace('Pilnas kraujas', 'Kraujas'))} · ${T(left)}</span>`); });
+    (sc.inf || []).forEach(f => { const left = f.tot - Math.max(0, t - f.t0); if (left > 0) C.push(`<span class="pxchip blu">${E(f.n.replace('Pilnas kraujas', 'Kraujas'))} · liko ${Math.ceil(left / 60)} min</span>`); });
     if (sc.kit) C.push(`<span class="pxchip">Kraujo liko ${Math.max(0, sc.kit.max - Math.ceil(sc.kit.used))}/${sc.kit.max}</span>`);
     if (sc.o2) C.push(`<span class="pxchip blu">O₂ ${sc.o2.flow} l/min</span>`);
     const bu = (sc.log || []).filter(l => l.code === 'fluid' && /Blood|PackedRBC|Plasma/.test(l.cmp || '')).length, ca = (sc.log || []).filter(l => l.code === 'drug' && l.id === 'ca').length;
