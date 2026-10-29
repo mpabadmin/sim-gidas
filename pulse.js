@@ -73,12 +73,10 @@ const PULSE = (() => {
       case 'vit': {
         simt = +m.simt || simt; if (m.speed) speed = m.speed; skipLeft = m.skip || 0; alive = m.alive !== false; lastV = m.v || lastV;
         applyVitals(m.v || {}, alive);
+        if (SC) { if (!SC.vh) SC.vh = []; const lh = SC.vh[SC.vh.length - 1], vv = m.v || {}; if (vv.hr != null && (!lh || simt - lh[0] >= 30)) { SC.vh.push([Math.round(simt), vv.hr, vv.sys, vv.spo2, vv.rr, vv.temp]); if (SC.vh.length > 600) SC.vh.shift(); } }
         if (SC && SC.prep) { if (!m.skip) prepTick(); onChange(); break; }
         if (SC) {
           scenTick(m.v || {});
-          if (!SC.vh) SC.vh = [];
-          const lh = SC.vh[SC.vh.length - 1], vv = m.v || {};
-          if (!lh || simt - lh[0] >= 30) { SC.vh.push([Math.round(simt), vv.hr, vv.sys, vv.spo2, vv.rr, vv.temp]); if (SC.vh.length > 600) SC.vh.shift(); }
           SC.inf = SC.inf.filter(a => simt - a.t0 < a.tot + 20);
           const v = m.v || {};
           if (SC.bv0 == null && v.bv) SC.bv0 = v.bv;
@@ -158,6 +156,7 @@ const PULSE = (() => {
         if (o.a === 'tube' || o.a === 'htube') SC.inj.filter(x => x !== j && x.side === j.side && ['ptx', 'optx', 'htx'].indexOf(x.k) >= 0 && x.state !== 'drained').forEach(x => {
           const B = PCAT.cardActions(x, SC.set).find(y => y[0] === 'tube' || y[0] === 'htube'); if (!B) return;
           (B[3] || []).forEach(a => pa(a, B[1] + ' – ' + PCAT.injName(x).name, by)); x.state = 'drained'; if (x.ctl == null) x.ctl = simt; hpush(x, B[1]);
+          rec(B[1] + ' – ' + PCAT.injName(x).name + ' (tas pats drenas)', by, { iid: x.id, a: B[0] });
         });
         break;
       }

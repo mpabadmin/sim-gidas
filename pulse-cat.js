@@ -87,14 +87,14 @@ const PCAT = (() => {
       if (j.state !== 'bleeding' && j.state !== 'rebleed' && j.state !== 'tq_loose' && g === 'torso') A.push(['rebleed', 'Vėl kraujuoja', 'rebleed', [on], 'instr', '']);
     }
     if (j.k === 'ptx' || j.k === 'optx') {
-      if (j.state === 'active' || j.state === 'retension') {
-        A.push(['ndc', 'Adatinė dekompresija', 'decomp', [{ k: 'ndc', side: j.side }], 'team', '1–2 min']);
-        A.push(['fthor', 'Pirštinė torakostomija', 'decomp', [{ k: 'ndc', side: j.side, fthor: 1 }], 'team', '2–3 min']);
+      if (j.state === 'active' || j.state === 'retension' || j.state === 'decomp') {
+        A.push(['ndc', j.state === 'decomp' ? 'Pakartotinė adatinė dekompresija' : 'Adatinė dekompresija', 'decomp', [{ k: 'ndc', side: j.side }], 'team', '1–2 min']);
+        A.push(['fthor', 'Pirštinė torakostomija', 'thor', [{ k: 'ndc', side: j.side, fthor: 1 }], 'team', '2–3 min']);
         if (j.k === 'optx') A.push(['occl', 'Okliuzinis tvarstis (krūtinės lipdukas)', j.k === 'optx' ? 'occl' : j.state, [{ k: 'occl', side: j.side }], 'team', '30–60 s']);
         if (j.k === 'ptx' && j.wound && !j.sealed) A.push(['seal', 'Krūtinės lipdukas (žaizda)', j.state, [], 'team', '30–60 s']);
         if (j.k === 'ptx' && j.wound && j.sealed) A.push(['burp', 'Atpūsti lipduką', j.state, [], 'team', '10 s']);
       }
-      if (j.state === 'decomp' || j.state === 'occl') A.push(['retens', 'Vėl įsitempė', 'retension', [{ k: 'tpx', side: j.side, sev: j.sev, open: false }], 'instr', '']);
+      if (j.state === 'decomp' || j.state === 'occl' || j.state === 'thor') A.push(['retens', 'Vėl įsitempė', 'retension', [{ k: 'tpx', side: j.side, sev: j.sev, open: false }], 'instr', '']);
       if (j.state !== 'drained') A.push(['tube', 'Krūtinės drenas', 'drained', [{ k: 'ndc', side: j.side }], 'team', '10–15 min']);
     }
     if (j.k === 'htx' && j.state !== 'drained') A.push(['htube', 'Krūtinės drenas', 'drained', [{ k: 'tube', side: j.side }, { k: 'htx', side: j.side, sev: 0 }], 'team', '10–15 min']);
@@ -117,7 +117,7 @@ const PCAT = (() => {
     return A;
   }
   const STATES = { bleeding: 'Kraujuoja', rebleed: 'Vėl kraujuoja', tq: 'Turniketas užveržtas', tq_loose: 'Turniketas atsileidęs – kraujuoja', packed: 'Tamponuota', pdress: 'Spaudžiamasis tvarstis', stopped: 'Sustabdyta',
-    active: 'Negydyta', retension: 'Vėl įsitempęs', decomp: 'Dekompresuota', occl: 'Okliuzinis tvarstis', drained: 'Drenuota', partial: 'Iš dalies atverta', secured: 'Kvėpavimo takai užtikrinti' };
+    active: 'Negydyta', retension: 'Vėl įsitempęs', decomp: 'Dekompresuota (adata)', thor: 'Pirštinė torakostomija – reikia dreno', occl: 'Okliuzinis tvarstis', drained: 'Drenuota', partial: 'Iš dalies atverta', secured: 'Kvėpavimo takai užtikrinti' };
   const BAD = ['bleeding', 'rebleed', 'tq_loose', 'active', 'retension'];
   // ── gydymas (MARCH-PAWS) – bendri veiksmai (vietiniai – ant sužalojimo kortelės) ──
   // [kodas, pavadinimas, lapas (o2|fluid|drug:<id>|null), trukmė, tipas (log|o2off|probe:…), aplinkos ('' – abi)]
@@ -125,7 +125,7 @@ const PCAT = (() => {
     ['M', 'Masyvus kraujavimas', [
       ['sweep', 'Kraujo paieška (rankomis per galūnes, kirkšnis, pažastis)', null, '1 min', 'log', ''],
       ['tqchk', 'Turniketų / tamponavimo patikra', null, '1 min', 'log', ''],
-      ['txa', 'TXA 2 g IV/IO', 'drug:txa', '10 min', '', ''],
+      ['txa', 'TXA 2 g IV/IO', 'drug:txa', '~20 min (≤ 1 ml/min)', '', ''],
       ['pelvic', 'Dubens diržas', null, '2 min', 'log', '']
     ]],
     ['A', 'Kvėpavimo takai', [
@@ -135,6 +135,7 @@ const PCAT = (() => {
     ['R', 'Kvėpavimas', [
       ['o2', 'Deguonis', 'o2', '1 min', '', ''],
       ['o2off', 'Deguonis nuimtas', null, '', 'o2off', ''],
+      ['bilat', 'Abipusė dekompresija (trauminis sustojimas)', null, '2 min', 'log', ''],
       ['bvm', 'Ventiliacija maišu (BVM)', null, 'nuolat', 'log', ''],
       ['vent', 'Dirbtinė plaučių ventiliacija (ventiliatorius)', null, '', 'log', 'role1']
     ]],

@@ -54,7 +54,7 @@ const PLOCAL = (() => {
       }
       case 'ndc': {   // adatinė dekompresija; fthor – pirštinė torakostomija (išlieka atvira)
         const P = E.ptx[side]; if (!P) return [true, 'pneumotorakso nėra – modelis nesikeičia'];
-        if (a.fthor) { P.idx = 0; P.rate = 0; P.open = false; }
+        if (a.fthor) { P.idx = 0; P.rate = 0; P.open = true; P.thor = true; }   // atvira krūtinė iki dreno
         else { P.idx = Math.min(P.idx, 0.1); P.rate = (P.sev || 0.45) / 40; P.ndc = (P.ndc || 0) + 1; }
         return [true, ''];
       }
@@ -83,7 +83,7 @@ const PLOCAL = (() => {
         const id = a.id, mg = +a.mg || 0;
         if (DRUG[id]) E.drugs.push([id, E.t, mg]);
         if (id === 'esket') E.drugs.push(['ket', E.t, mg * 2]);
-        if (id === 'ket' && mg / E.kg >= 0.9) E.ind = E.t;                 // indukcijos / sedacijos dozė
+        if (id === 'ket' && mg / E.kg >= 0.4) { E.ind = E.t; E.indK = Math.min(2, mg / E.kg); }   // sedacijos / indukcijos dozė (0,5–2 mg/kg)
         if (id === 'roc') E.para = E.t + 45 * 60;                         // paralyžius ~45 min
         if (id === 'hts' || id === 'man') E.tbi = Math.max(0, E.tbi - 0.25);
         return [true, ''];
@@ -140,10 +140,10 @@ const PLOCAL = (() => {
     const cause = d > 0.52 || E.pT > 180 || E.sT > 120 || E.effV > 350 || (V.sys < 35 && !E.arrest);
     if (!E.arrest && cause) E.arrest = { t0: E.t, forced: '' };
     if (E.arrest && !E.arrest.forced) {
-      const ok = d < 0.45 && p < 0.3 && V._spo2t > 80 && E.effV < 200;
+      const ok = d < 0.45 && p < 0.3 && V._spo2ok > 80 && E.effV < 200 && (E.vent || E.secured);   // HOTT: kraujavimas, tūris, dekompresija, ventiliacija
       E.rT = ok ? E.rT + dt : 0;
       if (E.rT > 60) { E.arrest = null; E.rT = 0; E.pT = 0; E.sT = 0; }          // priežastys pašalintos (HOTT) – ROSC
-      else if (E.t - E.arrest.t0 > 600) E.alive = false;                      // > 10 min be ROSC – negrįžtama
+      else if (E.t - E.arrest.t0 > 1200) E.alive = false;                     // > 20 min be ROSC – negrįžtama (CGO: sprendimas ~20 min)
     }
   }
   function vitals(E, internal) {
@@ -159,7 +159,7 @@ const PLOCAL = (() => {
     const anal = Math.min(1, ket + 0.8 * opi);
     hr += 12 * E.pain * (1 - anal); sys += 10 * E.pain * (1 - anal); rr += 4 * E.pain * (1 - anal);
     rr += 12 * E.bronch;
-    if (E.ind && E.t - E.ind < 600 && d > 0.25) { const f = Math.exp(-(E.t - E.ind) / 300); sys -= 20 * f; dia -= 12 * f; }   // indukcija šoke – hipotenzija
+    if (E.ind && E.t - E.ind < 600 && d > 0.25) { const f = Math.exp(-(E.t - E.ind) / 300) * (E.indK || 1); sys -= 20 * f; dia -= 12 * f; }   // indukcija šoke – hipotenzija
     else { hr += 8 * Math.min(1.5, ket); sys += 8 * Math.min(1.5, ket); }
     hr += 35 * epi; sys += 35 * epi;
     rr -= 5 * opi + 2 * mid; sys -= (5 + 10 * d) * opi + 6 * mid;
@@ -176,13 +176,14 @@ const PLOCAL = (() => {
     let st = 98 - 20 * Math.min(1, p) - Math.min(20, htxV / 100) - 50 * aw - 25 * E.bronch - (opi > 1.5 ? 8 * (opi - 1.5) : 0) - (d > 0.4 ? 3 + 10 * (d - 0.4) : 0) - (rr > 0 && rr < 8 ? (8 - rr) * 4 : 0) + o2b * (1 - 0.4 * Math.min(1, p));
     if (apnea) st = 40;
     st = clamp(st, 30, 100);
+    const st0 = st;
     if (E.spo2 < 70 && !E.arrest) hr -= Math.min(50, (70 - E.spo2) * 2);   // hipoksinė bradikardija
     let out;
     if (!E.alive) out = { hr: 0, sys: 0, dia: 0, map: 0, spo2: null, rr: 0 };
     else if (E.arrest) {
       const at = E.t - E.arrest.t0;
-      if (E.arrest.forced === 'vf' || E.arrest.forced === 'asys' || at > 360) out = { hr: 0, sys: 0, dia: 0, map: 0, spo2: Math.round(E.spo2), rr: 0 };
-      else out = { hr: Math.round(Math.max(30, 90 - at / 6)), sys: 12, dia: 8, map: 9, spo2: Math.round(E.spo2), rr: 0 };   // BEA
+      if (E.arrest.forced === 'vf' || E.arrest.forced === 'asys' || at > 600) out = { hr: 0, sys: 0, dia: 0, map: 0, spo2: Math.round(E.spo2), rr: 0 };
+      else out = { hr: Math.round(Math.max(30, 90 - at / 10)), sys: 12, dia: 8, map: 9, spo2: Math.round(E.spo2), rr: 0 };   // BEA
       st = 35;
     } else {
       sys = Math.max(0, sys); dia = clamp(dia, 0, sys - 8);
@@ -194,7 +195,7 @@ const PLOCAL = (() => {
     out.htx = {}; Object.keys(E.htx).forEach(s => { out.htx[s] = { vol: Math.round(E.htx[s].vol), out: Math.round(E.htx[s].out), drained: !!E.htx[s].drained }; });
     out.ptx = {}; Object.keys(E.ptx).forEach(s => { out.ptx[s] = Math.round(E.ptx[s].idx * 100) / 100; });
     out.co = Math.round(Math.max(0.5, 5.2 * (1 - d * 1.4) - Math.min(1, p) * 1.5) * 10) / 10;
-    if (internal) { out._spo2t = st; out._p = p; out._apnea = apnea; }
+    if (internal) { out._spo2t = st; out._spo2ok = st0; out._p = p; out._apnea = apnea; }
     return out;
   }
   const advance = (E, s) => { const n = Math.max(1, Math.round(s)); for (let i = 0; i < n && E.alive; i++) step(E, s / n); return E.alive; };

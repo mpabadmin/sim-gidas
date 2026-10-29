@@ -263,7 +263,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
   }
   function evalHtml(P) {
     const sc = P.sc; if (!sc.scen) return '';
-    const ST = { ok: ['✓', 'ok'], late: ['~', 'amb'], bad: ['✕', 'bad'], wait: ['…', ''] };
+    const ST = { ok: ['✓', 'ok'], late: ['~', 'amb'], bad: ['✕', 'bad'], wait: ['…', ''], na: ['–', 'na'] };
     return (sc.phs || []).filter(p => p.ph === 'medevac' || p.ph === 'role1').map(p => {
       const L = PSCEN.evaluate(sc, p.ph, P.simt), kc = L.filter(x => x.c === 'K'), ko = kc.filter(x => x.st === 'ok').length;
       return `<section class="pnl"><h2>${p.ph === 'medevac' ? 'MEDEVAC (MARCH)' : 'Role 1 (ETC)'}${p.pre ? ' <small class="tag pxtag">atkartota</small>' : ''}</h2><p class="muted mt0">Kritiniai laiku ${ko} / ${kc.length} · langai – juodraštis, tvirtina instruktoriai</p><div class="pxev2">` +
