@@ -122,9 +122,10 @@ const PULSE = (() => {
     return x;
   }
   const iname = j => { const n = PCAT.injName(j); return n.name + (n.sev ? ' (' + n.sev.toLowerCase() + ')' : ''); };
+  const recE = (n, by, x) => rec(n, by, Object.assign({ kind: 'ev' }, x || {}));
   function rec(n, by, extra) {
     if (!SC) return;
-    SC.log.push(Object.assign({ t: Math.round(simt), n, by: by || 'instr' }, extra || {}));
+    SC.log.push(Object.assign({ t: Math.round(simt), n, by: by || 'instr', kind: 'tx' }, extra || {}));
     if (SC.log.length > 300) SC.log.shift();
     L((by === 'team' ? 'Komanda: ' : 'Pulse: ') + n);
   }
@@ -144,11 +145,16 @@ const PULSE = (() => {
         if (o.a === 'tq' || o.a === 'jtq' || o.a === 'tqre') { j.tqOn = simt; if (j.tq0 == null) j.tq0 = simt; }
         if (o.a === 'tqloose' || o.a === 'tqconv') j.tqOn = null;
         if (j.ctl == null && ['tq', 'jtq', 'pack', 'pdress', 'ndc', 'occl', 'tube', 'htube', 'fthor', 'sga', 'cric', 'ett', 'pos', 'npa', 'pcd'].indexOf(o.a) >= 0) j.ctl = simt;   // pirmoji kontrolė – ataskaitai
-        hpush(j, A[1]); rec(A[1] + ' – ' + PCAT.injName(j).name + (PCAT.apx('act:' + o.a) ? ' (≈ apytiksliai: Pulse tokios funkcijos neturi)' : ''), by, { iid: j.id, a: o.a });
+        hpush(j, A[1]); rec(A[1] + ' – ' + PCAT.injName(j).name + (PCAT.apx('act:' + o.a) ? ' (≈ apytiksliai: Pulse tokios funkcijos neturi)' : ''), by, { iid: j.id, a: o.a, kind: A[4] === 'team' ? 'tx' : 'ev' });
+        // krūtinės drenas – drenuoja visus tos pusės pleuros sužalojimus (pneumotoraksas + hemotoraksas)
+        if (o.a === 'tube' || o.a === 'htube') SC.inj.filter(x => x !== j && x.side === j.side && ['ptx', 'optx', 'htx'].indexOf(x.k) >= 0 && x.state !== 'drained').forEach(x => {
+          const B = PCAT.cardActions(x, SC.set).find(y => y[0] === 'tube' || y[0] === 'htube'); if (!B) return;
+          (B[3] || []).forEach(a => pa(a, B[1] + ' – ' + PCAT.injName(x).name, by)); x.state = 'drained'; if (x.ctl == null) x.ctl = simt; hpush(x, B[1]);
+        });
         break;
       }
       case 'inj': {
-        const j = newInj(o.j, simt); SC.inj.push(j); sendInj(j); hpush(j, 'Atsirado'); rec('Naujas sužalojimas: ' + iname(j) + (PCAT.apx('inj:' + j.k) ? ' (≈ apytiksliai: Pulse tokios funkcijos neturi)' : ''), by, { iid: j.id });
+        const j = newInj(o.j, simt); SC.inj.push(j); sendInj(j); hpush(j, 'Atsirado'); rec('Naujas sužalojimas: ' + iname(j) + (PCAT.apx('inj:' + j.k) ? ' (≈ apytiksliai: Pulse tokios funkcijos neturi)' : ''), by, { iid: j.id, kind: 'inj' });
         break;
       }
       case 'tx': return treat(o.code, o.p || {}, by, o.n);
@@ -159,10 +165,10 @@ const PULSE = (() => {
   function sevStep(j, d, by) {
     const T = PCAT.injBy(j.k) || {}, S = T.sevs || PCAT.SEV;
     let i = S.findIndex(s => Math.abs(s[2] - j.sev) < 1e-6); if (i < 0) i = 1;
-    const ni = Math.max(0, Math.min(S.length - 1, i + d)); if (ni === i) return;
+    const ni = Math.max(0, Math.min(S.length - 1, i + d)); if (ni === i) { rec((d > 0 ? 'Jau stipriausias: ' : 'Jau silpniausias: ') + iname(j), by, { iid: j.id, kind: 'ev' }); return; }
     j.sev = S[ni][2];
     if (j.k !== 'bleed' || isBleeding(j)) sendInj(j);
-    hpush(j, d > 0 ? 'Stipresnis: ' + S[ni][1] : 'Silpnesnis: ' + S[ni][1]); rec((d > 0 ? 'Sustiprinta: ' : 'Susilpninta: ') + iname(j), by, { iid: j.id });
+    hpush(j, d > 0 ? 'Stipresnis: ' + S[ni][1] : 'Silpnesnis: ' + S[ni][1]); rec((d > 0 ? 'Sustiprinta: ' : 'Susilpninta: ') + iname(j), by, { iid: j.id, kind: 'ev' });
   }
   const ROUTE = { IV: 'IV', IO: 'IV', IM: 'IM', IN: 'IM', OTFC: 'IM' };   // Pulse: į veną arba į raumenį (IO ≈ IV, IN/OTFC ≈ IM)
   function treat(code, p, by, label) {
@@ -194,6 +200,11 @@ const PULSE = (() => {
         const it = PCAT.TX.flatMap(g => g[2]).find(i => i[0] === code), ty = (it && it[4]) || code;   // daviklių kodai – katalogo 5-ame lauke (probe:ecg:1)
         if (/^probe:/.test(ty)) { const [, k, on] = ty.split(':'); if (typeof exec === 'function') exec({ c: 'probe', k, on: on === '1' }); }
         if (code === 'txa' && SC.tTxa == null) SC.tTxa = simt;
+        if (code === 'ett_g') {   // intubacija be kvėpavimo takų sužalojimo: jei obstrukcija yra – ją pašalina
+          const aw = SC.inj.find(x => x.k === 'aw' && x.state !== 'secured');
+          if (aw) return run({ op: 'card', iid: aw.id, a: 'ett', by });
+          return rec('Intubacija (RSI) (≈ Pulse ventiliatorius neprijungtas – ventiliaciją sakykite garsiai)', by);
+        }
         rec(label || code, by);
       }
     }
@@ -201,21 +212,21 @@ const PULSE = (() => {
   function event(code, p, by) {
     const firstBy = f => SC.inj.find(f);
     switch (code) {
-      case 'tqloose': { const j = p.iid ? injById(p.iid) : firstBy(x => x.state === 'tq'); if (j) run({ op: 'card', iid: j.id, a: 'tqloose', by }); else rec('Atsileido turniketas – turniketo nėra', by); break; }
+      case 'tqloose': { const j = p.iid ? injById(p.iid) : firstBy(x => x.state === 'tq'); if (j) run({ op: 'card', iid: j.id, a: 'tqloose', by }); else recE('Atsileido turniketas – turniketo nėra', by); break; }
       case 'retens': { const j = firstBy(x => (x.k === 'ptx' || x.k === 'optx') && (x.state === 'decomp' || x.state === 'occl')); if (j) run({ op: 'card', iid: j.id, a: 'retens', by }); else run({ op: 'inj', j: { k: 'ptx', side: p.side || 'L', sev: 0.45 }, by }); break; }
-      case 'vomit': { let j = firstBy(x => x.k === 'aw'); if (j) { j.sev = Math.max(j.sev, 0.55); j.state = 'active'; sendInj(j); hpush(j, 'Vėmimas / aspiracija'); rec('Vėmimas / aspiracija – kvėpavimo takai užsikimšo', by, { iid: j.id }); } else run({ op: 'inj', j: { k: 'aw', sev: 0.55 }, by }); break; }
-      case 'o2off': treat('o2off', {}, by); rec('Nukrito deguonies kaukė', by); break;
-      case 'ivout': SC.inf.forEach(f => pa({ k: 'inf_stop', cmp: f.cmp, ml: 1 }, 'Infuzija sustabdyta', by)); SC.inf = []; rec('Ištraukta IV / IO – infuzijos sustojo', by); break;
-      case 'ecgoff': exec({ c: 'probe', k: 'ecg', on: false }); rec('Atlipo EKG elektrodas', by); break;
-      case 'spo2off': exec({ c: 'probe', k: 'spo2', on: false }); rec('Nukrito SpO₂ daviklis', by); break;
-      case 'nibpoff': exec({ c: 'probe', k: 'nibp', on: false }); rec('Nuimta AKS manžetė', by); break;
+      case 'vomit': { let j = firstBy(x => x.k === 'aw'); if (j) { j.sev = Math.max(j.sev, 0.55); j.state = 'active'; sendInj(j); hpush(j, 'Vėmimas / aspiracija'); recE('Vėmimas / aspiracija – kvėpavimo takai užsikimšo', by, { iid: j.id }); } else run({ op: 'inj', j: { k: 'aw', sev: 0.55 }, by }); break; }
+      case 'o2off': treat('o2off', {}, by); recE('Nukrito deguonies kaukė', by); break;
+      case 'ivout': SC.inf.forEach(f => pa({ k: 'inf_stop', cmp: f.cmp, ml: 1 }, 'Infuzija sustabdyta', by)); SC.inf = []; recE('Ištraukta IV / IO – infuzijos sustojo', by); break;
+      case 'ecgoff': exec({ c: 'probe', k: 'ecg', on: false }); recE('Atlipo EKG elektrodas', by); break;
+      case 'spo2off': exec({ c: 'probe', k: 'spo2', on: false }); recE('Nukrito SpO₂ daviklis', by); break;
+      case 'nibpoff': exec({ c: 'probe', k: 'nibp', on: false }); recE('Nuimta AKS manžetė', by); break;
       case 'painup': { const j = firstBy(x => x.k === 'pain'); if (j) sevStep(j, 1, by); else run({ op: 'inj', j: { k: 'pain', sev: 0.8 }, by }); break; }
-      case 'vib': { const on = !SIM.state().art || !SIM.state().art.motion; exec({ c: 'art', k: 'motion', on }); rec(on ? 'Vibracija – judesio artefaktai' : 'Vibracija baigėsi', by); break; }
-      case 'noise': exec({ c: 'mute', m: 10 }); rec('Triukšmas – aliarmai negirdimi 10 min', by); break;
-      case 'land': SC.landed = simt; rec('Nusileidimas – perdavimas (ATMIST)', by); break;
-      case 'vf': case 'asys': pa({ k: 'arrest', rhythm: code === 'vf' ? 'CoarseVentricularFibrillation' : 'Asystole' }, code === 'vf' ? 'Skilvelių virpėjimas' : 'Asistolija', by); SC.arrest = code; SC.tArrest = simt; rec(code === 'vf' ? 'Širdies sustojimas – skilvelių virpėjimas' : 'Širdies sustojimas – asistolija', by); break;
-      case 'rosc': pa({ k: 'arrest', rhythm: 'NormalSinus' }, 'ROSC', by); SC.arrest = ''; SIM.setRhythm('sinus'); rec('ROSC – pulsas grįžo', by); break;
-      default: rec(code, by);
+      case 'vib': { const on = !SIM.state().art || !SIM.state().art.motion; exec({ c: 'art', k: 'motion', on }); recE(on ? 'Vibracija – judesio artefaktai' : 'Vibracija baigėsi', by); break; }
+      case 'noise': exec({ c: 'mute', m: 10 }); recE('Triukšmas – aliarmai negirdimi 10 min', by); break;
+      case 'land': SC.landed = simt; recE('Nusileidimas – perdavimas (MIST)', by); break;
+      case 'vf': case 'asys': pa({ k: 'arrest', rhythm: code === 'vf' ? 'CoarseVentricularFibrillation' : 'Asystole' }, code === 'vf' ? 'Skilvelių virpėjimas' : 'Asistolija', by); SC.arrest = code; SC.tArrest = simt; recE(code === 'vf' ? 'Širdies sustojimas – skilvelių virpėjimas' : 'Širdies sustojimas – asistolija', by); break;
+      case 'rosc': pa({ k: 'arrest', rhythm: 'NormalSinus' }, 'ROSC', by); SC.arrest = ''; SIM.setRhythm('sinus'); recE('ROSC – pulsas grįžo', by); break;
+      default: recE(code, by);
     }
   }
   // atšaukiami veiksmai: instruktorius ir komanda gali atšaukti per UNDO_S s

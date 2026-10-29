@@ -2,7 +2,7 @@
 const PCAT = (() => {
   // aplinka: trukmių koeficientas, kas prieinama
   const SETTINGS = {
-    medevac: { n: 'MEDEVAC', d: 'Evakuacija transporte – procedūros ir vaistai pagal MARCH gidą; ribotos priemonės, triukšmas, vibracija, perdavimas atvykus', src: 'MARCH', no: ['tube', 'ett', 'fthor', 'pcd'], blood: 2 },
+    medevac: { n: 'MEDEVAC', d: 'Evakuacija transporte – procedūros ir vaistai pagal MARCH gidą; ribotos priemonės, triukšmas, vibracija, perdavimas atvykus', src: 'MARCH', no: ['tube', 'htube', 'hbleed', 'ett', 'fthor', 'pcd', 'ett_g'], blood: 2 },
     role1: { n: 'Role 1', d: 'Bataliono medicinos punktas – procedūros ir vaistai pagal ETC gidą; kraujas, RSI, krūtinės drenas', src: 'ETC', no: [], blood: 6 }
   };
   const PATIENTS = [
@@ -80,7 +80,7 @@ const PCAT = (() => {
         if (g === 'junc') A.push(['jtq', 'Jungtinis turniketas', 'tq', [stop], 'team', '1–2 min']);
       }
       if (j.state === 'tq') { A.push(['tqloose', 'Atsileido turniketas', 'tq_loose', [on], 'instr', '']); A.push(['tqconv', 'Konversija (tvarstis)', 'pdress', [], 'team', '10 min']); }
-      if (j.state === 'tq_loose') A.push(['tqre', 'Turniketas perveržtas', 'tq', [stop], 'team', '30 s']);
+      if (j.state === 'tq_loose') A.push(['tqre', 'Turniketas vėl užveržtas', 'tq', [stop], 'team', '30 s']);
       if (j.state === 'packed' || j.state === 'pdress') A.push(['rebleed', 'Vėl kraujuoja', 'rebleed', [on], 'instr', '']);
       if (g === 'torso' && j.state !== 'stopped') A.push(['slow', 'Sulėtėjo (savaime / chirurgija)', 'stopped', [stop], 'instr', '']);
       if (j.state !== 'bleeding' && j.state !== 'rebleed' && j.state !== 'tq_loose' && g === 'torso') A.push(['rebleed', 'Vėl kraujuoja', 'rebleed', [on], 'instr', '']);
@@ -89,7 +89,7 @@ const PCAT = (() => {
       if (j.state === 'active' || j.state === 'retension') {
         A.push(['ndc', 'Adatinė dekompresija', 'decomp', [{ k: 'ndc', side: j.side }], 'team', '1–2 min']);
         A.push(['fthor', 'Pirštinė torakostomija', 'decomp', [{ k: 'ndc', side: j.side }], 'team', '2–3 min']);
-        if (j.k === 'optx' || j.state === 'active') A.push(['occl', 'Okliuzinis tvarstis', j.k === 'optx' ? 'occl' : j.state, [{ k: 'occl', side: j.side }], 'team', '30–60 s']);
+        if (j.k === 'optx') A.push(['occl', 'Okliuzinis tvarstis (krūtinės lipdukas)', j.k === 'optx' ? 'occl' : j.state, [{ k: 'occl', side: j.side }], 'team', '30–60 s']);
       }
       if (j.state === 'decomp' || j.state === 'occl') A.push(['retens', 'Vėl įsitempė', 'retension', [{ k: 'tpx', side: j.side, sev: j.sev, open: false }], 'instr', '']);
       if (j.state !== 'drained') A.push(['tube', 'Krūtinės drenas', 'drained', [{ k: 'ndc', side: j.side }], 'team', '10–15 min']);
@@ -102,20 +102,19 @@ const PCAT = (() => {
         A.push(['npa', 'Nosiaryklės vamzdelis (NPA)', 'partial', [{ k: 'aw', sev: Math.round(j.sev * 0.4 * 100) / 100 }], 'team', '30 s']);
         A.push(['suct', 'Atsiurbimas', j.state, [{ k: 'aw', sev: Math.round(j.sev * 0.7 * 100) / 100 }], 'team', '15–30 s']);
         A.push(['sga', 'Supraglotinis (i-gel)', 'secured', [{ k: 'sga' }], 'team', '1 min']);
-        A.push(['cric', 'Krikotirotomija', 'secured', [{ k: 'cric' }], 'team', '2–3 min']);
+        A.push(['cric', 'Krikotiroidotomija', 'secured', [{ k: 'cric' }], 'team', '2–3 min']);
         A.push(['ett', 'Intubacija (RSI)', 'secured', [{ k: 'intub' }], 'team', '5–10 min']);
       }
       if (j.state === 'partial' || j.state === 'secured') A.push(['aww', 'Vėl užsikimšo', 'active', [{ k: 'aw', sev: j.sev }], 'instr', '']);
     }
     if (j.k === 'tam' && j.state !== 'drained') A.push(['pcd', 'Perikardiocentezė', 'drained', [{ k: 'pcd', drain: 150, dur: 120 }], 'team', '5–10 min']);
-    if (j.k === 'tbi') A.push(['tbiup', 'Blogėja (ICP ↑)', 'active', [{ k: 'tbi', sev: Math.min(1, j.sev + 0.2) }], 'instr', '']);
     if (j.k === 'pain') A.push(['painx', 'Skausmas praeina', 'stopped', [{ k: 'pain', sev: 0 }], 'instr', '']);
     // sunkumo keitimas (instruktorius)
     if (['bleed', 'aw', 'ptx', 'optx', 'htx', 'bronch', 'tbi', 'pain'].indexOf(j.k) >= 0) { A.push(['sevup', 'Stiprinti', '', null, 'instr', '']); A.push(['sevdn', 'Silpninti', '', null, 'instr', '']); }
     return A;
   }
   const STATES = { bleeding: 'Kraujuoja', rebleed: 'Vėl kraujuoja', tq: 'Turniketas užveržtas', tq_loose: 'Turniketas atsileidęs – kraujuoja', packed: 'Tamponuota', pdress: 'Spaudžiamasis tvarstis', stopped: 'Sustabdyta',
-    active: 'Aktyvus', retension: 'Vėl įsitempęs', decomp: 'Dekompresuota', occl: 'Okliuzinis tvarstis', drained: 'Drenuota', partial: 'Iš dalies atverta', secured: 'Kvėpavimo takai užtikrinti' };
+    active: 'Negydyta', retension: 'Vėl įsitempęs', decomp: 'Dekompresuota', occl: 'Okliuzinis tvarstis', drained: 'Drenuota', partial: 'Iš dalies atverta', secured: 'Kvėpavimo takai užtikrinti' };
   const BAD = ['bleeding', 'rebleed', 'tq_loose', 'active', 'retension'];
   // ── gydymas (MARCH-PAWS) – bendri veiksmai (vietiniai – ant sužalojimo kortelės) ──
   // [kodas, pavadinimas, lapas (o2|fluid|drug:<id>|null), trukmė, tipas (log|o2off|probe:…), aplinkos ('' – abi)]
@@ -125,7 +124,8 @@ const PCAT = (() => {
       ['pelvic', 'Dubens diržas', null, '2 min', 'log', '']
     ]],
     ['A', 'Kvėpavimo takai', [
-      ['recov', 'Šoninė (atsigavimo) padėtis', null, '30 s', 'log', '']
+      ['recov', 'Šoninė (atsigavimo) padėtis', null, '30 s', 'log', ''],
+      ['ett_g', 'Intubacija (RSI)', null, '5–10 min', 'rsi', 'role1']
     ]],
     ['R', 'Kvėpavimas', [
       ['o2', 'Deguonis', 'o2', '1 min', '', ''],
@@ -153,7 +153,7 @@ const PCAT = (() => {
     ]],
     ['W', 'Žaizdos, įtvarai, kita', [
       ['wound', 'Žaizdų tvarstymas / patikra', null, '', 'log', ''], ['splint', 'Įtvaras', null, '5 min', 'log', ''], ['eye', 'Akies apsauga (skydelis)', null, '', 'log', ''],
-      ['cath', 'Šlapimo kateteris', null, '5 min', 'log', 'role1'], ['card', 'TCCC kortelė užpildyta', null, '', 'log', '']
+      ['cath', 'Šlapimo kateteris', null, '5 min', 'log', 'role1'], ['card', 'Nukentėjusiojo kortelė (DD 1380) užpildyta', null, '', 'log', '']
     ]],
     ['Mon', 'Stebėjimas', [
       ['ecgon', 'EKG elektrodai uždėti', null, '', 'probe:ecg:1', ''], ['spo2on', 'SpO₂ daviklis uždėtas', null, '', 'probe:spo2:1', ''], ['nibpon', 'AKS manžetė uždėta', null, '', 'probe:nibp:1', '']
@@ -166,13 +166,13 @@ const PCAT = (() => {
   const RATES = [['pb', 'Slėgio maišas', 50], ['grav', 'Laša savaime', 25], ['15', 'Per 15 min', 0], ['30', 'Per 30 min', 0], ['60', 'Per 60 min', 0]];
   // vaistai pagal gidą: {id, n, pulse (Pulse medžiaga arba null – tik žurnale), g (grupė), r: [[būdas, [dozės], vnt]], kg: [[būdas, mg/kg, pavadinimas]], note}
   // MEDEVAC – MARCH gidas (TCCC 2026), Role 1 – ETC gidas. Dozės iš gidų (vaistai.js).
-  const D = (id, n, pulse, g, r, note, kg) => ({ id, n, pulse, g, r, note: note || '', kg: kg || [] });
+  const D = (id, n, pulse, g, r, note, kg, lo) => ({ id, n, pulse, g, r, note: note || '', kg: kg || [], lo: !!lo });   // lo – Pulse medžiagą turi, bet sąmoningai tik žurnale
   const DRUGS = {
     medevac: [
-      D('ket', 'Ketaminas', 'Ketamine', 'Analgezija', [['IV', [25], 'mg'], ['IO', [25], 'mg'], ['IM', [100], 'mg'], ['IN', [50], 'mg']], 'kartoti kas 30 min pagal poreikį (MARCH)', [['IV', 0.2, 'analgezija 0,2 mg/kg'], ['IV', 0.3, 'analgezija 0,3 mg/kg']]),
+      D('ket', 'Ketaminas', 'Ketamine', 'Analgezija', [['IV', [25], 'mg'], ['IO', [25], 'mg'], ['IM', [100], 'mg'], ['IN', [50], 'mg']], 'IV/IO – lėtai per 1 min; kartoti kas 30 min pagal poreikį (MARCH)', [['IV', 0.2, 'analgezija 0,2 mg/kg'], ['IV', 0.3, 'analgezija 0,3 mg/kg']]),
       D('esket', 'Esketaminas', 'Ketamine', 'Analgezija', [['IN', [14, 28], 'mg']], 'modelyje – kaip ketaminas'),
-      D('fen', 'Fentanilis', 'Fentanyl', 'Analgezija', [['IV', [50], 'mcg'], ['IO', [50], 'mcg'], ['IN', [100], 'mcg'], ['OTFC', [800], 'mcg']], 'ne TCCC 2026 – tik pagal vieneto SOP; OTFC modelyje ≈ 100 mcg IM'),
-      D('mor', 'Morfinas', 'Morphine', 'Analgezija', [['IV', [2.5, 5], 'mg'], ['IM', [5, 10], 'mg']], 'ne TCCC 2026 – tik pagal SOP'),
+      D('fen', 'Fentanilis', 'Fentanyl', 'Analgezija', [['IV', [50], 'mcg'], ['IO', [50], 'mcg'], ['IN', [100], 'mcg'], ['OTFC', [800], 'mcg']], 'ne TCCC 2026 – tik pagal vieneto SOP; OTFC modelyje ≈ 100 mcg IM', [['IV', 0.0005, '0,5 mcg/kg'], ['IV', 0.001, '1 mcg/kg']]),
+      D('mor', 'Morfinas', 'Morphine', 'Analgezija', [['IV', [2.5], 'mg'], ['IM', [5, 10, 20], 'mg']], 'ne TCCC 2026 – tik pagal SOP; IV ne dažniau kas 10 min'),
       D('nal', 'Naloksonas', 'Naloxone', 'Analgezija', [['IV', [0.4], 'mg'], ['IO', [0.4], 'mg'], ['IM', [0.4], 'mg'], ['IN', [0.4], 'mg']], 'kartoti kas 2–3 min'),
       D('txa', 'TXA (traneksamo rūgštis)', null, 'Kraujavimas', [['IV', [2], 'g'], ['IO', [2], 'g']], 'vienkartinė dozė; po 3 val. neskirti'),
       D('ca', 'Kalcio gliukonatas 10 %', null, 'Kraujavimas', [['IV', [30], 'ml'], ['IO', [30], 'ml']], 'po pirmo kraujo produkto vieneto'),
@@ -180,23 +180,27 @@ const PCAT = (() => {
       D('ond', 'Ondansetronas', null, 'Kiti', [['IV', [4], 'mg'], ['IM', [4], 'mg'], ['PO', [4], 'mg']], ''),
       D('cro', 'Ceftriaksonas', null, 'Antibiotikai', [['IV', [2], 'g'], ['IO', [2], 'g'], ['IM', [2], 'g']], 'kai negali nuryti'),
       D('cfd', 'Cefadroksilis', null, 'Antibiotikai', [['PO', [1], 'g']], 'atviros kovinės žaizdos'),
-      D('para', 'Paracetamolis', null, 'Analgezija', [['PO', [1000, 1300], 'mg']], 'CWMP dalis')
+      D('para', 'Paracetamolis', null, 'Analgezija', [['PO', [1000, 1300], 'mg']], 'CWMP dalis'),
+      D('melox', 'Meloksikamas', null, 'Analgezija', [['PO', [15], 'mg']], 'CWMP dalis'),
+      D('suz', 'Suzetriginas', null, 'Analgezija', [['PO', [100, 50], 'mg']], 'CWMP dalis (TCCC 2026)'),
+      D('cfx', 'Cefaleksinas', null, 'Antibiotikai', [['PO', [500], 'mg']], 'alternatyva cefadroksiliui')
     ],
     role1: [
-      D('ket', 'Ketaminas', 'Ketamine', 'Analgezija / anestezija', [['IV', [25], 'mg'], ['IO', [25], 'mg'], ['IM', [100, 300], 'mg'], ['IN', [50], 'mg']], 'analgezija kartoti kas 30 min (ETC)', [['IV', 0.3, 'analgezija 0,3 mg/kg'], ['IV', 0.5, 'sedacija 0,5 mg/kg'], ['IV', 1, 'anestezija 1 mg/kg'], ['IV', 2, 'anestezija 2 mg/kg']]),
+      D('ket', 'Ketaminas', 'Ketamine', 'Analgezija / anestezija', [['IV', [25], 'mg'], ['IO', [25], 'mg'], ['IM', [100, 300], 'mg'], ['IN', [50], 'mg']], 'analgezija kartoti kas 30 min; šoke dozę mažinti 50 % (ETC)', [['IV', 0.2, 'analgezija 0,2 mg/kg'], ['IV', 0.3, 'analgezija 0,3 mg/kg'], ['IV', 0.5, 'analgezija maks. 0,5 mg/kg'], ['IV', 1, 'sedacija 1 mg/kg'], ['IV', 2, 'sedacija / indukcija 2 mg/kg']]),
       D('fen', 'Fentanilis', 'Fentanyl', 'Analgezija / anestezija', [['IV', [50, 100], 'mcg'], ['IO', [50, 100], 'mcg'], ['IN', [100], 'mcg']], 'medicinos personalui', [['IV', 0.001, '1 mcg/kg']]),
       D('mor', 'Morfinas', 'Morphine', 'Analgezija / anestezija', [['IV', [2, 3], 'mg'], ['IO', [2, 3], 'mg'], ['IM', [10], 'mg']], 'nutraukti, kai KD < 10 k./min', [['IV', 0.1, '0,1 mg/kg']]),
       D('nal', 'Naloksonas', 'Naloxone', 'Analgezija / anestezija', [['IV', [0.1, 0.2], 'mg'], ['IM', [0.4, 2], 'mg'], ['IN', [1.8], 'mg']], 'ETC – maks. 2 mg'),
       D('mid', 'Midazolamas', 'Midazolam', 'Analgezija / anestezija', [['IV', [0.5, 2], 'mg'], ['IO', [0.5, 2], 'mg']], 'emergencijos reakcijai, traukuliams', [['IM', 0.1, '0,1 mg/kg IM']]),
-      D('roc', 'Rokuroniumas', null, 'Analgezija / anestezija', [], 'RSI – modelyje tik žurnale (Pulse ventiliatorius neprijungtas)', [['IV', 1, 'RSI 1 mg/kg']]),
-      D('adr', 'Adrenalinas', 'Epinephrine', 'Gaivinimas', [['IV', [1], 'mg'], ['IO', [1], 'mg']], 'sustojus širdžiai (ALS)'),
+      D('roc', 'Rokuroniumas', null, 'Analgezija / anestezija', [], 'RSI – modelyje tik žurnale: Pulse ventiliatorius neprijungtas, paralyžiaus neskaičiuojame (ventiliuokite garsiai)', [['IV', 0.6, 'intubacijai 0,6 mg/kg'], ['IV', 1, 'RSI 1 mg/kg']], 1),
+      D('adr', 'Adrenalinas', 'Epinephrine', 'Gaivinimas', [['IV', [1], 'mg'], ['IO', [1], 'mg']], 'sustojus širdžiai – ETC gaivinimo algoritmas (ALS)'),
       D('txa', 'TXA (traneksamo rūgštis)', null, 'Kraujavimas', [['IV', [2], 'g'], ['IO', [2], 'g']], 'geriausia per 90 min nuo sužeidimo'),
       D('ca', 'Kalcio gliukonatas 10 %', null, 'Kraujavimas', [['IV', [30], 'ml'], ['IO', [30], 'ml']], 'kartoti kas 4 kraujo vienetus'),
       D('nor', 'Noradrenalinas', null, 'Kraujotaka', [], 'infuzomatu 0,05–1 mcg/kg/min, tik atkūrus tūrį – tik žurnale', [['IV', 0.0001, '0,1 mcg/kg/min']]),
       D('atr', 'Atropinas', null, 'Kraujotaka', [['IV', [0.5], 'mg']], ''),
       D('hts', 'Hipertoninis NaCl 3 %', null, 'Galva', [['IV', [250], 'ml'], ['IO', [250], 'ml']], 'kartoti po 20 min (maks. 2)'),
-      D('man', 'Manitolis', null, 'Galva', [], 'jei šoko nėra ir sAKS > 110', [['IV', 500, '0,5 g/kg']]),
-      D('para', 'Paracetamolis', null, 'Kiti', [['IV', [1], 'g'], ['PO', [1000], 'mg']], ''),
+      D('man', 'Manitolis', null, 'Galva', [], 'jei šoko nėra ir sAKS > 110', [['IV', 250, '0,25 g/kg'], ['IV', 500, '0,5 g/kg'], ['IV', 1000, '1 g/kg']]),
+      D('para', 'Paracetamolis', null, 'Kiti', [['IV', [1], 'g'], ['PO', [1000], 'mg']], '', [['IV', 15, '15 mg/kg']]),
+      D('ins', 'Insulinas + gliukozė (hiperkalemija)', null, 'Kiti', [['IV', [10], 'IU']], '10 IU + 25 g gliukozės'),
       D('ond', 'Ondansetronas', null, 'Kiti', [['IV', [4], 'mg'], ['IM', [4], 'mg']], ''),
       D('meto', 'Metoklopramidas', null, 'Kiti', [['IV', [10], 'mg']], ''),
       D('glu', 'Gliukozė (hipoglikemija)', null, 'Kiti', [['IV', [200], 'ml']], ''),
@@ -256,6 +260,7 @@ const PCAT = (() => {
     'act:ett': 'Pulse ventiliatorius neprijungtas – modeliuojama kaip kvėpavimo takų atvėrimas (ventiliaciją sakykite garsiai)',
     'act:pcd': 'Pulse neturi perikardiocentezės – skystis iš perikardo siurbiamas 2 min',
     'act:tube': 'Pulse 4.3.1 drenas įtampos pneumotoraksą neišsprendžia – modeliuojama kaip dekompresija',
+    'act:tqconv': 'Pulse nemodeliuoja reperfuzijos (K⁺, acidozė) – tik žurnale',
     'act:htube': 'Pulse 4.3.1 drenas pleuros kraujo nepašalina – drenavus sustabdomas tolesnis kaupimasis',
     'act:fthor': 'Pulse neturi pirštinės torakostomijos – modeliuojama kaip dekompresija',
     'fl:LactatedRingers': 'Pulse neturi Ringerio tirpalo – lašinamas kaip NaCl 0,9 %',

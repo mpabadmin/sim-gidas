@@ -37,7 +37,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     F.push(['Radialinis pulsas', arrest || v.sys < 50 ? 'nėra (miego arterijoje – ' + (arrest ? 'nėra' : 'silpnas') + ')' : v.sys < 80 ? 'nečiuopiamas, miego a. čiuopiamas' : v.sys < 90 ? 'silpnas' + (v.hr > 110 ? ', dažnas' : '') : 'čiuopiamas' + (v.hr > 120 ? ', dažnas' : ''), arrest || v.sys < 80]);
     const avpu = arrest ? 'U – nereaguoja' : (v.spo2 < 75 || v.sys < 60 || tbi >= 0.9) ? 'P – reaguoja tik į skausmą' : (tbi >= 0.5 || v.spo2 < 85 || v.sys < 75) ? 'V – reaguoja į balsą, sutrikęs' : 'A – sąmoningas';
     F.push(['Sąmonė (AVPU)', avpu, avpu[0] !== 'A']);
-    F.push(['Vyzdžiai', arrest ? 'platūs, nereaguoja' : tbi >= 0.75 ? 'anizokorija – kairysis platesnis, vangiai reaguoja' : recentOp ? 'siauri' : 'vienodi, reaguoja', arrest || tbi >= 0.75]);
+    F.push(['Vyzdžiai', arrest ? 'platūs, nereaguoja' : tbi >= 0.75 ? 'anizokorija – vienas vyzdys platesnis, vangiai reaguoja' : recentOp ? 'siauri' : 'vienodi, reaguoja', arrest || tbi >= 0.75]);
     const chest = [];
     sc.inj.filter(j => (j.k === 'ptx' || j.k === 'optx' || j.k === 'htx') && j.state !== 'drained').forEach(j => chest.push((j.side === 'R' ? 'dešinėje' : 'kairėje') + (j.k === 'htx' ? ' susilpnėjęs, duslus perkusijoje' : act(j) ? ' nesigirdi' : ' susilpnėjęs')));
     if (aw && act(aw)) chest.push('stridoras / gargimas');
@@ -47,7 +47,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     const tension = sc.inj.some(j => (j.k === 'ptx' || j.k === 'optx') && act(j) && j.sev >= 0.5) || sc.inj.some(j => j.k === 'tam' && j.state !== 'drained');
     F.push(['Kaklo venos', tension && v.sys > 50 ? 'išsipūtusios' : 'neišsipūtusios', tension]);
     const burn = inj('burn')[0], shock = v.sys < 90 || (v.hr > 120 && v.sys < 100);
-    F.push(['Oda', (shock ? 'blyški, šalta, drėgna; KPL > 2 s' : 'šilta, rausva; KPL < 2 s') + (burn ? '; nudegimai ' + Math.round(burn.sev * 100) + ' %' : ''), shock]);
+    F.push(['Oda', (v.spo2 != null && v.spo2 < 85 ? 'cianozė; ' : '') + (shock ? 'blyški, šalta, drėgna; KPL > 2 s' : 'šilta, rausva; KPL < 2 s') + (burn ? '; nudegimai ' + Math.round(burn.sev * 100) + ' %' : ''), shock]);
     return F;
   }
 
@@ -80,7 +80,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     const m = mechBy(SU.mech), S = PCAT.SETTINGS[SU.set];
     const I = SU.inj.map(j => PCAT.injName(j).name.toLowerCase()).join('; ') || 'nenustatyta';
     return `${S.n === 'MEDEVAC' ? 'Priimate sužeistąjį evakuacijai' : 'Į Role 1 punktą atvežamas sužeistasis'}${SU.ff ? ' praėjus ' + SU.ff / 60 + ' min nuo sužeidimo' : ''}. ` +
-      `MIST: M – ${m[1].toLowerCase()}; I – ${I}; S – matysite monitoriuje; T – ${SU.ff ? 'suteikta nebuvo (patikrinkite!)' : 'dar nesuteikta'}. ` +
+      `MIST: M – ${m[1]}; I – ${I}; S – matysite monitoriuje; T – ${SU.ff ? 'suteikta nebuvo (patikrinkite!)' : 'dar nesuteikta'}. ` +
       `Priemonės ir vaistai – pagal ${S.src} gidą${S.n === 'MEDEVAC' ? '; kraujo – ' + S.blood + ' vnt., deguonis – balionas' : ''}. Veiksmus, kurių modelis neskaičiuoja (pvz. TXA, antibiotikai), sakykite garsiai – jie žymimi žurnale.`;
   }
 
@@ -101,7 +101,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     const sc = P.sc, R = [];
     sc.inf.forEach(f => { const done = Math.max(0, Math.min(f.tot, P.simt - f.t0)), left = f.tot - done; R.push(`<div class="pxrun"><span>🩸 <b>${E(f.n)}</b> <small>${left > 0 ? 'liko ' + T(left) : 'sulašėjo'}</small></span><i class="pfb2"><i style="width:${Math.round(done / Math.max(1, f.tot) * 100)}%"></i></i>${left > 0 ? btn('istop', f.cmp, 'Stabdyti', 'chip pxch') : ''}</div>`); });
     if (sc.o2) R.push(`<div class="pxrun"><span>O₂ <b>${E(sc.o2.n)} ${sc.o2.flow} l/min</b> <small>nuo ${T(sc.o2.t)}</small></span>${btn('tx', 'o2off', 'Nuimti', 'chip pxch')}</div>`);
-    sc.inj.filter(j => j.tqOn != null).forEach(j => { const d = P.simt - j.tqOn; R.push(`<div class="pxrun${d > 7200 ? ' warn' : ''}"><span>⏱ <b>Turniketas – ${E((PCAT.locBy(j.loc) || [0, ''])[1].toLowerCase())}</b> <small>${T(d)} nuo uždėjimo</small></span></div>`); });
+    sc.inj.filter(j => j.tq0 != null && j.state !== 'pdress').forEach(j => { const d = P.simt - j.tq0, loose = j.tqOn == null; R.push(`<div class="pxrun${d > 7200 || loose ? ' warn' : ''}"><span>⏱ <b>Turniketas – ${E((PCAT.locBy(j.loc) || [0, ''])[1].toLowerCase())}</b> <small>${T(d)} nuo pirmo uždėjimo${loose ? ' · ATSILEIDĘS' : j.tqOn > j.tq0 + 1 ? ' · vėl užveržtas ' + T(j.tqOn) : ''}</small></span></div>`); });
     if (sc.kit && sc.set === 'medevac') R.push(`<div class="pxrun"><span>Kraujo atsargos: <b>${Math.max(0, sc.kit.max - Math.ceil(sc.kit.used))} / ${sc.kit.max} vnt.</b></span></div>`);
     return R.length ? '<section class="pnl"><h2>Vykdoma</h2>' + R.join('') + '</section>' : '';
   }
@@ -122,7 +122,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
   function ptHtml(P) {
     const sc = P.sc;
     let h = runningHtml(P);
-    const order = j => (PCAT.BAD.indexOf(j.state) >= 0 ? 0 : 1) * 10 + ['bleed', 'aw', 'ptx', 'optx', 'htx', 'tam', 'tbi', 'burn', 'bronch', 'pain'].indexOf(j.k);
+    const order = j => ['bleed', 'aw', 'ptx', 'optx', 'htx', 'tam', 'tbi', 'burn', 'bronch', 'pain'].indexOf(j.k);   // pastovi tvarka (mygtukai nešokinėja)
     h += '<section class="pnl"><h2>Sužalojimai</h2>' + (sc.inj.length ? sc.inj.slice().sort((a, b) => order(a) - order(b)).map(j => cardHtml(P, j)).join('') : '<p class="muted">Sužalojimų nėra.</p>') + btn('sh-inj', 'live', '＋ Naujas sužalojimas', 'pxb wide ins') + '</section>';
     h += '<section class="pnl"><h2>Apžiūros radiniai <span class="apx">≈</span></h2><p class="apxt mt0">Pulse šių radinių neskaičiuoja – programėlė juos apytiksliai išveda iš rodiklių ir sužalojimų.</p><div class="pxf">' + findings(P).map(f => `<div class="${f[2] ? 'bad' : ''}"><small>${E(f[0])}</small><b>${E(f[1])}</b></div>`).join('') + '</div>' +
       (P.v && P.v.bv && sc.bv0 ? `<p class="muted">Kraujo tūris ${P.v.bv} ml (netekta apie ${Math.max(0, Math.round((sc.bv0 - P.v.bv) / 50) * 50)} ml)</p>` : '') + '</section>';
@@ -132,10 +132,10 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     const G = PCAT.txFor(P.sc.set);
     let h = '';
     G.forEach(([L, n, items]) => {
-      h += `<section class="pnl" id="pxg-${L}"><h2>${E(L.replace('2', '').replace('Mon', '♥'))} · ${E(n)}</h2>`;
+      h += `<section class="pnl" id="pxg-${L}"><h2>${E(L.replace('A2', 'AB').replace('Mon', '♥'))} · ${E(n)}</h2>`;
       items.forEach(it => {
         const ok = it[0] !== 'o2' || sup(P, [{ k: 'o2' }]), pl = it[2] ? null : pend(P, it[1]);
-        const dr = it[2] && it[2].indexOf('drug:') === 0 && it[2] !== 'drug:abx' ? PCAT.drugBy(it[2].slice(5), P.sc.set) : null, log = it[4] === 'log' || it[2] === 'drug:abx' || (dr && !dr.pulse);
+        const dr = it[2] && it[2].indexOf('drug:') === 0 && it[2] !== 'drug:abx' ? PCAT.drugBy(it[2].slice(5), P.sc.set) : null, log = it[4] === 'log' || it[4] === 'rsi' || it[2] === 'drug:abx' || (dr && !dr.pulse);
         h += `<button class="pxrow${pl != null ? ' pend' : ''}" data-act="px" data-k="tx" data-x="${it[0]}"${by ? ` data-by="${by}"` : ''}${ok && pl == null ? '' : ' disabled'}><span><b>${E(it[1])}</b>${pl != null ? pendS(pl) : it[3] ? `<small>⏱ ${E(it[3])}</small>` : ''}</span><i>${log ? logB : ''}${it[2] ? ' ›' : ''}</i></button>`;
       });
       h += '</section>';
@@ -161,7 +161,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
       if (j.k === 'ptx' || j.k === 'optx') M.push([nm + ' – dekompresija / tvarstis', d(j.ctl, 300), 'tikslas ≤ 5 min']);
       if (j.k === 'aw') M.push([nm + ' – atverta / užtikrinta', d(j.ctl, 120), 'tikslas ≤ 2 min']);
     });
-    if (sc.inj.some(j => j.k === 'bleed' && j.sev >= 0.45)) {
+    if (sc.inj.some(j => (j.k === 'bleed' && j.sev >= 0.45) || j.k === 'htx')) {
       M.push(['Pirmas kraujo vienetas', d(sc.tBlood, 900), 'tikslas ≤ 15 min']);
       const lim = sc.set === 'role1' ? 5400 : 10800;
       M.push(['TXA', sc.tTxa == null ? '<b class="bad">neskirta</b>' : `<b class="${sc.tTxa > lim ? 'bad' : 'ok'}">${T(sc.tTxa)} nuo sužeidimo</b>`, sc.set === 'role1' ? 'geriausia per 90 min' : 'ne vėliau 3 val.']);
@@ -172,14 +172,16 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
   }
   function mist(P) {
     const sc = P.sc, v = P.v || {}, F = findings(P);
-    const tx = []; sc.log.filter(l => !l.star && !/^Naujas sužalojimas|komentaras|Atšaukta/.test(l.n)).forEach(l => { const k = l.n.split(' – ')[0].split(' (')[0]; if (tx.indexOf(k) < 0) tx.push(k); });
-    const pat = sc.pat || {};
-    return (sc.set === 'medevac' ? 'ATMIST' : 'MIST') + ' perdavimas\n' +
-      (sc.set === 'medevac' ? `A – ${pat.age ? pat.age + ' m.' : 'amžius nežinomas'}${pat.kg ? ', ' + pat.kg + ' kg' : ''}${pat.allergy ? ', alergija: ' + pat.allergy : ''}\nT – sužeistas prieš ${Math.round(P.simt / 60)} min\n` : '') +
+    const tx = []; sc.log.filter(l => (l.kind || 'tx') === 'tx' && !l.star && !/^Naujas sužalojimas|komentaras|Atšaukta|Sustabdyta|Jau /.test(l.n)).forEach(l => { const k = l.n.split(' (')[0]; if (tx.indexOf(k) < 0) tx.push(k); });
+    sc.inj.filter(j => j.tq0 != null).forEach(j => tx.push('TQ ' + (PCAT.locBy(j.loc) || [0, ''])[1].toLowerCase() + ' uždėtas prieš ' + Math.round((P.simt - j.tq0) / 60) + ' min'));
+    const pat = sc.pat || {}, r1 = sc.set === 'role1';
+    const need = []; if (sc.inj.some(j => (j.k === 'bleed' && (PCAT.locBy(j.loc) || [0, 0, ''])[2] === 'torso') || j.k === 'htx' || j.k === 'tam')) need.push('chirurgas'); if (sc.inj.some(j => j.k === 'bleed' || j.k === 'htx')) need.push('kraujas'); if (sc.inj.some(j => j.k === 'tbi' && j.sev >= 0.55)) need.push('neurochirurgija / KT'); if (sc.inj.some(j => j.k === 'aw' && j.state !== 'secured')) need.push('kvėpavimo takų užtikrinimas');
+    return (r1 ? 'ATMISTER perdavimas (pagal ETC)' : 'MIST perdavimas (pagal MARCH)') + '\n' +
+      (r1 ? `A – ${pat.age ? pat.age + ' m.' : 'amžius nežinomas'}${pat.kg ? ', ' + pat.kg + ' kg' : ''}${pat.allergy ? ', alergija: ' + pat.allergy : ''}\nT – sužeistas prieš ${Math.round(P.simt / 60)} min\n` : '') +
       `M – ${sc.mechN || 'nenurodyta'}\n` +
       `I – ${sc.inj.map(j => PCAT.injName(j).name.toLowerCase() + ' (' + (PCAT.STATES[j.state] || j.state).toLowerCase() + ')').join('; ') || 'nėra'}\n` +
-      `S – ŠSD ${v.hr != null ? v.hr : '?'}, AKS ${v.sys != null ? v.sys + '/' + v.dia : '?'}, KD ${v.rr != null ? v.rr : '?'}, SpO₂ ${v.spo2 != null ? v.spo2 + ' %' : '?'}, ${F[1][1].split(' –')[0]}\n` +
-      `T – ${tx.join('; ') || 'nesuteikta'}`;
+      `S – ŠSD ${v.hr != null ? v.hr : '?'}, AKS ${v.sys != null ? v.sys + '/' + v.dia : '?'}, KD ${v.rr != null ? v.rr : '?'}, SpO₂ ${v.spo2 != null ? v.spo2 + ' %' : '?'}, AVPU ${F[1][1].split(' –')[0]}\n` +
+      `T – ${tx.join('; ') || 'nesuteikta'}` + (r1 ? `\nE – atvykimas (laikas pagal situaciją)\nR – reikia: ${need.join(', ') || 'stebėjimo'}` : '');
   }
   function repHtml(P) {
     const sc = P.sc;
@@ -192,7 +194,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
   }
   // ── apatinis meniu ir atšaukimas ──
   function railHtml(P) {
-    return '<div class="pxrail" aria-label="MARCH-PAWS skyriai">' + PCAT.txFor(P.sc.set).map(g => btn('rail', g[0], g[0].replace('2', '').replace('Mon', '♥'), 'pxl', ` aria-label="${E(g[1])}"`)).join('') + '</div>';
+    return '<div class="pxrail" aria-label="MARCH-PAWS skyriai">' + PCAT.txFor(P.sc.set).map(g => btn('rail', g[0], g[0].replace('A2', 'AB').replace('Mon', '♥'), 'pxl', ` aria-label="${E(g[1])}"`)).join('') + '</div>';
   }
   function navHtml() {
     const V = [['pt', 'Pacientas', '🩺'], ['tx', 'Gydymas', '💉'], ['ev', 'Įvykiai', '⚡'], ['rep', 'Ataskaita', '📋']];
@@ -232,6 +234,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     }
     if (P && P.sc && (P.st === 'load' || P.st === 'conn')) return pre + headHtml(P) + waitHtml(P);
     waitT = 0;
+    if (late && P && P.sc && RUN.concat(['dead']).indexOf(P.st) >= 0) late = '';   // monitorius vis dėlto pradėjo
     if (late) pre += `<div class="mira p1 pxwarn">⚠ ${E(late)}</div>`;
     if (P && P.st === 'err' && P.msg) pre += `<div class="mira p1 pxwarn">✕ ${E(P.msg)}</div>`;
     if (P && P.st === 'off' && P.sc && P.sc.lost) pre += `<div class="mira p1 pxwarn">⚠ ${E(P.msg || 'Pulse sesija prarasta – pradėkite iš naujo.')}</div>`;
@@ -294,7 +297,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
       if (!sheet.id) {
         title = sheet.grp || 'Vaistai';
         const G = []; L.forEach(d => { if (G.indexOf(d.g) < 0) G.push(d.g); });
-        body = G.map(g => `<p class="lbl pxlb">${E(g)}</p><div class="pxgrid">` + L.filter(d => d.g === g).map(d => `<button class="pxsg" data-act="px" data-k="sd-id" data-x="${d.id}"><b>${E(d.n)}</b>${!d.pulse || PCAT.apx('drug:' + d.id) ? `<small class="apxs"><span class="apx">≈</span> ${d.pulse ? 'apytiksliai' : 'Pulse neturi – tik žurnale'}</small>` : '<small>Pulse skaičiuoja</small>'}</button>`).join('') + '</div>').join('') + `<p class="muted">Pagal ${E(PCAT.SETTINGS[set].src)} gidą.</p>`;
+        body = G.map(g => `<p class="lbl pxlb">${E(g)}</p><div class="pxgrid">` + L.filter(d => d.g === g).map(d => `<button class="pxsg" data-act="px" data-k="sd-id" data-x="${d.id}"><b>${E(d.n)}</b>${!d.pulse || PCAT.apx('drug:' + d.id) ? `<small class="apxs"><span class="apx">≈</span> ${d.pulse ? 'apytiksliai' : d.lo ? 'tik žurnale' : 'Pulse neturi – tik žurnale'}</small>` : '<small>Pulse skaičiuoja</small>'}</button>`).join('') + '</div>').join('') + `<p class="muted">Pagal ${E(PCAT.SETTINGS[set].src)} gidą.</p>`;
       } else {
         const D = PCAT.drugBy(sheet.id, set), kg = +((P.sc && P.sc.pat && P.sc.pat.kg) || SU.pat.kg || 80);
         title = D.n;
@@ -302,13 +305,13 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
         D.r.forEach(r => r[1].forEach(v => opts.push({ route: r[0], dose: v, unit: r[2], l: num(v) + ' ' + r[2] + ' ' + r[0] })));
         D.kg.forEach(k => { let v = k[1] * kg, u = 'mg'; if (v < 1) { v = Math.round(v * 1000); u = 'mcg'; } else v = Math.round(v * 10) / 10; if (k[1] >= 100) { v = Math.round(k[1] * kg / 100) / 10; u = 'g'; } opts.push({ route: k[0], dose: v, unit: u, l: num(v) + ' ' + u + ' ' + k[0], s: k[2] + ' × ' + kg + ' kg' }); });
         body = (D.pulse ? apxB('drug:' + D.id, 1) : '') + '<div class="pxgrid">' + opts.map((o, i) => { const ap = D.pulse && PCAT.apx('route:' + o.route); return `<button class="pxsg${sheet.oi === i ? ' on' : ''}" data-act="px" data-k="sd-o" data-x="${i}"><b>${ap ? '<span class="apx">≈</span> ' : ''}${E(o.l)}</b>${o.s ? `<small>${E(o.s)}</small>` : ''}${ap ? `<small class="apxs">≈ ${E(ap)}</small>` : ''}</button>`; }).join('') + '</div>' +
-          (D.note ? `<p class="muted">${E(D.note)}</p>` : '') + (D.pulse ? '' : '<p class="apxt"><span class="apx">≈</span> Pulse šio vaisto neturi – modelis nereaguoja, veiksmas žymimas tik žurnale.</p>');
+          (D.note ? `<p class="muted">${E(D.note)}</p>` : '') + (D.pulse ? '' : D.lo ? '<p class="apxt"><span class="apx">≈</span> Modelyje tik žurnale (žr. pastabą).</p>' : '<p class="apxt"><span class="apx">≈</span> Pulse šio vaisto neturi – modelis nereaguoja, veiksmas žymimas tik žurnale.</p>');
         sheet.opts = opts;
         foot = (sheet.fixed ? '' : btn('sd-back', null, '‹ Atgal', 'pxb')) + btn('sd-ok', null, 'Suleista', 'pxgo sm', sheet.oi != null ? '' : ' disabled');
       }
     } else if (sheet.kind === 'team') {
       title = 'Gydymas (komanda)';
-      body = P.sc ? '<p class="muted mt0">Pažymėkite, ką atlikote – įvyks po 5 s (atšaukti – juostoje). <span class="apx">≈</span> Pulse neturi.</p>' + P.sc.inj.map(j => { const A = PCAT.cardActions(j, P.sc.set).filter(a => a[4] === 'team'); return A.length ? `<p class="lbl pxlb">${E(PCAT.injName(j).name)} · ${E(PCAT.STATES[j.state] || '')}</p><div class="pxacts">` + A.map(a => actBtn(P, j, a, 'team')).join('') + '</div>' : ''; }).join('') + txHtml(P, 'team') : '<p class="muted">Pulse scenarijus nevyksta.</p>';
+      body = P.sc ? '<p class="muted mt0">Pažymėkite, ką atlikote – įvyks po 5 s (atšaukti – juostoje). <span class="apx">≈</span> – modelis tai skaičiuoja apytiksliai arba tik žymi žurnale.</p>' + P.sc.inj.map(j => { const A = PCAT.cardActions(j, P.sc.set).filter(a => a[4] === 'team'); return A.length ? `<p class="lbl pxlb">${E(PCAT.injName(j).name)} · ${E(PCAT.STATES[j.state] || '')}</p><div class="pxacts">` + A.map(a => actBtn(P, j, a, 'team')).join('') + '</div>' : ''; }).join('') + txHtml(P, 'team') : '<p class="muted">Pulse scenarijus nevyksta.</p>';
     }
     sheetEl().innerHTML = `<div class="pxs-bg" data-act="px" data-k="sh-x"></div><div class="pxs" role="dialog" aria-label="${E(title)}"><div class="pxs-h"><b>${E(title)}</b><button class="ib" data-act="px" data-k="sh-x" aria-label="Uždaryti">✕</button></div><div class="pxs-b">${body}</div>${foot ? '<div class="pxs-f">' + foot + '</div>' : ''}</div>`;
   }
@@ -411,7 +414,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     const sc = P.sc, C = [];
     sc.inf.forEach(f => { const done = Math.max(0, Math.min(f.tot, P.simt - f.t0)), left = f.tot - done; C.push(`<span class="pxsc"><i style="width:${Math.round(done / Math.max(1, f.tot) * 100)}%"></i>🩸 ${E(f.n.replace('Pilnas kraujas', 'Kraujas'))} · ${left > 0 ? T(left) : '✓'}</span>`); });
     if (sc.o2) C.push(`<span class="pxsc">O₂ ${sc.o2.flow} l/min</span>`);
-    sc.inj.filter(j => j.tqOn != null).forEach(j => C.push(`<span class="pxsc${P.simt - j.tqOn > 7200 ? ' warn' : ''}">TQ ${T(P.simt - j.tqOn)}</span>`));
+    sc.inj.filter(j => j.tq0 != null && j.state !== 'pdress').forEach(j => C.push(`<span class="pxsc${P.simt - j.tq0 > 7200 || j.tqOn == null ? ' warn' : ''}">TQ ${T(P.simt - j.tq0)}${j.tqOn == null ? ' atsileidęs' : ''}</span>`));
     const q = (P.q || []).slice(-1)[0];
     if (q) C.push(`<span class="pxsc und" data-act="px" data-k="undo" data-x="${q.uid}">⏳ ${E(q.n)} · ${q.left} s ✕</span>`);
     C.push('<span class="pxsc add" data-act="px" data-k="team" role="button" aria-label="Pažymėti gydymą">＋ Gydymas</span>');

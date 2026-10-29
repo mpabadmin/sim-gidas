@@ -5,7 +5,7 @@ const PULSE_CM = (() => {
   const r0 = n => Math.round(n);
   // kontekstas iš veiksmų sąrašo [{a, t}]
   function ctx(list, t) {
-    const c = { tpx: {}, aw: 0, tbi: 0, eff: 0, burn: 0, arrest: '', drugs: [], cryst: 0, blood: 0, intub: false, o2: false, hem: 0 };
+    const c = { tpx: {}, htx: {}, aw: 0, tbi: 0, eff: 0, burn: 0, arrest: '', drugs: [], cryst: 0, blood: 0, intub: false, o2: false, hem: 0 };
     list.forEach(({ a, t: ta }) => {
       switch (a.k) {
         case 'tpx': c.tpx[a.side || 'L'] = { sev: +a.sev || 0.6, open: !!a.open, t: ta }; break;
@@ -16,6 +16,7 @@ const PULSE_CM = (() => {
         case 'o2': c.o2 = true; break;
         case 'o2_off': c.o2 = false; break;
         case 'tbi': c.tbi = +a.sev || 0.5; break;
+        case 'htx': c.htx[a.side || 'L'] = +a.sev || 0; break;
         case 'eff': c.eff = +a.rate || 0; c.effT = ta; break;
         case 'burn': c.burn = +a.tbsa || 0; break;
         case 'arrest': c.arrest = a.rhythm === 'NormalSinus' ? '' : (a.rhythm || 'Asystole'); c.arrT = ta; break;
@@ -25,6 +26,7 @@ const PULSE_CM = (() => {
       }
     });
     c.tpxOpen = Object.keys(c.tpx).filter(s => !c.tpx[s].done);
+    c.htxOn = Object.keys(c.htx).filter(s => c.htx[s] > 0);
     const last = (names, win) => c.drugs.filter(d => names.indexOf(d.s) >= 0 && t - d.t <= win).pop();
     c.opioid = last(['Morphine', 'Fentanyl'], 2400);
     c.nalox = last(['Naloxone'], 900);
@@ -45,6 +47,7 @@ const PULSE_CM = (() => {
       }
       if (c.tpxOpen.length) { why.push(`Neišspręstas įtampos pneumotoraksas ${c.tpxOpen.map(side).join(' ir ')} – obstrukcinis šokas.`); todo.push('Adatinė dekompresija pažeistoje pusėje.'); }
       if (c.eff > 0) { why.push('Skystis perikarde (tamponada) – širdis negali prisipildyti.'); todo.push('Perikardiocentezė / skubi chirurginė pagalba.'); }
+      if (c.htxOn.length) { why.push(`Hemotoraksas ${c.htxOn.map(side).join(' ir ')} – kraujas kaupiasi pleuroje.`); todo.push('Krūtinės drenas, kraujas, skubi chirurgija.'); }
       if (c.burn > 0.15) { why.push(`Nudegimai ${r0(c.burn * 100)} % – plazmos netekimas.`); todo.push('Skysčiai pagal nudegimų skaičiuoklę.'); }
       if (c.mid && t - c.mid.t < 1200) why.push(`Midazolamas ${ago(t, c.mid.t)} – kraujagyslių išsiplėtimas, AKS mažėja.`);
       if (c.opioid && t - c.opioid.t < 1200 && lossP > 0.15) why.push(`Opioidas (${c.opioid.s === 'Fentanyl' ? 'fentanilis' : 'morfinas'}) ${ago(t, c.opioid.t)} šokinio paciento AKS sumažina labiau.`);
@@ -76,7 +79,7 @@ const PULSE_CM = (() => {
       if (c.mid) { why.push(`Midazolamas ${ago(t, c.mid.t)} – kvėpavimo slopinimas (ypač kartu su opioidais ar ketaminu).`); todo.push('Ventiliacija maišu; stebėti SpO₂.'); }
       if (c.tbi >= 0.6) { why.push('Sunki galvos smegenų trauma – didėjantis intrakranijinis spaudimas slopina kvėpavimo centrą.'); todo.push('Ventiliacija, galva pakelta 30°, skubi evakuacija.'); }
       if (lossP > 0.35 || (v.sys != null && v.sys < 60)) { why.push('Gilus šokas – retas, agoninis kvėpavimas prieš sustojimą.'); todo.push('Kraujavimo kontrolė ir kraujas nedelsiant.'); }
-      if (c.aw > 0) { why.push('Kvėpavimo takų obstrukcija.'); todo.push('Atverti kvėpavimo takus (manevrai, NPA), prireikus krikotirotomija.'); }
+      if (c.aw > 0) { why.push('Kvėpavimo takų obstrukcija.'); todo.push('Atverti kvėpavimo takus (manevrai, NPA), prireikus krikotiroidotomija.'); }
       if (!why.length) why.push('Aiškios priežasties tarp pažymėtų veiksmų nėra – gali būti modelio ypatumas; vertinkite kliniškai.');
       out.push({ id: 'apnea', lvl: 'crit', title: `Apnėja / labai retas kvėpavimas (KD ${r0(v.rr)})`, why, todo });
     }
@@ -84,7 +87,8 @@ const PULSE_CM = (() => {
     if (v.spo2 != null && v.spo2 < 88) {
       const why = [], todo = [];
       if (c.tpxOpen.length) { why.push(`Įtampos pneumotoraksas ${c.tpxOpen.map(side).join(' ir ')} – plautis subliuškęs.`); todo.push(c.tpxOpen.some(k => c.tpx[k].open) ? 'Okliuzinis tvarstis; jei blogėja – adatinė dekompresija.' : 'Adatinė dekompresija.'); }
-      if (c.aw > 0) { why.push('Kvėpavimo takų obstrukcija.'); todo.push('Atverti kvėpavimo takus, NPA, atsiurbti; prireikus krikotirotomija.'); }
+      if (c.aw > 0) { why.push('Kvėpavimo takų obstrukcija.'); todo.push('Atverti kvėpavimo takus, NPA, atsiurbti; prireikus krikotiroidotomija.'); }
+      if (c.htxOn.length) { why.push(`Hemotoraksas ${c.htxOn.map(side).join(' ir ')} – plautis suspaustas.`); todo.push('Krūtinės drenas.'); }
       if (v.rr != null && v.rr < 10) { why.push(`Hipoventiliacija (KD ${r0(v.rr)})${c.opioid || c.mid ? ' dėl vaistų' : ''}.`); todo.push('Ventiliacija maišu' + (c.opioid ? ', naloksonas.' : '.')); }
       if (c.eff > 0 || (v.sys != null && v.sys < 80)) why.push('Maža širdies išstūma – audiniai gauna mažai deguonies.');
       if (c.intub && !c.o2) why.push('Intubuotas pacientas kvėpuoja savarankiškai be papildomo O₂.');
@@ -137,7 +141,7 @@ const PULSE_CM = (() => {
     const ids = now.map(r => r.id), fresh = [];
     now.forEach(r => {
       if (!S.active[r.id]) { S.active[r.id] = true; r.t = x.t; S.list.unshift(r); fresh.push(r); }
-      else { const old = S.list.find(o => o.id === r.id && !o.end); if (old) { old.title = r.title; old.why = r.why; old.todo = r.todo; old.lvl = r.lvl; } }
+      else { const old = S.list.find(o => o.id === r.id && !o.end); if (old) { old.title = r.title; old.lvl = r.lvl; if (!/^Aiškios priežasties/.test(r.why[0] || '')) { old.why = r.why; old.todo = r.todo; } } }
       delete S.off[r.id];
     });
     // komentaras užsidaro, kai būklė praeina ≥ 60 s modelio laiko

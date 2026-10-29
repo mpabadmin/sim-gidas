@@ -157,8 +157,8 @@ def tbi_overlay(v, tbi, clock):
     if not tbi or not v or v.get('hr') in (None, 0):
         return v
     sev, t0 = tbi
-    if sev < 0.5 or (v.get('sys') or 0) < 40:
-        return v
+    if sev < 0.5 or (v.get('sys') or 0) < 90:
+        return v      # hemoraginiame šoke Cushingo hipertenzijos nepridedame – neužmaskuoti šoko
     k = (sev - 0.5) / 0.5                                   # 0..1
     f = max(0.0, min(1.0, (clock - t0) / (1200 - 700 * k)))  # pilnas poveikis per 20 min (sev 0,5) … 8 min (sev 1)
     f *= 0.4 + 0.6 * k
@@ -413,7 +413,8 @@ class PulseEngine:
         k = a.get('k')
         if k == 'tbi':
             sev = max(0.0, min(1.0, float(a.get('sev', 0.5))))
-            self.tbi = (sev, self.clock) if sev > 0 else None
+            # sunkumo keitimas nepradeda Cushingo reakcijos iš naujo (išlaikoma pradžia)
+            self.tbi = (sev, self.tbi[1] if self.tbi else self.clock) if sev > 0 else None
         if k == 'pcd':
             self.later.append((self.clock + float(a.get('dur', 90) or 90), {'k': 'eff', 'rate': 0}))
         if k == 'pain':
