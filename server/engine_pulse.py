@@ -386,10 +386,11 @@ class PulseEngine:
             x = getattr(pa, 'SEHemothorax' if k == 'htx' else 'SETubeThoracostomy')()
             x.set_side(getattr(_enum('eSide'), SIDE[a.get('side', 'L')]))
             if k == 'htx':
-                if hasattr(x, 'get_severity'):
-                    x.get_severity().set_value(max(0.0, min(1.0, float(a.get('sev', 0.5)))))
-                else:
+                # bandymai su Pulse 4.3.1: sunkumas (severity) rodiklių nekeitė – naudojamas kraujo tekėjimo į pleurą greitis
+                if hasattr(x, 'get_flow_rate'):
                     x.get_flow_rate().set_value(float(a.get('sev', 0.5)) * 200, _u('VolumePerTimeUnit', 'mL_Per_min'))
+                else:
+                    x.get_severity().set_value(max(0.0, min(1.0, float(a.get('sev', 0.5)))))
             elif hasattr(x, 'get_flow_rate'):
                 x.get_flow_rate().set_value(200.0, _u('VolumePerTimeUnit', 'mL_Per_min'))
             return x
@@ -400,7 +401,7 @@ class PulseEngine:
         if k == 'pain' and not hasattr(pa, 'SEPainStimulus'):
             # Pulse 4.3.1 Python sąsajoje skausmo dirgiklio nėra – simpatinę reakciją modeliuojame ūmiu stresu
             x = pa.SEAcuteStress()
-            x.get_severity().set_value(max(0.0, min(1.0, float(a.get('sev', 0.6)) * 0.8)))
+            x.get_severity().set_value(max(0.0, min(1.0, float(a.get('sev', 0.6)))))
             return x
         if k == 'pain':
             x = pa.SEPainStimulus()

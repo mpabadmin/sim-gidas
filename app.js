@@ -439,7 +439,7 @@ function home() {
     `<li>Pasirinkite scenarijų ir etapą arba keiskite rodiklius (<b>+/−</b> galima laikyti). <b>Pokytis per</b> – per kiek laiko monitorius pasieks naujas reikšmes. Greitos komandos: Blogėja, Gerėja, Šokas, Hipoksija, Stabilizuoti.</li>` +
     `<li><b>Veiksmai</b> – pažymėkite atliktus veiksmus (turniketas, dekompresija…), jie su laiku patenka į <b>Žurnalą</b>; ten – tendencijų grafikas ir ataskaita aptarimui.</li>` +
     `<li>Monitoriuje: palietus AKS langelį – matuojamas AKS, palietus aliarmo juostą – visų aliarmų sąrašas. Garsas įsijungia palietus ekraną.</li></ol></details>` +
-    `<details class="hlp"><summary>Apie</summary><p>Versija ${VER}. Parengė 1040 medkuopa. Mokymo priemonė – ne medicinos prietaisas; rodikliai ir kreivės sugeneruoti.</p>` +
+    `<details class="hlp"><summary>Apie</summary><p>Versija ${VER}. Parengė 1040 medkuopa Mebius. Mokymo priemonė – ne medicinos prietaisas; rodikliai ir kreivės sugeneruoti (Pulse režime – skaičiuojami Kitware Pulse fiziologijos modeliu).</p>` +
     `<p class="muted">Rodomi: EKG (II), ŠSD, SpO₂ su pletizmograma, neinvazinis AKS (sist./diast., vidutinis), kvėpavimo dažnis ir kreivė, temperatūra. Aliarmų ribos – tipinės suaugusiųjų monitoriaus numatytosios (keičiamos nustatymuose); garsiniai signalai primena IEC 60601-1-8 prioritetus. Scenarijai – SIM, ETC gido ir March gido treniruočių scenarijai.</p>` +
     `<p class="muted">Kiti gidai: <a href="https://etc.1040medkuopa.lt" target="_blank" rel="noopener">ETC gidas</a> · <a href="https://march.1040medkuopa.lt" target="_blank" rel="noopener">March gidas</a></p></details>`;
 }

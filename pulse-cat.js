@@ -241,5 +241,26 @@ const PCAT = (() => {
     ['tam', 'Skeveldra krūtinėje', 'Širdies tamponada', [{ k: 'tam', sev: 40 }]],
     ['none', 'Be sužalojimų', 'Sužalojimus pridėsite vėliau', []]
   ];
-  return { SETTINGS, PATIENTS, LOCS, SEV, SIDES, INJ, injBy, locBy, cmpOf, injAct, injName, cardActions, STATES, BAD, TX, txFor, O2DEV, FLUIDS, VOLS, RATES, DRUGS, drugsFor, drugBy, EVENTS, MECH };
+  // ≈ Pulse 4.3.1 tokios funkcijos neturi – rodiklių pokytis apytikslis (programėlės sprendimas)
+  const APX = {
+    'inj:burn': 'Pulse neturi nudegimų modelio – skysčių netekimas modeliuojamas kaip lėtas kraujavimas per odą',
+    'inj:tbi': 'Pulse GST rodiklių beveik nekeičia – Cushingo reakciją (ŠSD ↓, AKS ↑, retas kvėpavimas) prideda programėlė',
+    'inj:pain': 'Pulse neturi skausmo dirgiklio – modeliuojama ūmiu stresu (ŠSD, AKS ↑); analgetikus įvertina programėlė',
+    'act:pdress': 'Pulse neturi tvarsčio – kraujavimas tik susilpninamas',
+    'act:pos': 'Pulse neturi šios procedūros – obstrukcija sumažinama',
+    'act:npa': 'Pulse neturi NPA – obstrukcija sumažinama',
+    'act:suct': 'Pulse neturi atsiurbimo – obstrukcija šiek tiek sumažinama',
+    'act:sga': 'Pulse intubacija be ventiliatoriaus netinka – modeliuojama kaip kvėpavimo takų atvėrimas',
+    'act:cric': 'Pulse intubacija be ventiliatoriaus netinka – modeliuojama kaip kvėpavimo takų atvėrimas',
+    'act:ett': 'Pulse ventiliatorius neprijungtas – modeliuojama kaip kvėpavimo takų atvėrimas (ventiliaciją sakykite garsiai)',
+    'act:pcd': 'Pulse neturi perikardiocentezės – skystis iš perikardo siurbiamas 2 min',
+    'act:fthor': 'Pulse neturi pirštinės torakostomijos – modeliuojama kaip dekompresija',
+    'fl:LactatedRingers': 'Pulse neturi Ringerio tirpalo – lašinamas kaip NaCl 0,9 %',
+    'drug:esket': 'Pulse neturi esketamino – modeliuojama kaip ketaminas',
+    'route:OTFC': 'Pulse neturi transmukozinio vartojimo – ≈ 100 mcg į raumenį',
+    'route:IN': 'Pulse neturi intranazalinio vartojimo – modeliuojama kaip į raumenį',
+    'route:IO': 'IO modelyje – kaip IV'
+  };
+  const apx = key => APX[key] || '';
+  return { APX, apx, SETTINGS, PATIENTS, LOCS, SEV, SIDES, INJ, injBy, locBy, cmpOf, injAct, injName, cardActions, STATES, BAD, TX, txFor, O2DEV, FLUIDS, VOLS, RATES, DRUGS, drugsFor, drugBy, EVENTS, MECH };
 })();

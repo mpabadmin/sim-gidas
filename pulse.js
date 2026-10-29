@@ -143,11 +143,11 @@ const PULSE = (() => {
         if (o.a === 'tq' || o.a === 'jtq' || o.a === 'tqre') { j.tqOn = simt; if (j.tq0 == null) j.tq0 = simt; }
         if (o.a === 'tqloose' || o.a === 'tqconv') j.tqOn = null;
         if (j.ctl == null && ['tq', 'jtq', 'pack', 'pdress', 'ndc', 'occl', 'tube', 'sga', 'cric', 'ett', 'pos', 'npa', 'pcd'].indexOf(o.a) >= 0) j.ctl = simt;   // pirmoji kontrolė – ataskaitai
-        hpush(j, A[1]); rec(A[1] + ' – ' + PCAT.injName(j).name, by, { iid: j.id, a: o.a });
+        hpush(j, A[1]); rec(A[1] + ' – ' + PCAT.injName(j).name + (PCAT.apx('act:' + o.a) ? ' (≈ apytiksliai: Pulse tokios funkcijos neturi)' : ''), by, { iid: j.id, a: o.a });
         break;
       }
       case 'inj': {
-        const j = newInj(o.j, simt); SC.inj.push(j); sendInj(j); hpush(j, 'Atsirado'); rec('Naujas sužalojimas: ' + iname(j), by, { iid: j.id });
+        const j = newInj(o.j, simt); SC.inj.push(j); sendInj(j); hpush(j, 'Atsirado'); rec('Naujas sužalojimas: ' + iname(j) + (PCAT.apx('inj:' + j.k) ? ' (≈ apytiksliai: Pulse tokios funkcijos neturi)' : ''), by, { iid: j.id });
         break;
       }
       case 'tx': return treat(o.code, o.p || {}, by, o.n);
@@ -178,7 +178,7 @@ const PULSE = (() => {
         pa({ k: 'inf', cmp: F[0], ml, rate }, n, by);
         SC.inf = SC.inf.filter(x => x.cmp !== F[0]); SC.inf.push({ id: 'f' + (++reqId), cmp: F[0], n, ml, rate, t0: simt, tot });
         if (/Blood|PackedRBC|Plasma/.test(F[0])) { SC.kit.used += ml / 500; if (SC.tBlood == null) SC.tBlood = simt; }
-        rec(n + ' (' + rate + ' ml/min, ~' + Math.round(tot / 60) + ' min)', by); break;
+        rec(n + ' (' + rate + ' ml/min, ~' + Math.round(tot / 60) + ' min)' + (PCAT.apx('fl:' + F[0]) ? ' (≈ modelyje NaCl)' : ''), by); break;
       }
       case 'drug': {
         const D = PCAT.drugBy(p.id, SC.set); const nm = (D ? D.n : p.id) + ' ' + String(p.dose).replace('.', ',') + ' ' + (p.unit || 'mg') + ' ' + p.route;
@@ -187,7 +187,7 @@ const PULSE = (() => {
         const sim = D && D.pulse && ROUTE[p.route] && (!info || !info.substances || info.substances.indexOf(D.pulse) >= 0) && p.unit !== 'ml';
         if (sim) pa({ k: 'bolus', sub: D.pulse, mg, route: ROUTE[p.route] }, nm, by);
         if (D && D.id === 'txa' && SC.tTxa == null) SC.tTxa = simt;
-        rec(nm + (sim ? '' : ' (tik žurnale)'), by); break;
+        rec(nm + (sim ? (PCAT.apx('drug:' + p.id) || PCAT.apx('route:' + p.route) ? ' (≈ apytiksliai)' : '') : ' (tik žurnale – Pulse šio vaisto neturi)'), by); break;
       }
       default: {
         if (/^probe:/.test(code)) { const [, k, on] = code.split(':'); if (typeof exec === 'function') exec({ c: 'probe', k, on: on === '1' }); }

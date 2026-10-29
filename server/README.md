@@ -64,11 +64,14 @@ Be Pulse (sąsajos patikrai, supaprastintas testinis modelis):
 | `PULSE_BIN` | Pulse `bin` katalogas, jei nerandamas automatiškai |
 
 ## Sąsaja
-- `GET /health`, `GET /info`, `GET /selftest?token=…` (paleidžia variklį ir išbando visus veiksmus).
+- `GET /health`, `GET /info` (variklis, būsenos, junginiai, medžiagos, palaikomi veiksmai, kraujavimo vietos `hem_cmp`), `GET /selftest?token=…`.
 - WebSocket `/ws?token=…`, JSON žinutės:
-  monitorius → serveris `hello`, `start {state, acts, speed}`, `resume {sid}`, `act {a}`, `speed {x}`, `pause`, `run`, `stop`;
-  serveris → monitorius `info`, `started {sid, eng}`, `vit {t, v}`, `ack`, `dead`, `err`.
-- Veiksmai (`a.k`): `hem`/`hem_stop` (cmp, sev), `inf`/`inf_stop` (cmp: Blood, Plasma, Saline, LactatedRingers; ml, rate ml/min),
-  `o2`/`o2_off`, `tpx` (side, sev, open), `ndc`, `occl`, `aw` (sev), `intub`, `bolus` (sub, mg, route), `tbi`, `eff`, `burn`, `arrest`.
+  - monitorius → serveris: `hello`, `start {state, acts[], speed, ff}` (`ff` – „praėjo s nuo sužeidimo“, modelis prasukamas), `resume {sid}`, `act {id, a}`, `speed {x}`, `skip {s}` (praleisti s modelio laiko), `pause`, `run`, `stop`;
+  - serveris → monitorius: `info`, `started {sid, state, simt, resumed, engine}`, `ff {done, tot}`, `vit {simt, v, alive, speed, eff, skip?}`, `ack {id, ok, msg, simt}`, `dead`, `gone`, `stopped`, `err`.
+- Veiksmai (`a.k`): `hem`/`hem_stop` (cmp, sev), `inf`/`inf_stop` (cmp: Blood, PackedRBC, Saline; LactatedRingers → Saline; ml, rate ml/min),
+  `o2`/`o2_off` (dev, flow), `tpx` (side, sev, open), `ndc`, `occl`, `tube` (krūtinės drenas), `htx` (hemotoraksas: side, sev), `aw` (sev),
+  `intub`/`cric`/`sga` (≈ obstrukcijos pašalinimas), `bolus` (sub, mg, route IV/IM), `tbi` (≈ Cushingo reakcija pridedama), `eff` (rate ml/min; veikia nuo ~40),
+  `pcd` (≈ perikardiocentezė: drain ml/min, dur s), `burn` (≈ kraujavimas per odą), `bronch`, `asthma`, `stress`, `pain` (≈ ūmus stresas), `arrest` (rhythm: Asystole, CoarseVentricularFibrillation, NormalSinus = ROSC).
+- ≈ – Pulse 4.3.1 tokios funkcijos neturi; serveris pateikia apytikslį sprendimą ir `ack.msg` prasideda „apytiksliai:“.
 
 Mokymo priemonė – ne medicinos prietaisas. Pulse modelis apytikslis; rezultatai nėra klinikinės rekomendacijos.
