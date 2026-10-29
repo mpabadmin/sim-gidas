@@ -142,7 +142,7 @@ const PULSE = (() => {
         if (A[2]) j.state = A[2];
         if (o.a === 'tq' || o.a === 'jtq' || o.a === 'tqre') { j.tqOn = simt; if (j.tq0 == null) j.tq0 = simt; }
         if (o.a === 'tqloose' || o.a === 'tqconv') j.tqOn = null;
-        if (j.ctl == null && ['tq', 'jtq', 'pack', 'pdress', 'ndc', 'occl', 'tube', 'sga', 'cric', 'ett', 'pos', 'npa', 'pcd'].indexOf(o.a) >= 0) j.ctl = simt;   // pirmoji kontrolė – ataskaitai
+        if (j.ctl == null && ['tq', 'jtq', 'pack', 'pdress', 'ndc', 'occl', 'tube', 'htube', 'fthor', 'sga', 'cric', 'ett', 'pos', 'npa', 'pcd'].indexOf(o.a) >= 0) j.ctl = simt;   // pirmoji kontrolė – ataskaitai
         hpush(j, A[1]); rec(A[1] + ' – ' + PCAT.injName(j).name + (PCAT.apx('act:' + o.a) ? ' (≈ apytiksliai: Pulse tokios funkcijos neturi)' : ''), by, { iid: j.id, a: o.a });
         break;
       }

@@ -92,9 +92,10 @@ const PCAT = (() => {
         if (j.k === 'optx' || j.state === 'active') A.push(['occl', 'Okliuzinis tvarstis', j.k === 'optx' ? 'occl' : j.state, [{ k: 'occl', side: j.side }], 'team', '30–60 s']);
       }
       if (j.state === 'decomp' || j.state === 'occl') A.push(['retens', 'Vėl įsitempė', 'retension', [{ k: 'tpx', side: j.side, sev: j.sev, open: false }], 'instr', '']);
-      if (j.state !== 'drained') A.push(['tube', 'Krūtinės drenas', 'drained', [{ k: 'tube', side: j.side }], 'team', '10–15 min']);
+      if (j.state !== 'drained') A.push(['tube', 'Krūtinės drenas', 'drained', [{ k: 'ndc', side: j.side }], 'team', '10–15 min']);
     }
-    if (j.k === 'htx' && j.state !== 'drained') A.push(['tube', 'Krūtinės drenas', 'drained', [{ k: 'tube', side: j.side }], 'team', '10–15 min']);
+    if (j.k === 'htx' && j.state !== 'drained') A.push(['htube', 'Krūtinės drenas', 'drained', [{ k: 'tube', side: j.side }, { k: 'htx', side: j.side, sev: 0 }], 'team', '10–15 min']);
+    if (j.k === 'htx' && j.state === 'drained') A.push(['hbleed', 'Kraujuoja toliau (drenu > 200 ml/val.)', 'active', [{ k: 'htx', side: j.side, sev: j.sev }], 'instr', '']);
     if (j.k === 'aw') {
       if (j.state !== 'secured') {
         A.push(['pos', 'Galvos atlošimas / žandikaulio stūmimas', 'partial', [{ k: 'aw', sev: Math.round(j.sev * 0.6 * 100) / 100 }], 'team', '10–30 s']);
@@ -254,6 +255,8 @@ const PCAT = (() => {
     'act:cric': 'Pulse intubacija be ventiliatoriaus netinka – modeliuojama kaip kvėpavimo takų atvėrimas',
     'act:ett': 'Pulse ventiliatorius neprijungtas – modeliuojama kaip kvėpavimo takų atvėrimas (ventiliaciją sakykite garsiai)',
     'act:pcd': 'Pulse neturi perikardiocentezės – skystis iš perikardo siurbiamas 2 min',
+    'act:tube': 'Pulse 4.3.1 drenas įtampos pneumotoraksą neišsprendžia – modeliuojama kaip dekompresija',
+    'act:htube': 'Pulse 4.3.1 drenas pleuros kraujo nepašalina – drenavus sustabdomas tolesnis kaupimasis',
     'act:fthor': 'Pulse neturi pirštinės torakostomijos – modeliuojama kaip dekompresija',
     'fl:LactatedRingers': 'Pulse neturi Ringerio tirpalo – lašinamas kaip NaCl 0,9 %',
     'drug:esket': 'Pulse neturi esketamino – modeliuojama kaip ketaminas',
