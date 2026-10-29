@@ -1,6 +1,6 @@
 'use strict';
 // ───────── SIM – programėlės eiga: pradžia, monitorius, instruktoriaus pultas, scenarijai, žurnalas, nustatymai ─────────
-const VER = 'v7.1 · 2026-10-29';
+const VER = 'v8 · 2026-10-29';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
 const LSg = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
@@ -121,7 +121,7 @@ setInterval(pushSnap, 1000);
 
 // ───────── ryšys ─────────
 let remoteSnap = null, remoteT = 0, rtcState = 'off', relState = 'off', rtt = 0, remoteDump = null, dumpReqT = 0, pushT = 0;
-const sig = s => s ? JSON.stringify([s.rhythm, s.probe, s.nibp && s.nibp.mode, s.nibp && s.nibp.stat, s.sound, s.beep, s.alarms, s.label, s.stage, s.t, s.cfg, s.art, s.pace, s.pause, !!s.mute, s.son, s.pl && [s.pl.src, s.pl.id, s.pl.i, s.pl.auto, s.pl.useD], s.pu && [s.pu.st, s.pu.speed, s.pu.eng, (s.pu.act || []).length, (s.pu.h || []).map(x => x.n + x.t).join(), s.pu.sid]]) : '';
+const sig = s => s ? JSON.stringify([s.rhythm, s.probe, s.nibp && s.nibp.mode, s.nibp && s.nibp.stat, s.sound, s.beep, s.alarms, s.label, s.stage, s.t, s.cfg, s.art, s.pace, s.pause, !!s.mute, s.son, s.pl && [s.pl.src, s.pl.id, s.pl.i, s.pl.auto, s.pl.useD], s.pu && [s.pu.st, s.pu.speed, s.pu.eng, s.pu.sid, s.pu.msg, s.pu.skip, s.pu.sc ? JSON.stringify([s.pu.sc.inj, s.pu.sc.inf, s.pu.sc.o2, s.pu.sc.log.length, s.pu.sc.arrest, s.pu.sc.end]) : 0, (s.pu.q || []).map(x => x.uid + x.left).join(), (s.pu.cm || []).map(c => c.id + c.end).join(), (s.pu.h || []).map(x => x.n + x.t).join()]]) : '';
 function onLinkMsg(host, o) {
   if (!o || typeof o !== 'object') return;
   if (host) {
@@ -231,7 +231,7 @@ function stripHtml(compact) {
 }
 function headHtml() { return `<div id="mirror" class="mirw">${mirrorHtml()}</div>` + stripHtml(); }
 function tabBody() {
-  switch (UI.tab) { case 'sc': return scTab(); case 'act': return actTab(); case 'log': return logTab(); case 'set': return setTab(); case 'link': return linkTab(); case 'pu': return PULSE.tab(tgt() === 'local' ? PULSE.status() : (snap() || {}).pu, tgt() === 'local'); default: return ctlTab(); }
+  switch (UI.tab) { case 'sc': return scTab(); case 'act': return actTab(); case 'log': return logTab(); case 'set': return setTab(); case 'link': return linkTab(); case 'pu': return PUI.render(tgt() === 'local' ? PULSE.status() : (snap() || {}).pu, tgt() === 'local'); default: return ctlTab(); }
 }
 const durChips = () => '<div class="chips">' + DUR.map(([d, t]) => chip('dur', d, dur === d, t)).join('') + '</div>';
 
@@ -421,7 +421,7 @@ function setTab() {
   }
   h += sec('pul', 'Pultas (šiame telefone)', 'pokytis ' + (DUR.find(x => x[0] === dur) || [0, dur + ' s'])[1].toLowerCase() + (UI.live ? ' · iš karto' : '') + (UI.sl ? ' · slankikliai' : ''),
     '<p class="lbl mt0">Numatytasis pokytis</p>' + durChips() + '<div class="chips mt">' + tog('ui', 'live', !!UI.live, 'Keisti iš karto (be „Taikyti“)') + tog('ui', 'sl', !!UI.sl, 'Slankikliai') + '</div>');
-  { const pc = PULSE.cfg(); h += sec('pus', 'Pulse serveris', pc.url ? esc(pc.url.replace(/^wss?:\/\//, '').slice(0, 40)) : 'nenustatytas', PULSE.settingsHtml()); }
+  { const pc = PULSE.cfg(); h += sec('pus', 'Pulse serveris', pc.url ? esc(pc.url.replace(/^wss?:\/\//, '').slice(0, 40)) : 'nenustatytas', PUI.settingsHtml()); }
   if (c) h += '<div class="acts"><button class="btn" data-act="cfg-def">Atkurti numatytuosius nustatymus</button></div>';
   return h;
 }
@@ -495,7 +495,7 @@ function instructor() {
   return h + '</section>';
 }
 function monitor() {
-  return `<div id="monroot"></div><button class="mbtn mg" data-act="drawer" aria-label="Instruktoriaus pultas">${ICO.gear}</button><button class="mbtn mm" data-act="mmute" aria-label="Nutildyti aliarmus 2 min">${ICO.mute}</button>` +
+  return `<div id="monroot"></div><div class="pustrip" id="pustrip"></div><button class="mbtn mg" data-act="drawer" aria-label="Instruktoriaus pultas">${ICO.gear}</button><button class="mbtn mm" data-act="mmute" aria-label="Nutildyti aliarmus 2 min">${ICO.mute}</button>` +
     `<div class="drawer" id="drawer"><div class="dhd"><div id="dtabs" class="dtabs"></div><button class="ib" data-act="drawer" aria-label="Uždaryti">${ICO.x}</button></div><div class="dbd" id="dbd"></div></div>` +
     `<div class="alist" id="alist" data-act="alist-x" hidden></div>` +
     `<div class="tapsound" id="tapsound" data-act="sound-on">Palieskite – įjungti garsą</div>`;
@@ -538,8 +538,11 @@ function pulseLink() {
   history.replaceState(null, '', '#/nustatymai'); UI.so.pus = 1; saveUI(); setTimeout(() => toast('Pulse serveris išsaugotas'), 300);
 }
 let puT = 0;
+PUI.rerender = () => { if (UI.tab === 'pu') rerenderTab(); };
+function puStrip() { const el = $('#pustrip'); if (!el) return; const P = PULSE.status(), h = PUI.strip(P); if (el.innerHTML !== h) el.innerHTML = h; el.classList.toggle('on', !!h); PUI.refreshSheet(P); }
 PULSE.onChange = () => {
   if (route() !== 'monitorius') return;
+  puStrip();
   clearTimeout(pushT); pushT = setTimeout(pushSnap, 80);
   if (UI.tab === 'pu' && $('#drawer.on') && !inputBusy() && Date.now() - puT > 1500) { puT = Date.now(); rerenderTab(); }
 };
@@ -560,6 +563,7 @@ function openDrawer() { const d = $('#drawer'); if (!d) return; d.classList.add(
 // kas sekundę – laikmatis, atgalinis skaičiavimas, ryšio būsena, žurnalas
 setInterval(() => {
   const r = route(), dr = $('#drawer.on');
+  if (r === 'monitorius') puStrip();
   const al = $('#alist'); if (al && !al.hidden) al.innerHTML = alistHtml();
   if (!(r === 'instruktorius' || r === 'nustatymai' || dr)) return;
   mirror();
@@ -641,7 +645,7 @@ document.addEventListener('click', async e => {
     case 'd-': case 'd+': if (hold && hold.n) { hold = null; return; } hold = null; stepParam(k, a === 'd+' ? 1 : -1); return;
     case 'apply': applyDraft(); return;
     case 'undo': draft = {}; break;
-    case 'pu': { const o = PULSE.click(el); if (!o) return; if (send(o)) { if (o.op === 'act') { const A = PULSE.ACTS.find(x => x[0] === o.id); toast((A ? A[1] : 'Veiksmas') + (A && A[3] ? ' · ⏱ ' + A[3] : '')); } else if (o.op === 'start') toast('Pulse: ruošiamas modelis…'); } puT = 0; setTimeout(() => { if (!inputBusy()) rerenderTab(); }, 400); return; }
+    case 'px': PUI.onClick(el, o => { if (send(o)) { if (o.op === 'start') toast('Pulse: ruošiamas modelis…'); } puT = 0; setTimeout(() => { if (!inputBusy()) rerenderTab(); }, 300); }); return;
     case 'pu-save': { const u = ($('#pu-url') || {}).value || '', t = ($('#pu-tok') || {}).value || ''; PULSE.saveCfg({ url: u.trim(), token: t.trim() }); toast('Išsaugota'); break; }
     case 'pu-test': { const u = ($('#pu-url') || {}).value || '', t = ($('#pu-tok') || {}).value || '', r = $('#pu-res'); PULSE.saveCfg({ url: u.trim(), token: t.trim() }); if (r) r.textContent = 'Tikrinama… (jei serveris miega – iki 3 min.)'; PULSE.test(u.trim(), t.trim(), m => { const x = $('#pu-res'); if (x) x.textContent = m; }); return; }
     case 'mac': { const m = MAC.find(x => x[0] === k); if (!m) return; const o = { c: 'apply', v: macro(k, T()), d: dur, mk: m[1] }; if (k === 'stab') o.r = 'sinus'; if (send(o)) toast(m[1] + (dur ? ' – per ' + DUR.find(x => x[0] === dur)[1] : '')); draft = {}; break; }

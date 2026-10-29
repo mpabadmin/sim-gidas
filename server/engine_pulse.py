@@ -397,6 +397,11 @@ class PulseEngine:
             x = getattr(pa, {'bronch': 'SEBronchoconstriction', 'asthma': 'SEAsthmaAttack', 'stress': 'SEAcuteStress'}[k])()
             x.get_severity().set_value(max(0.0, min(1.0, float(a.get('sev', 0.5)))))
             return x
+        if k == 'pain' and not hasattr(pa, 'SEPainStimulus'):
+            # Pulse 4.3.1 Python sąsajoje skausmo dirgiklio nėra – simpatinę reakciją modeliuojame ūmiu stresu
+            x = pa.SEAcuteStress()
+            x.get_severity().set_value(max(0.0, min(1.0, float(a.get('sev', 0.6)) * 0.8)))
+            return x
         if k == 'pain':
             x = pa.SEPainStimulus()
             x.set_location(str(a.get('loc') or 'LeftLeg'))
@@ -411,6 +416,12 @@ class PulseEngine:
             self.tbi = (sev, self.clock) if sev > 0 else None
         if k == 'pcd':
             self.later.append((self.clock + float(a.get('dur', 90) or 90), {'k': 'eff', 'rate': 0}))
+        if k == 'pain':
+            self.pain = max(0.0, min(1.0, float(a.get('sev', 0.6))))
+        if k == 'bolus' and getattr(self, 'pain', 0) > 0 and a.get('sub') in ('Ketamine', 'Fentanyl', 'Morphine') and not hasattr(_pa(), 'SEPainStimulus'):
+            # analgetikas mažina skausmo (streso) reakciją po 2 min (IV) / 5 min (IM)
+            self.pain = round(self.pain * (0.35 if a.get('sub') == 'Ketamine' else 0.5), 2)
+            self.later.append((self.clock + (120 if a.get('route') != 'IM' else 300), {'k': 'pain', 'sev': self.pain}))
         try:
             x = self.build(a)
         except Exception as ex:
@@ -436,6 +447,8 @@ class PulseEngine:
             return f'apytiksliai: {c} šioje Pulse versijoje nėra – naudojamas {COMPOUND_ALT[c]}'
         if a.get('k') == 'burn' and not hasattr(_pa(), 'SEBurnWound'):
             return 'apytiksliai: šioje Pulse versijoje nudegimas modeliuojamas kaip skysčių netekimas per odą'
+        if a.get('k') == 'pain' and not hasattr(_pa(), 'SEPainStimulus'):
+            return 'apytiksliai: skausmas modeliuojamas kaip ūmus stresas (ŠSD, AKS ↑), analgetikai jį mažina'
         if a.get('k') == 'tbi':
             return 'apytiksliai: GST poveikis (Cushingo reakcija) pridedamas prie Pulse rodiklių'
         if a.get('k') in ('intub', 'cric', 'sga'):
