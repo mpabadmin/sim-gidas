@@ -117,7 +117,7 @@ const PCAT = (() => {
     return A;
   }
   const STATES = { bleeding: 'Kraujuoja', rebleed: 'Vėl kraujuoja', tq: 'Turniketas užveržtas', tq_loose: 'Turniketas atsileidęs – kraujuoja', packed: 'Tamponuota', pdress: 'Spaudžiamasis tvarstis', stopped: 'Sustabdyta',
-    active: 'Negydyta', retension: 'Vėl įsitempęs', decomp: 'Dekompresuota (adata)', thor: 'Pirštinė torakostomija – reikia dreno', occl: 'Okliuzinis tvarstis', drained: 'Drenuota', partial: 'Iš dalies atverta', secured: 'Kvėpavimo takai užtikrinti' };
+    active: 'Negydyta', retension: 'Vėl įsitempęs', decomp: 'Dekompresuota (adata)', thor: 'Pirštinė torakostomija – reikia dreno', relieved: 'Malšinamas (analgetikai)', occl: 'Okliuzinis tvarstis', drained: 'Drenuota', partial: 'Iš dalies atverta', secured: 'Kvėpavimo takai užtikrinti' };
   const BAD = ['bleeding', 'rebleed', 'tq_loose', 'active', 'retension'];
   // ── gydymas (MARCH-PAWS) – bendri veiksmai (vietiniai – ant sužalojimo kortelės) ──
   // [kodas, pavadinimas, lapas (o2|fluid|drug:<id>|null), trukmė, tipas (log|o2off|probe:…), aplinkos ('' – abi)]
@@ -162,8 +162,12 @@ const PCAT = (() => {
       ['wound', 'Žaizdų tvarstymas / patikra', null, '', 'log', ''], ['splint', 'Įtvaras', null, '5 min', 'log', ''], ['eye', 'Akies apsauga (skydelis)', null, '', 'log', ''],
       ['cath', 'Šlapimo kateteris', null, '5 min', 'log', 'role1'], ['la', 'Vietinė nejautra (prieš torakostomiją / drenas)', null, '2 min', 'log', 'role1'], ['card', 'Nukentėjusiojo kortelė (DD 1380) užpildyta', null, '', 'log', '']
     ]],
+    ['K', 'Gaivinimas', [
+      ['cpr', 'KPR – krūtinės paspaudimai', null, 'nuolat', 'log', ''], ['defib', 'Defibriliacija', null, '', 'log', '']
+    ]],
     ['Mon', 'Stebėjimas', [
       ['avpu', 'AVPU įvertintas ir įrašytas į kortelę', null, '', 'log', ''],
+      ['probes', 'Visi davikliai prijungti (EKG, SpO₂, AKS)', null, '', 'probe:all:1', ''],
       ['ecgon', 'EKG elektrodai uždėti', null, '', 'probe:ecg:1', ''], ['spo2on', 'SpO₂ daviklis uždėtas', null, '', 'probe:spo2:1', ''], ['nibpon', 'AKS manžetė uždėta', null, '', 'probe:nibp:1', '']
     ]]
   ];

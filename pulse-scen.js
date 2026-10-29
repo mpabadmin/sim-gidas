@@ -21,6 +21,7 @@ const PSCEN = (() => {
     id: 'vilkas', n: 'Vilkas 2-1 · SSU patrulyje', d: 'MEDEVAC → Role 1 · ~80 min · 5 sužalojimai · planuoti įvykiai', chain: true,
     mech: 'ied', mechN: 'SSU pėsčiųjų patrulyje', temp0: 36.6,
     pat: { state: 'Soldier@0s.json', name: 'Vilkas 2-1', age: 25, kg: 80, allergy: '' },
+    brief1: 'Į Role 1 atvežamas sužeistasis po MEDEVAC (sraigtasparniu, ~25 min). SSU pėsčiųjų patrulyje 0:00. MEDEVAC komanda perduos MIST – patikrinkite, kas padaryta. Kraujo bankas 6 vnt., procedūros ir vaistai pagal ETC gidą.',
     brief: 'Pėsčiųjų patrulis, sprogstamasis užtaisas (SSU) 0:00. CLS uždėjo turniketą ant dešinės šlaunies 0:02, laikas užrašytas. IV, TXA, analgetikų nėra. MEDEVAC perima 0:25 nusileidimo aikštelėje, skrydis ~25 min į Role 1.',
     inj: [
       { key: 'amp', k: 'bleed', loc: 'RightLeg', sev: 1, lbl: 'Dešinės blauzdos trauminė amputacija', note: 'CLS turniketas per laisvai – kelmas sunkiasi', a: [{ k: 'hem', cmp: 'RightLeg', sev: 1 }] },
@@ -79,8 +80,8 @@ const PSCEN = (() => {
       { ph: 'medevac', id: 'redo', n: 'Pakartotinė NDC (ta pati vieta, nauja adata)', c: 'S', when: sc => sc.evd && sc.evd.kink, from: sc => sc.evd.kink, win: 180, done: sc => sc.evd && sc.evd.kink ? cardT(sc, 'ptx', ['ndc', 'fthor'], sc.evd.kink) : null },
       { ph: 'medevac', id: 'mist', n: 'MIST perdavimas 4 / 4 (TQ laikas nuo pirmojo)', c: 'S', done: sc => sc.hand && sc.hand.mist ? (Object.values(sc.hand.mist.m).filter(x => x === 1).length === 4 ? sc.hand.mist.t : false) : null },
       // Role 1 (laikas nuo atvežimo)
-      { ph: 'role1', id: 'probes', n: 'Davikliai prijungti', c: 'S', win: 60, done: (sc, p0) => first(sc, l => /^(ecgon|spo2on|nibpon)$/.test(l.code || ''), p0) },
-      { ph: 'role1', id: 'cchk', n: '<c> turniketų ir tamponavimo patikra', c: 'K', win: 120, done: (sc, p0) => txT(sc, 'tqchk', p0) },
+      { ph: 'role1', id: 'probes', n: 'Davikliai prijungti', c: 'S', when: sc => sc.reprobe != null, win: 90, done: (sc, p0) => first(sc, l => /^(ecgon|spo2on|nibpon|probes)$/.test(l.code || ''), p0) },
+      { ph: 'role1', id: 'cchk', n: 'c: turniketų ir tamponavimo patikra', c: 'K', win: 120, done: (sc, p0) => txT(sc, 'tqchk', p0) },
       { ph: 'role1', id: 'fthor', n: 'Pirštinė torakostomija / drenas dešinėje', c: 'K', win: 300, done: (sc, p0) => cardT(sc, 'ptx', ['fthor', 'tube'], p0) },
       { ph: 'role1', id: 'la', n: 'Vietinė nejautra prieš torakostomiją (sąmoningas)', c: 'S', when: sc => cardT(sc, 'ptx', ['fthor'], sc.r1t0) != null, done: sc => { const f = cardT(sc, 'ptx', ['fthor'], sc.r1t0), l = txT(sc, 'la', sc.r1t0); return l != null && l <= f ? l : false; } },
       { ph: 'role1', id: 'drain', n: 'Krūtinės drenas po torakostomijos', c: 'S', when: sc => cardT(sc, 'ptx', ['fthor'], sc.r1t0) != null, from: sc => cardT(sc, 'ptx', ['fthor'], sc.r1t0), win: 900, done: (sc, p0) => cardT(sc, 'ptx', ['tube'], p0) || cardT(sc, 'htx', ['htube'], p0) },
@@ -118,15 +119,15 @@ const PSCEN = (() => {
   }
 
   // ── perdavimo etalonai (programėlė žino tiesą iš žurnalo) ──
-  const injTxt = (sc, mist) => sc.inj.filter(j => j.k !== 'pain' && !(mist && j.hideMist && j.state !== 'drained' && txT(sc, 'efast') == null)).map(j => (j.lbl || PCAT.injName(j).name) + (j.state ? ' (' + (PCAT.STATES[j.state] || j.state).toLowerCase() + ')' : '')).join('; ');
+  const injTxt = (sc, mist) => sc.inj.filter(j => j.k !== 'pain' && !(mist && j.hideMist && j.state !== 'drained' && txT(sc, 'efast') == null)).map(j => (j.lbl || PCAT.injName(j).name) + (j.state ? ': ' + (PCAT.STATES[j.state] || j.state).toLowerCase() : '')).join('; ');
   function txList(sc, upTo) {
     const T = [];
-    logs(sc).filter(l => l.kind === 'tx' && (upTo == null || l.t <= upTo) && !l.star && l.by !== 'instr').forEach(l => { const k = l.n.split(' (')[0].replace(/^CLS: /, 'CLS: ') + ' ' + mm(l.t); if (T.indexOf(k) < 0) T.push(k); });
+    logs(sc).filter(l => l.kind === 'tx' && (upTo == null || l.t <= upTo) && !l.star && ['tq', 'tqre', 'jtq', 'tqloose'].indexOf(l.a) < 0 && !/^CLS: turniket/.test(l.n)).forEach(l => { const k = l.n.split(' (')[0].replace(/ – (Dešin|Kair)[^;]*$/, m0 => m0.length > 40 ? '' : m0) + ' ' + mm(l.t); if (T.indexOf(k) < 0) T.push(k); });
     return T;
   }
   function handItems(P, kind) {
     const sc = P.sc, v = P.v || {}, t = P.simt, S = get(sc.scen && sc.scen.id);
-    const tq = sc.inj.filter(j => j.tq0 != null).map(j => 'turniketas ' + (j.lbl ? j.lbl.toLowerCase() : '') + ' uždėtas ' + mm(j.tq0) + ' (prieš ' + Math.round((t - j.tq0) / 60) + ' min)').join('; ');
+    const tq = sc.inj.filter(j => j.tq0 != null).map(j => 'turniketas (' + (j.lbl ? j.lbl.toLowerCase() : PCAT.injName(j).name.toLowerCase()) + ') uždėtas ' + mm(j.tq0) + ', prieš ' + Math.round((t - j.tq0) / 60) + ' min' + (j.tqOn != null && j.tqOn > j.tq0 + 1 ? ', užveržtas ' + mm(j.tqOn) : '') + (j.tqOn == null ? ', ATSILEIDĘS' : '')).join('; ');
     const lows = sc.min && sc.min.sys < 900 ? '; žemiausias sAKS ' + Math.round(sc.min.sys) : '';
     const S0 = `ŠSD ${v.hr != null ? v.hr : '?'}, AKS ${v.sys != null ? v.sys + '/' + v.dia : '?'}, SpO₂ ${v.spo2 != null ? v.spo2 : '?'}${sc.o2 ? ' su O₂ ' + sc.o2.flow + ' l/min' : ''}, KD ${v.rr != null ? v.rr : '?'}, T ${v.temp != null ? String(v.temp).replace('.', ',') : '?'}${lows}`;
     const tx = txList(sc).join('; ') || 'nesuteikta';
@@ -143,7 +144,7 @@ const PSCEN = (() => {
     if (isArrest(P)) R.push(['bad', 'TRAUMINIS SUSTOJIMAS – gaivinama', 'HOTT: kraujavimo kontrolė, kvėpavimo takai ir ventiliacija, abipusė dekompresija, kraujas + kalcis']);
     sc.inj.filter(j => j.k === 'bleed').forEach(j => {
       const nm = j.lbl || PCAT.injName(j).name;
-      if (j.tq0 != null) R.push([j.tqOn != null ? 'ok' : 'bad', 'Turniketas – ' + nm, mm(t - j.tq0) + ' nuo pirmojo (' + mm(j.tq0) + ')' + (j.tqOn == null ? ' · ATSILEIDĘS' : '') + ' · konversija netaikoma esant šokui / amputacijai']);
+      if (j.tq0 != null) R.push([j.tqOn != null ? 'ok' : 'bad', 'Turniketas – ' + nm, 'uždėtas ' + mm(j.tq0) + ' – prieš ' + Math.round((t - j.tq0) / 60) + ' min' + (j.tqOn == null ? ' · ATSILEIDĘS' : '') + ' · konversija netaikoma esant šokui / amputacijai']);
       else if (PCAT.BAD.indexOf(j.state) >= 0) R.push(['bad', nm, 'kraujuoja – nekontroliuota']);
       else R.push(['ok', nm, (PCAT.STATES[j.state] || j.state).toLowerCase() + (j.ctl != null ? ' ' + mm(j.ctl) : '')]);
     });
@@ -155,7 +156,7 @@ const PSCEN = (() => {
     R.push([txT(sc, 'hpmk') != null ? 'ok' : 'bad', 'Hipotermijos prevencija', txT(sc, 'hpmk') != null ? 'HPMK ' + mm(txT(sc, 'hpmk')) : 'nėra' + (P.v && P.v.temp ? ' – T ' + String(P.v.temp).replace('.', ',') : '')]);
     const k = drugT(sc, 'ket'), a = txT(sc, 'avpu'); if (k != null) R.push([a != null && a <= k ? 'ok' : 'warn', 'AVPU prieš ketaminą', a != null && a <= k ? 'įrašytas' : 'neįrašytas – vaisto poveikio neatskirsite nuo šoko']);
     const ab = first(sc, l => l.code === 'drug' && /^(cro|amx|ert|cfd|mox|cfx)$/.test(l.id || '')); R.push([ab != null ? 'ok' : 'warn', 'Antibiotikas', ab != null ? mm(ab) : 'neskirtas – ETC: per 1 val. nuo sužeidimo']);
-    const iv = txT(sc, 'iv'), io = txT(sc, 'io'); R.push([iv != null && io != null ? 'ok' : iv != null || io != null ? 'warn' : 'bad', 'Kraujagyslių prieiga', [iv != null ? 'IV' : '', io != null ? 'IO' : ''].filter(Boolean).join(' + ') || 'nėra']);
+    const iv = txT(sc, 'iv'), io = txT(sc, 'io'); R.push([iv != null && io != null ? 'ok' : iv != null || io != null ? 'warn' : 'bad', 'Kraujagyslių prieiga', ([iv != null ? 'IV' : '', io != null ? 'IO' : ''].filter(Boolean).join(' + ') || 'nėra') + (iv != null && io != null ? '' : ' – reikia antros linijos (kraujas ir vaistai atskirai)')]);
     return R;
   }
 
@@ -200,7 +201,7 @@ const PSCEN = (() => {
       if (j.k === 'ptx' && j.state === 'decomp' && r1) { const a = pick(['fthor']); if (a && !(spo2 < 92)) add('B', 'Pirštinė torakostomija → drenas – ' + (j.side === 'R' ? 'dešinė' : 'kairė'), 'po adatos visada drenas; NDC nepavyksta 40–50 % (ETC) · vietinė nejautra', 9, { k: 'card', x: j.id + '|fthor' }); }
       if (j.k === 'ptx' && j.state === 'thor' && r1) { const a = pick(['tube']); if (a) add('B', 'Krūtinės drenas – ' + (j.side === 'R' ? 'dešinė' : 'kairė'), 'po pirštinės torakostomijos – drenas', 12, { k: 'card', x: j.id + '|tube' }); }
       if (j.k === 'ptx' && j.state === 'decomp' && !r1 && spo2 >= 90) { /* stebėti */ }
-      if (j.k === 'htx' && j.state !== 'drained' && r1) { const a = pick(['htube']); if (a) add('B', 'Krūtinės drenas – ' + (j.side === 'R' ? 'dešinė' : 'kairė'), 'hemotoraksas' + (spo2 != null ? ' · SpO₂ ' + spo2 : ''), spo2 < 92 ? 14 : 8, { k: 'card', x: j.id + '|htube' }); }
+      if (j.k === 'htx' && j.state !== 'drained' && r1 && txT(sc, 'efast') != null && !sc.inj.some(x => x.side === j.side && (x.k === 'ptx' || x.k === 'optx') && x.state === 'thor')) { const a = pick(['htube']); if (a) add('B', 'Krūtinės drenas – ' + (j.side === 'R' ? 'dešinė' : 'kairė'), 'hemotoraksas' + (spo2 != null ? ' · SpO₂ ' + spo2 : ''), spo2 < 92 ? 14 : 8, { k: 'card', x: j.id + '|htube' }); }
       if (j.k === 'aw' && bad(j)) { const a = pick(r1 ? ['ett', 'sga', 'npa'] : ['npa', 'sga', 'cric']); if (a) add('A', a[1], 'kvėpavimo takų obstrukcija' + (spo2 != null ? ' · SpO₂ ' + spo2 : ''), 28, { k: 'card', x: j.id + '|' + a[0] }, 'crit'); }
       if (j.k === 'tam' && j.state !== 'drained' && r1) { const a = pick(['pcd']); if (a) add('C', a[1], 'tamponada – obstrukcinis šokas', 24, { k: 'card', x: j.id + '|pcd' }, 'crit'); }
     });
@@ -219,8 +220,9 @@ const PSCEN = (() => {
     const caNeed = bu >= 1 && (caN === 0 || (r1 && Math.floor(bu / 4) > caN - 1));
     if (caNeed) add('C', 'Kalcio gliukonatas 10 % 30 ml', caN === 0 ? 'po 1-ojo kraujo vieneto – dar neskirtas' : 'kas 4 vienetus', 9, { k: 'drug', id: 'ca' });
     if (!did('pelvic') && sc.mech === 'ied') add('C', 'Dubens diržas', 'sprogimas + kojos amputacija + šokas', 7, { k: 'tx', x: 'pelvic' });
-    if (r1 && !didR('efast') && sc.inj.some(j => ['ptx', 'optx', 'htx', 'tam'].indexOf(j.k) >= 0 || (j.k === 'bleed' && (PCAT.locBy(j.loc) || [])[2] === 'torso'))) add('C', 'e-FAST', 'pleura, perikardas, pilvas', 4, { k: 'tx', x: 'efast' });
-    if (r1 && !didR('tqchk') && sc.inj.some(j => j.tq0 != null || j.state === 'packed')) add('M', 'Turniketų / tamponavimo patikra', '<c> – pirmiausia patikrinti, kas perimta', 8, { k: 'tx', x: 'tqchk' });
+    if (r1 && !didR('efast') && sc.inj.some(j => ['ptx', 'optx', 'htx', 'tam'].indexOf(j.k) >= 0 || (j.k === 'bleed' && (PCAT.locBy(j.loc) || [])[2] === 'torso'))) add('C', 'e-FAST', 'pleura, perikardas, pilvas – prieš sprendžiant dėl dreno', 8, { k: 'tx', x: 'efast' });
+    if (r1 && !didR('tqchk') && sc.inj.some(j => j.tq0 != null || j.state === 'packed')) add('M', 'Turniketų / tamponavimo patikra', 'c – pirmiausia patikrinti, kas perimta iš MEDEVAC', 8, { k: 'tx', x: 'tqchk' });
+    if (r1 && sc.reprobe != null && !logs(sc).some(l => l.t >= sc.reprobe && /^(ecgon|spo2on|nibpon|probes)$/.test(l.code || ''))) add('M', 'Prijungti monitoriaus daviklius', 'monitorius rodo „– – –“, kol komanda neprijungs EKG, SpO₂, AKS', 9, { k: 'tx', x: 'probes' });
     // R
     const chest = sc.inj.some(j => ['ptx', 'optx', 'htx'].indexOf(j.k) >= 0 && j.state !== 'drained');
     if (!sc.o2 && spo2 != null && (spo2 < (r1 ? 94 : 90) || shock || chest || (hr != null && sys != null && hr / Math.max(1, sys) >= 1.3))) add('R', 'Deguonis', 'SpO₂ ' + spo2 + (shock ? ' · šokas' : '') + (chest ? ' · krūtinės trauma' : ''), spo2 < 90 ? 14 : 7, { k: 'tx', x: 'o2' });
@@ -232,8 +234,9 @@ const PSCEN = (() => {
     if (r1 && !didR('warm') && T0 != null && T0 < 36) add('E', 'Aktyvus šildymas, šilti skysčiai', 'T ' + String(T0).replace('.', ',') + (T0 < 35 ? ' – krešėjimas blogėja' : ''), T0 < 35 ? 9 : 5, { k: 'tx', x: 'warm' });
     // P
     const ket = drugT(sc, 'ket'), lastAn = Math.max(ket || -1e9, drugT(sc, 'fen') || -1e9, drugT(sc, 'mor') || -1e9);
-    if (sc.inj.some(j => j.k === 'pain' && j.state !== 'stopped') && t - lastAn > 1800) add('P', r1 ? 'Analgezija (ketaminas 0,2–0,3 mg/kg IV)' : 'Ketaminas 25 mg IV lėtai', (!did('avpu') ? 'pirma – AVPU į kortelę · ' : '') + 'stiprus skausmas', 4, { k: 'drug', id: 'ket' });
-    if (!did('avpu') && !ket) add('P', 'AVPU įvertinti ir įrašyti', 'prieš ketaminą – kitaip neatskirsite vaisto poveikio', 3, { k: 'tx', x: 'avpu' });
+    const painN = sc.inj.some(j => j.k === 'pain' && j.state !== 'stopped') && t - lastAn > 1800;
+    if (painN && !did('avpu')) add('P', 'AVPU įvertinti ir įrašyti', 'prieš ketaminą – kitaip neatskirsite vaisto poveikio nuo šoko', 4, { k: 'tx', x: 'avpu' });
+    else if (painN) add('P', r1 ? 'Analgezija (ketaminas 0,2–0,3 mg/kg IV)' : 'Ketaminas 25 mg IV lėtai', 'stiprus skausmas', 4, { k: 'drug', id: 'ket' });
     if (sc.inj.some(j => j.k === 'bleed' || j.k === 'ptx' || j.k === 'optx') && first(sc, l => l.code === 'drug' && /^(cro|amx|ert|cfd|mox|cfx)$/.test(l.id || '')) == null) add('P', 'Antibiotikas', (r1 ? 'ETC: per 1 val. nuo sužeidimo' : 'ceftriaksonas 2 g IV / IO (negali nuryti)'), t > 3000 ? 6 : 3, { k: 'drug', id: r1 ? 'amx' : 'cro' });
     S.sort((a, b) => b.s - a.s);
     const seen = {}; return S.filter(x => (seen[x.n] ? false : (seen[x.n] = 1)));

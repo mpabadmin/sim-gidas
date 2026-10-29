@@ -57,11 +57,11 @@ const PULSE = (() => {
   }
   const tx = o => { if (ws && ws.readyState === 1) { ws.send(JSON.stringify(o)); return true; } return false; };
   // Pulse veiksmo siuntimas
-  function pa(a, n, by, silent) {
+  function pa(a, n, by, silent, noLog) {
     const id = 'a' + (++reqId) + Date.now().toString(36).slice(-3);
     pend[id] = { n, a, by, silent };
     if (!tx({ t: 'act', id, a })) { delete pend[id]; msg = 'Nėra ryšio su serveriu – veiksmas nepritaikytas'; return false; }
-    alog.push({ a, t: simt });
+    if (!noLog) alog.push({ a, t: simt });
     return true;
   }
   function onMsg(m) {
@@ -77,6 +77,7 @@ const PULSE = (() => {
         if (SC && SC.prep) { if (!m.skip) prepTick(); onChange(); break; }
         if (SC) {
           scenTick(m.v || {});
+          if (skipQ > 0 && !m.skip) setTimeout(skipStep, 0);
           SC.inf = SC.inf.filter(a => simt - a.t0 < a.tot + 20);
           const v = m.v || {};
           if (SC.bv0 == null && v.bv) SC.bv0 = v.bv;
@@ -123,7 +124,7 @@ const PULSE = (() => {
   function newInj(j, t) {
     const x = { id: 'i' + (++reqId), k: j.k, sev: +j.sev, state: firstState(j.k), t0: t, h: [] };
     if (j.loc) x.loc = j.loc; if (j.side) x.side = j.side;
-    ['key', 'lbl', 'note', 'wound'].forEach(k => { if (j[k] != null) x[k] = j[k]; });
+    ['key', 'lbl', 'note', 'wound', 'hideMist'].forEach(k => { if (j[k] != null) x[k] = j[k]; });
     return x;
   }
   const iname = j => { const n = PCAT.injName(j); return n.name + (n.sev ? ' (' + n.sev.toLowerCase() + ')' : ''); };
@@ -202,11 +203,12 @@ const PULSE = (() => {
         if (sim) pa({ k: 'bolus', sub: D.pulse, mg, route: ROUTE[p.route] }, nm, by);
         if (loc) pa({ k: 'drug', id: p.id, mg, route: p.route }, nm, by, true);
         if (D && D.id === 'txa' && SC.tTxa == null) SC.tTxa = simt;
+        if (['ket', 'esket', 'fen', 'mor', 'para', 'melox', 'suz'].indexOf(p.id) >= 0) SC.inj.filter(j => j.k === 'pain' && j.state === 'active').forEach(j => { j.state = 'relieved'; hpush(j, 'Analgezija'); });
         rec(nm + (loc ? '' : sim ? (PCAT.apx('drug:' + p.id) || PCAT.apx('route:' + p.route) ? ' (≈ apytiksliai)' : '') : ' (tik žurnale – Pulse šio vaisto neturi)'), by, { code: 'drug', id: p.id }); break;
       }
       default: {
         const it = PCAT.TX.flatMap(g => g[2]).find(i => i[0] === code), ty = (it && it[4]) || code;   // daviklių kodai – katalogo 5-ame lauke (probe:ecg:1)
-        if (/^probe:/.test(ty)) { const [, k, on] = ty.split(':'); if (typeof exec === 'function') exec({ c: 'probe', k, on: on === '1' }); }
+        if (/^probe:/.test(ty)) { const [, k, on] = ty.split(':'); if (typeof exec === 'function') (k === 'all' ? ['ecg', 'spo2', 'nibp'] : [k]).forEach(kk => exec({ c: 'probe', k: kk, on: on === '1' })); }
         if (code === 'txa' && SC.tTxa == null) SC.tTxa = simt;
         if (isLocal() && ['hpmk', 'warm', 'bvm', 'vent', 'ett_g'].indexOf(code) >= 0) pa({ k: 'tx', id: code }, label || code, by, true);
         if (code === 'ett_g') {   // intubacija be kvėpavimo takų sužalojimo: jei obstrukcija yra – ją pašalina
@@ -240,6 +242,9 @@ const PULSE = (() => {
     }
   }
 
+  // praleidimas dalimis (taisyklių modelis) – planuoti įvykiai įvyksta savo laiku, ne praleidimo pabaigoje
+  let skipQ = 0;
+  function skipStep() { if (skipQ <= 0) return; const d = Math.min(30, skipQ); skipQ -= d; skipLeft = skipQ; tx({ t: 'skip', s: d }); }
   // ── scenarijus: priešistorė (prep), planuoti įvykiai, fazės ──
   const engN = () => isLocal() ? 'Modelis' : 'Pulse';
   const SCN = () => SC && SC.scen && typeof PSCEN !== 'undefined' ? PSCEN.get(SC.scen.id) : null;
@@ -248,7 +253,7 @@ const PULSE = (() => {
     (ops || []).forEach(op => {
       const by = op.by || dflBy || 'team';
       if (op.card) { const j = SC.inj.find(x => x.key === op.card); if (j) run({ op: 'card', iid: j.id, a: op.a, by, n: op.n, silent: op.silent }); }
-      else if (op.a) pa(op.a, 'scenarijus', 'instr', true);
+      else if (op.a) pa(op.a, 'scenarijus', 'instr', true, true);
       else if (op.tx) { const it = PCAT.TX.flatMap(g => g[2]).find(i => i[0] === op.tx); treat(op.tx, {}, by, op.n || (it ? it[1] : op.tx)); }
       else if (op.drug) treat('drug', { id: op.drug, dose: op.dose, unit: op.unit, route: op.route }, by);
       else if (op.fluid) treat('fluid', { cmp: op.fluid, ml: op.ml, rate: op.rate }, by);
@@ -288,7 +293,7 @@ const PULSE = (() => {
     SC.set = 'role1'; SC.ph = 'role1'; SC.kit = { max: PCAT.SETTINGS.role1.blood, used: 0 }; SC.team2 = !!o.team2; SC.r1t0 = t0;
     SC.phs.push({ ph: 'role1', t0 });
     try { SIM.setLabel(('Role 1 · ' + (SC.mechN || 'Pulse')).slice(0, 40), ''); } catch (e) {}
-    if (o.reprobe && typeof exec === 'function') ['ecg', 'spo2', 'nibp'].forEach(k => exec({ c: 'probe', k, on: false }));
+    if (o.reprobe && typeof exec === 'function') { ['ecg', 'spo2', 'nibp'].forEach(k => exec({ c: 'probe', k, on: false })); SC.reprobe = t0; }
     recE('Perduota į Role 1' + (o.skip ? ' (pervežimas ' + Math.round(o.skip / 60) + ' min)' : '') + (o.reprobe ? ' – monitorius: prijunkite daviklius' : ''), 'instr');
     if (typeof PULSE_CM !== 'undefined') PULSE_CM.reset();
   }
@@ -364,7 +369,7 @@ const PULSE = (() => {
       case 'start': {
         if (o.eng) saveCfg({ eng: o.eng === 'pulse' ? 'pulse' : 'local' });
         const S = o.sc || {}, set = o.scen ? 'medevac' : PCAT.SETTINGS[S.set] ? S.set : 'role1';
-        wantRun = true; hist = []; alog = []; Q = []; startFn = null; connect.q = null; Object.keys(pend).forEach(k => delete pend[k]); saveCfg({ sid: '', deadSid: '' });
+        wantRun = true; hist = []; alog = []; Q = []; startFn = null; connect.q = null; simt = 0; skipQ = 0; Object.keys(pend).forEach(k => delete pend[k]); saveCfg({ sid: '', deadSid: '' });
         SC = { set, pat: S.pat || {}, mech: S.mech || '', mechN: S.mechN || '', inj: [], inf: [], o2: null, kit: { max: PCAT.SETTINGS[set].blood, used: 0 }, log: [], arrest: '', min: { sys: 999, spo2: 100 }, ff: +o.ff || 0, nonce: o.nonce || '' };
         let acts = [];
         SC.ph = set; SC.phs = [{ ph: set, t0: SC.ff }]; SC.evd = {}; SC.hand = {}; SC.vh = [];
@@ -389,9 +394,14 @@ const PULSE = (() => {
       case 'auto': if (SC && SC.scen) { SC.scen.auto = !!o.on; L('Planuoti įvykiai ' + (o.on ? 'automatiškai' : 'rankiniu būdu'), 'sys'); keep(); onChange(); } break;
       case 'mark': if (SC) { SC.log.push({ t: Math.round(simt), n: '★ ' + (o.x || 'Žymė'), by: 'instr', star: 1 }); L('★ ' + (o.x || 'Žymė')); keep(); onChange(); } break;
       case 'speed': if (tx({ t: 'speed', x: +o.x || 1 })) { speed = +o.x || 1; L('Pulse greitis ×' + speed, 'sys'); } onChange(); break;
-      case 'skip': if (tx({ t: 'skip', s: +o.s || 300 })) { skipLeft = +o.s || 300; L('Praleista ' + Math.round((+o.s || 300) / 60) + ' min', 'sys'); } onChange(); break;
+      case 'skip': {
+        const sec = +o.s || 300;
+        if (isLocal() && SC && SC.scen) { skipQ = sec; skipLeft = sec; skipStep(); L('Praleista ' + Math.round(sec / 60) + ' min', 'sys'); }
+        else if (tx({ t: 'skip', s: sec })) { skipLeft = sec; L('Praleista ' + Math.round(sec / 60) + ' min', 'sys'); }
+        onChange(); break;
+      }
       case 'pause': tx({ t: o.on ? 'pause' : 'run' }); paused = !!o.on; setSt(o.on ? 'pause' : 'run'); break;
-      case 'stop': { const was = st; wantRun = false; Q = []; startFn = null; connect.q = null; tx({ t: 'stop' }); saveCfg({ sid: '' }); L('Pulse: modeliavimas baigtas'); setTimeout(() => { try { ws && ws.close(); } catch (e) {} }, 200); if (SC && !SC.on) SC = null; if (SC) { SC.end = simt; keep(); } setSt('off', !SC ? 'Pradžia atšaukta' : was === 'conn' || was === 'err' ? 'Modeliavimas baigtas – ataskaita skiltyje „Ataskaita“.' : 'Modeliavimas baigtas – ataskaita skiltyje „Ataskaita“. Monitorius rodo paskutines Pulse reikšmes (normalūs: Rodikliai → Atkurti normą).'); break; }
+      case 'stop': { const was = st; wantRun = false; Q = []; startFn = null; connect.q = null; tx({ t: 'stop' }); saveCfg({ sid: '' }); L('Pulse: modeliavimas baigtas'); setTimeout(() => { try { ws && ws.close(); } catch (e) {} }, 200); if (SC && !SC.on) SC = null; if (SC) { SC.end = simt; keep(); } setSt('off', !SC ? 'Pradžia atšaukta' : was === 'conn' || was === 'err' ? 'Modeliavimas baigtas – ataskaita skiltyje „Ataskaita“.' : 'Modeliavimas baigtas – ataskaita skiltyje „Ataskaita“. Monitorius rodo paskutines ' + (isLocal() ? 'modelio' : 'Pulse') + ' reikšmes (normalūs: Rodikliai → Atkurti normą).'); break; }
       case 'probe': wantRun = false; connect(() => setTimeout(() => setSt('off', info ? 'Serveris pasiekiamas: ' + info.engine + ' ' + info.version : ''), 300)); break;
     }
   }
