@@ -9,7 +9,8 @@ const PUI = (() => {
   const num = x => String(x).replace('.', ',');
   const RUN = ['run', 'pause', 'load', 'conn'];
   // pasiruošimo juodraštis (instruktoriaus telefone)
-  let SU = Object.assign({ set: 'medevac', mech: 'gswt', inj: null, pat: { state: 'Soldier@0s.json', name: '', age: 25, kg: 80, allergy: '' }, ff: 0 }, LS('sim-pu-su', {}));
+  let SU = Object.assign({ set: 'medevac', mech: 'gswt', inj: null, pat: { state: 'Soldier@0s.json', name: '', age: 25, kg: 80, allergy: '' }, ff: 0, scen: 'vilkas', mode: 'chain', out: 'typ', auto: true, team2: true, eng: 'local' }, LS('sim-pu-su', {}));
+  let LOCAL = SU.eng !== 'pulse', Q = '', seenR1 = LS('sim-pu-r1', ''), seenH = LS('sim-pu-h', '');
   const saveSU = () => LSs('sim-pu-su', SU);
   const mechBy = k => PCAT.MECH.find(m => m[0] === k) || PCAT.MECH[0];
   if (!SU.inj) SU.inj = mechBy(SU.mech)[3].map(j => Object.assign({}, j));
@@ -18,7 +19,7 @@ const PUI = (() => {
   // ── pagalbinės ──
   const supK = a => ({ hem_stop: 'hem', inf_stop: 'inf', o2_off: 'o2', intub: 'intub' })[a.k] || a.k;
   const sup = (P, acts) => !P || !P.sup || !P.sup.length || (acts || []).every(a => P.sup.indexOf(supK(a)) >= 0 || (a.k === 'arrest' && P.sup.indexOf('arrest') >= 0));
-const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<small class="apxt">≈ ${E(t)}</small>` : `<span class="apx" title="${E(t)}">≈</span>`) : ''; };
+const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (full ? `<small class="apxt">≈ ${E(t)}</small>` : `<span class="apx" title="${E(t)}">≈</span>`) : ''; };
   const btn = (k, x, label, cls, extra) => `<button class="${cls || 'pxb'}" data-act="px" data-k="${k}"${x != null ? ` data-x="${E(x)}"` : ''}${extra || ''}>${label}</button>`;
   const stTxt = { off: 'nevyksta', conn: 'jungiamasi…', load: 'ruošiamas modelis…', run: 'vyksta', pause: 'pauzė', dead: 'pacientas mirė', err: 'klaida' };
   // laukiama vykdymo (atšaukimo lange) – mygtukas pažymimas, kad nebūtų paspausta dukart
@@ -51,31 +52,6 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     return F;
   }
 
-  // ── pasiruošimas ──
-  function setupHtml(P, local) {
-    const S = PCAT.SETTINGS, mech = mechBy(SU.mech);
-    let h = '<div class="pxw"><section class="pnl"><h2>1. Aplinka</h2><div class="pxseg">' + Object.keys(S).map(k => `<button class="pxsg${SU.set === k ? ' on' : ''}" data-act="px" data-k="su-set" data-x="${k}"><b>${S[k].n}</b><small>pagal ${S[k].src} gidą</small></button>`).join('') + '</div>' +
-      `<p class="muted">${E(S[SU.set].d)}</p></section>`;
-    h += '<section class="pnl"><h2>2. Scenarijus</h2><div class="pxcards">' + PCAT.MECH.map(m => `<button class="pxcard${SU.mech === m[0] ? ' on' : ''}" data-act="px" data-k="su-mech" data-x="${m[0]}"><b>${E(m[1])}</b><small>${E(m[2])}</small></button>`).join('') + '</div></section>';
-    h += '<section class="pnl"><h2>3. Pacientas ir sužalojimai</h2>' +
-      `<button class="pxrow" data-act="px" data-k="sh-pat"><span><b>${E(SU.pat.name || (PCAT.PATIENTS.find(p => p[0] === SU.pat.state) || PCAT.PATIENTS[0])[1])}</b><small>${E([SU.pat.age ? SU.pat.age + ' m.' : '', SU.pat.kg ? SU.pat.kg + ' kg' : '', SU.pat.allergy ? 'alergija: ' + SU.pat.allergy : 'alergijų nėra'].filter(Boolean).join(' · '))}</small></span><i>Keisti ›</i></button>` +
-      '<div class="pxinj">' + (SU.inj.length ? SU.inj.map((j, i) => { const n = PCAT.injName(j); return `<div class="pxij"><span>${(PCAT.injBy(j.k) || {}).ico || ''} ${E(n.name)}${n.sev ? ` <small>${E(n.sev)}</small>` : ''}${apxB('inj:' + j.k, 1)}</span><button class="pxx" data-act="px" data-k="su-del" data-x="${i}" aria-label="Pašalinti">✕</button></div>`; }).join('') : '<p class="muted">Sužalojimų nėra.</p>') + '</div>' +
-      btn('sh-inj', 'setup', '＋ Pridėti sužalojimą', 'pxb wide') +
-      '<p class="lbl pxlb">Komanda atvyksta praėjus</p><div class="chips">' + [0, 5, 10, 20, 30].map(m => `<button class="chip pxch${SU.ff === m * 60 ? ' on' : ''}" data-act="px" data-k="su-ff" data-x="${m * 60}">${m ? m + ' min' : 'iš karto'}</button>`).join('') + '</div></section>';
-    // įžanga (prebrief)
-    h += `<section class="pnl"><h2>Įžanga komandai</h2><p class="pxpre">${E(prebrief())}</p></section>`;
-    h += '<section class="pnl"><h2>Ženklas ≈</h2><p class="mt0"><span class="apx">≈</span> – <b>Pulse 4.3.1 tokios funkcijos neturi</b>: rodiklių pokytį apytiksliai sukuria programėlė (pvz. nudegimai, GST, skausmas, intubacija, perikardiocentezė). Visa kita skaičiuoja Pulse.</p></section>';
-    // serveris
-    const tokOk = local ? PULSE.cfg().token : (!P || P.tok !== false || String(PULSE.cfg().token || '').trim());
-    h += '<section class="pnl">' + (!tokOk ? `<p class="mira p1">Pulse serverio žetono nėra ${local ? 'šiame telefone' : 'nei šiame, nei monitoriaus telefone'}: įveskite jį Nustatymai → Pulse serveris.</p>` : '') +
-      (P && P.msg && P.st === 'off' && !(P.sc && P.sc.lost) ? `<p class="muted">${E(P.msg)}</p>` : '') +
-      (P && P.sid && P.st !== 'dead' && P.sc && P.sc.end == null ? btn('resume', null, 'Atkurti ankstesnę sesiją', 'pxb wide') : '') +
-      (P && P.sc && P.sc.end != null ? btn('view', 'rep', 'Ankstesnio scenarijaus ataskaita', 'pxb wide') : '') +
-      `<p class="muted">Rodiklius skaičiuoja Kitware Pulse fiziologijos modelis${P && P.eng ? ' (' + E(P.eng + ' ' + P.ver) + ')' : ''}. Jei serveris miegojo, pradžia užtrunka iki 1–2 min.</p></section>`;
-    // PRADĖTI visada po nykščiu (numatytosios reikšmės parinktos – galima pradėti iš karto)
-    h += '<div class="pxbot pxbotsu">' + btn('start', null, '▶ PRADĖTI<small>' + E(PCAT.SETTINGS[SU.set].n + ' · ' + mech[1] + ' · sužalojimų: ' + SU.inj.length) + '</small>', 'pxgo') + '</div></div>';
-    return h;
-  }
   function prebrief() {
     const m = mechBy(SU.mech), S = PCAT.SETTINGS[SU.set];
     const I = SU.inj.map(j => PCAT.injName(j).name.toLowerCase()).join('; ') || 'nenustatyta';
@@ -84,19 +60,217 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
       `Priemonės ir vaistai – pagal ${S.src} gidą${S.n === 'MEDEVAC' ? '; kraujo – ' + S.blood + ' vnt., deguonis – balionas' : ''}. Veiksmus, kurių modelis neskaičiuoja (pvz. TXA, antibiotikai), sakykite garsiai – jie žymimi žurnale.`;
   }
 
-  // ── eiga ──
+  // ── pasiruošimas ──
+  function setupHtml(P, local) {
+    LOCAL = SU.eng !== 'pulse';
+    const S = PCAT.SETTINGS, mech = mechBy(SU.mech), SC0 = SU.scen ? PSCEN.get(SU.scen) : null;
+    let h = '<div class="pxw"><section class="pnl"><h2>Scenarijus</h2><div class="pxcards">' +
+      PSCEN.LIST.map(s => `<button class="pxcard${SU.scen === s.id ? ' on' : ''}" data-act="px" data-k="su-scen" data-x="${s.id}"><b>${E(s.n)}</b><small>${E(s.d)}</small></button>`).join('') +
+      `<button class="pxcard${!SU.scen ? ' on' : ''}" data-act="px" data-k="su-scen" data-x=""><b>Laisvas scenarijus</b><small>Pasirenkate aplinką, mechanizmą ir sužalojimus patys</small></button></div></section>`;
+    if (SC0) {
+      h += '<section class="pnl"><h2>Pradžia</h2>' +
+        [['chain', 'Visa grandinė', 'MEDEVAC ' + PSCEN.mm(SC0.start.medevac) + ' → MIST → Role 1 → ATMISTER'], ['medevac', 'Tik MEDEVAC', 'baigiasi MIST perdavimu'], ['role1', 'Tik Role 1', 'atvežtas ' + PSCEN.mm(SC0.role1At) + ' po MEDEVAC baigties:']].map(o => `<button class="pxrow${SU.mode === o[0] ? ' on' : ''}" data-act="px" data-k="su-mode" data-x="${o[0]}"><span><b>${SU.mode === o[0] ? '● ' : '○ '}${E(o[1])}</b><small>${E(o[2])}</small></span></button>`).join('') +
+        (SU.mode === 'role1' ? '<div class="chips">' + Object.keys(SC0.out).map(k => `<button class="chip pxch${SU.out === k ? ' on' : ''}" data-act="px" data-k="su-out" data-x="${k}">${E(SC0.out[k].n)}</button>`).join('') + `</div><p class="muted">${E(SC0.out[SU.out] ? SC0.out[SU.out].d : '')}</p>` : '') +
+        `<button class="pxrow" data-act="px" data-k="su-auto"><span><b>Planuoti įvykiai automatiškai</b><small>${SU.auto ? 'Įjungta – įvykiai (triukšmas, vibracija, užsilenkęs kateteris…) įvyks patys' : 'Išjungta – sukelsite patys skiltyje „Įvykiai“'}</small></span><i>${SU.auto ? 'Taip' : 'Ne'}</i></button>` +
+        (SU.mode === 'chain' ? `<button class="pxrow" data-act="px" data-k="su-team2"><span><b>Role 1 – kita komanda</b><small>${SU.team2 ? 'Ties perdavimu keičiasi komanda; vertinimas atskirai' : 'Ta pati komanda tęsia'}</small></span><i>${SU.team2 ? 'Taip' : 'Ne'}</i></button>` : '') +
+        '</section>' +
+        `<section class="pnl"><h2>Įžanga komandai</h2><p class="pxpre">${E(SC0.brief)}</p><p class="muted">Sužalojimai (instruktoriui): ${E(SC0.inj.filter(j => j.lbl).map(j => j.lbl + (j.note ? ' – ' + j.note : '')).join('; '))}.</p></section>`;
+    } else {
+      h += '<section class="pnl"><h2>1. Aplinka</h2><div class="pxseg">' + Object.keys(S).map(k => `<button class="pxsg${SU.set === k ? ' on' : ''}" data-act="px" data-k="su-set" data-x="${k}"><b>${S[k].n}</b><small>pagal ${S[k].src} gidą</small></button>`).join('') + '</div>' +
+        `<p class="muted">${E(S[SU.set].d)}</p></section>`;
+      h += '<section class="pnl"><h2>2. Mechanizmas</h2><div class="pxcards">' + PCAT.MECH.map(m => `<button class="pxcard${SU.mech === m[0] ? ' on' : ''}" data-act="px" data-k="su-mech" data-x="${m[0]}"><b>${E(m[1])}</b><small>${E(m[2])}</small></button>`).join('') + '</div></section>';
+      h += '<section class="pnl"><h2>3. Pacientas ir sužalojimai</h2>' +
+        `<button class="pxrow" data-act="px" data-k="sh-pat"><span><b>${E(SU.pat.name || (PCAT.PATIENTS.find(p => p[0] === SU.pat.state) || PCAT.PATIENTS[0])[1])}</b><small>${E([SU.pat.age ? SU.pat.age + ' m.' : '', SU.pat.kg ? SU.pat.kg + ' kg' : '', SU.pat.allergy ? 'alergija: ' + SU.pat.allergy : 'alergijų nėra'].filter(Boolean).join(' · '))}</small></span><i>Keisti ›</i></button>` +
+        '<div class="pxinj">' + (SU.inj.length ? SU.inj.map((j, i) => { const n = PCAT.injName(j); return `<div class="pxij"><span>${(PCAT.injBy(j.k) || {}).ico || ''} ${E(n.name)}${n.sev ? ` <small>${E(n.sev)}</small>` : ''}${apxB('inj:' + j.k, 1)}</span><button class="pxx" data-act="px" data-k="su-del" data-x="${i}" aria-label="Pašalinti">✕</button></div>`; }).join('') : '<p class="muted">Sužalojimų nėra.</p>') + '</div>' +
+        btn('sh-inj', 'setup', '＋ Pridėti sužalojimą', 'pxb wide') +
+        '<p class="lbl pxlb">Komanda atvyksta praėjus</p><div class="chips">' + [0, 5, 10, 20, 30].map(m => `<button class="chip pxch${SU.ff === m * 60 ? ' on' : ''}" data-act="px" data-k="su-ff" data-x="${m * 60}">${m ? m + ' min' : 'iš karto'}</button>`).join('') + '</div></section>';
+      h += `<section class="pnl"><h2>Įžanga komandai</h2><p class="pxpre">${E(prebrief())}</p></section>`;
+    }
+    // variklis
+    h += '<section class="pnl"><h2>Variklis</h2><div class="pxseg">' +
+      `<button class="pxsg${SU.eng !== 'pulse' ? ' on' : ''}" data-act="px" data-k="su-eng" data-x="local"><b>Taisyklių modelis ≈</b><small>telefone · be interneto</small></button>` +
+      `<button class="pxsg${SU.eng === 'pulse' ? ' on' : ''}" data-act="px" data-k="su-eng" data-x="pulse"><b>Pulse</b><small>serveris · tikslesnė fiziologija</small></button></div>`;
+    if (SU.eng === 'pulse') {
+      const w = PULSE.wakeState();
+      const wt = w.st === 'ready' ? `<b class="ok">✓ Serveris pabudęs</b> – ${E(w.msg)}${w.ses ? ' · sesijos ' + E(w.ses) : ''}. Budrus dar ${w.left} min.` : w.st === 'waking' ? `<b class="amb">Žadinama… ${w.sec} s</b> (miegantis serveris pasileidžia per 1–2 min.)` : w.st === 'err' ? `<b class="bad">✕ ${E(w.msg)}</b>` : 'Serveris gali miegoti – pažadinkite iš anksto, kad PRADĖTI veiktų be laukimo.';
+      h += `<div class="pxwake"><button class="pxb${w.st === 'ready' ? '' : ' pri'}" data-act="px" data-k="wake">${w.st === 'ready' ? 'Laikyti budrų' : w.st === 'waking' ? 'Žadinama…' : 'Pažadinti Pulse serverį'}</button><p class="muted">${wt}</p></div>` +
+        `<p class="mt0"><span class="apx">≈</span> – <b>Pulse 4.3.1 tokios funkcijos neturi</b>: rodiklių pokytį apytiksliai sukuria programėlė (pvz. nudegimai, GST, skausmas, intubacija, perikardiocentezė). Visa kita skaičiuoja Pulse.</p>`;
+      const tokOk = local ? PULSE.cfg().token : (!P || P.tok !== false || String(PULSE.cfg().token || '').trim());
+      if (!tokOk) h += `<p class="mira p1">Pulse serverio žetono nėra ${local ? 'šiame telefone' : 'nei šiame, nei monitoriaus telefone'}: įveskite jį Nustatymai → Pulse serveris.</p>`;
+    } else h += '<p class="mt0 muted">Rodikliai skaičiuojami telefone paprastomis taisyklėmis (ATLS šoko klasės, TCCC / ETC mokomosios reikšmės). <b>Visas variklis apytikslis (≈)</b> – reikšmės mokomosios, ne klinikinės. Internetas nereikalingas.</p>';
+    h += '</section>';
+    if (P && (P.msg && P.st === 'off' && !(P.sc && P.sc.lost) || (P.sid && P.st !== 'dead' && P.sc && P.sc.end == null) || (P.sc && P.sc.end != null))) h += '<section class="pnl">' +
+      (P.msg && P.st === 'off' && !(P.sc && P.sc.lost) ? `<p class="muted">${E(P.msg)}</p>` : '') +
+      (P.sid && P.st !== 'dead' && P.sc && P.sc.end == null ? btn('resume', null, 'Atkurti ankstesnę sesiją', 'pxb wide') : '') +
+      (P.sc && P.sc.end != null ? btn('view', 'rep', 'Ankstesnio scenarijaus ataskaita', 'pxb wide') : '') + '</section>';
+    const lbl = SC0 ? SC0.n + ' · ' + ({ chain: 'visa grandinė', medevac: 'tik MEDEVAC', role1: 'tik Role 1 (' + (SC0.out[SU.out] || {}).n + ')' })[SU.mode] : PCAT.SETTINGS[SU.set].n + ' · ' + mech[1] + ' · sužalojimų: ' + SU.inj.length;
+    h += '<div class="pxbot pxbotsu">' + btn('start', null, '▶ PRADĖTI<small>' + E(lbl + ' · ' + (SU.eng === 'pulse' ? 'Pulse' : 'taisyklių modelis')) + '</small>', 'pxgo') + '</div></div>';
+    return h;
+  }
+
+  // ── eiga: antraštė su tikrais rodikliais ──
+  const PHN = { medevac: ['MEDEVAC · MARCH', 'medevac'], handover: ['PERDAVIMAS', 'hand'], role1: ['ROLE 1 · ETC', 'role1'], prep: ['RUOŠIAMA', 'hand'] };
+  function vitCls(k, x, r1) {
+    if (x == null) return '';
+    const R = { hr: [x > 130 || x < 50, x > 110], sys: [x < (r1 ? 80 : 90), x < 100 || x > 160], spo2: [x < 90, x < 94], rr: [x > 30 || x < 8, x > 24], temp: [x < 35, x < 36], lost: [x > 1500, x > 750] }[k];
+    return R ? (R[0] ? 'bad' : R[1] ? 'amb' : 'ok') : '';
+  }
+  function trend(P, k, idx) {
+    const H = (P.sc && P.sc.vh) || [], cur = P.v && P.v[k]; if (cur == null || !H.length) return '';
+    let old = null; for (let i = H.length - 1; i >= 0; i--) if (H[i][0] <= P.simt - 60) { old = H[i][idx]; break; }
+    if (old == null) return '';
+    const th = { hr: 8, sys: 8, spo2: 3, rr: 4 }[k] || 99;
+    return cur - old >= th ? '↑' : old - cur >= th ? '↓' : '';
+  }
   function headHtml(P) {
-    const run = RUN.indexOf(P.st) >= 0, sp = P.speed || 1;
-    // pauzė – viršutinėje juostoje (stabdo ir monitorių, ir Pulse), todėl čia jos nekartojame
-    let h = `<div class="pxh"><div class="pxh1"><span class="pxclkw"><b class="pxclk">${T(P.simt)}</b><small class="pxst2 ${P.st}">${P.st === 'off' && P.sc && P.sc.end != null ? 'baigta' : stTxt[P.st] || P.st} · nuo sužeidimo</small></span>` +
-      (run || P.st === 'dead' ? `<button class="pxi pxstop" data-act="px" data-k="stop" data-hold="1" aria-label="Baigti (laikykite 1,5 s)">■ Baigti<small>laikykite</small></button>` : '') + '</div>';
+    const run = RUN.indexOf(P.st) >= 0, sp = P.speed || 1, sc = P.sc || {}, v = P.v || {}, r1 = sc.set === 'role1';
+    const ph = PHN[sc.ph] || PHN[sc.set] || ['', ''];
+    const lost = v.lost != null ? v.lost : bleedLoss(P);
+    let h = `<div class="pxh"><div class="pxh1"><span class="pxclkw"><b class="pxclk">${T(P.simt)}</b><small class="pxst2 ${P.st}">${P.st === 'off' && sc.end != null ? 'baigta' : stTxt[P.st] || P.st} · nuo sužeidimo</small></span>` +
+      `<span class="pxbadges"><span class="pxph ${ph[1]}">${E(ph[0])}</span><span class="pxengb">${P.local ? 'Taisyklių modelis ≈' : 'Pulse'}</span></span>` +
+      (run || P.st === 'dead' ? `<button class="pxi pxstop" data-act="px" data-k="stop" data-hold="1" aria-label="Baigti (laikykite 1,5 s)">■<small>laikykite</small></button>` : '') + '</div>';
+    if (P.v) {
+      const C = [['hr', 'ŠSD', v.hr, 1], ['sys', 'AKS', v.sys != null ? v.sys + '/' + v.dia : null, 2], ['spo2', 'SpO₂', v.spo2, 3], ['rr', 'KD', v.rr, 4], ['temp', 'T', v.temp != null ? num(v.temp) : null], ['lost', 'Netekta', lost ? num(Math.round(lost / 100) / 10) + ' l' : '0 l']];
+      h += '<div class="pxvit">' + C.map(c => { const raw = c[0] === 'sys' ? v.sys : c[0] === 'lost' ? lost : v[c[0]], cl = vitCls(c[0], raw, r1), tr = c[3] ? trend(P, c[0], c[3]) : ''; return `<div class="${cl}"><small>${c[1]}</small><b>${c[2] == null ? '–' : E(c[2])}${tr}</b></div>`; }).join('') + '</div>';
+    }
+    h += chipsHtml(P);
     if (run) h += '<div class="pxh2">' + btn('speed', sp, '×' + sp, 'pxi', ' aria-label="Greitis: ×' + sp + ' (keisti)"') + btn('mark', null, '★', 'pxi', ' aria-label="Pažymėti aptarimui"') + btn('skip', 300, '⏭ +5 min', 'chip pxch') + btn('skip', 900, '⏭ +15 min', 'chip pxch') + (P.skip ? `<span class="muted">praleidžiama… liko ${T(P.skip)}</span>` : '') + (P.msg && P.st !== 'run' ? `<span class="muted">${E(P.msg)}</span>` : '') + '</div>';
     else if (P.msg) h += `<div class="pxh2"><span class="muted">${E(P.msg)}</span></div>`;
-    if (P.eng && !P.pulse) h += '<div class="pxh2"><span class="mira p1">Serveryje veikia testinis variklis, ne Pulse</span></div>';
-    const cm = (P.cm || []).filter(c => c.end == null).sort((a, b) => (b.lvl === 'crit') - (a.lvl === 'crit'))[0];
-    if (cm && (run || P.st === 'dead')) h += `<div class="pxc ${cm.lvl}" data-act="px" data-k="cm"><b>⚠ ${E(cm.title)}</b>` + (cmOpen ? `<div class="pxcw"><p>Galimos priežastys:</p><ul>${cm.why.map(x => '<li>' + E(x) + '</li>').join('')}</ul>${cm.todo.length ? '<p>Ką daryti:</p><ul>' + cm.todo.map(x => '<li>' + E(x) + '</li>').join('') + '</ul>' : ''}<small>Užuomina pagal modelį ir pažymėtus veiksmus – ne diagnozė.</small></div>` : '<small> · palieskite – kodėl?</small>') + '</div>';
+    if (P.eng && !P.pulse && !P.local) h += '<div class="pxh2"><span class="mira p1">Serveryje veikia testinis variklis, ne Pulse</span></div>';
     return h + '</div>';
   }
+  function chipsHtml(P) {
+    const sc = P.sc, C = [], t = P.simt;
+    if (!sc || !sc.inj) return '';
+    sc.inj.filter(j => j.tq0 != null && j.state !== 'pdress').forEach(j => { const loose = j.tqOn == null; C.push(`<span class="pxchip ${loose ? 'bad' : 'amb'}">TQ ${E(j.lbl ? j.lbl.split(' ')[0].toLowerCase() : (PCAT.locBy(j.loc) || [0, ''])[1].split(' ')[0].toLowerCase())} ${T(t - j.tq0)}${loose ? ' · atsileidęs' : ''}</span>`); });
+    const txa = PSCEN.drugT(sc, 'txa'), bleeding = sc.inj.some(j => j.k === 'bleed' || j.k === 'htx');
+    if (txa != null) C.push(`<span class="pxchip">TXA ✓ ${PSCEN.mm(txa)}</span>`);
+    else if (bleeding && t < 10800) { const lim = sc.set === 'role1' && t < 5400 ? 5400 : 10800; C.push(`<span class="pxchip amb">TXA liko ${Math.round((lim - t) / 60)} min</span>`); }
+    (sc.inf || []).forEach(f => { const left = f.tot - Math.max(0, t - f.t0); if (left > 0) C.push(`<span class="pxchip blu">${E(f.n.replace('Pilnas kraujas', 'Kraujas'))} · ${T(left)}</span>`); });
+    if (sc.kit) C.push(`<span class="pxchip">Kraujas ${Math.ceil(sc.kit.used)}/${sc.kit.max}</span>`);
+    if (sc.o2) C.push(`<span class="pxchip blu">O₂ ${sc.o2.flow} l/min</span>`);
+    const bu = (sc.log || []).filter(l => l.code === 'fluid' && /Blood|PackedRBC|Plasma/.test(l.cmp || '')).length, ca = (sc.log || []).filter(l => l.code === 'drug' && l.id === 'ca').length;
+    if (bu && !ca) C.push('<span class="pxchip bad">Kalcis – neskirtas</span>');
+    if (sc.set === 'role1' && sc.r1t0 != null && t >= sc.r1t0) { const nx = 900 - ((t - sc.r1t0) % 900); C.push(`<span class="pxchip">Vertinimas po ${Math.ceil(nx / 60)}′</span>`); }
+    const ne = nextEv(P); if (ne) C.push(`<span class="pxchip dim">Kitas įvykis: ${E(ne)}</span>`);
+    return C.length ? '<div class="pxchips">' + C.join('') + '</div>' : '';
+  }
+  function nextEv(P) {
+    const sc = P.sc, S = sc && sc.scen && PSCEN.get(sc.scen.id); if (!S || !sc.scen.auto || !sc.evd) return '';
+    const ph = sc.ph, P0 = (sc.phs || [])[sc.phs.length - 1], base = ph === 'role1' && P0 ? P0.t0 : 0;
+    const e = S.ev.filter(x => x.ph === ph && sc.evd[x.id] == null && x.at != null && !x.hide).sort((a, b) => a.at - b.at)[0];
+    return e ? e.n.split(' – ')[0].split(' (')[0] + ' ' + T(base + e.at) : '';
+  }
+
+  // ── būklės centras ──
+  let ADV = [];
+  function statusHtml(P) {
+    const sc = P.sc;
+    ADV = P.st === 'dead' ? [] : PSCEN.advise(P).slice(0, 5);
+    let h = '';
+    const cm = (P.cm || []).filter(c => c.end == null).sort((a, b) => (b.lvl === 'crit') - (a.lvl === 'crit'))[0];
+    const top = ADV.find(a => a.lvl === 'crit') || (cm ? ADV[0] : null);
+    if (cm || (top && top.lvl === 'crit')) {
+      const lvl = cm ? cm.lvl : 'crit';
+      h += `<div class="pxalert ${lvl}"><b>${E(cm ? cm.title : top.n)}</b>` +
+        `<span>${E(cm ? 'Kodėl: ' + (cm.why[0] || '') : top.why)}</span>` +
+        (top ? `<button class="pxalertgo" data-act="px" data-k="adv" data-x="${ADV.indexOf(top)}">Atlikti: ${E(top.n)}</button>` : '') +
+        (cm ? `<button class="pxalertmore" data-act="px" data-k="cm">${cmOpen ? 'Mažiau' : 'Daugiau – visos priežastys ir ką daryti'}</button>` : '') +
+        (cm && cmOpen ? `<div class="pxcw"><p>Galimos priežastys:</p><ul>${cm.why.map(x => '<li>' + E(x) + '</li>').join('')}</ul>${cm.todo.length ? '<p>Ką daryti:</p><ul>' + cm.todo.map(x => '<li>' + E(x) + '</li>').join('') + '</ul>' : ''}<small>Užuomina pagal modelį ir pažymėtus veiksmus – ne diagnozė.</small></div>` : '') + '</div>';
+    }
+    if (sc.ph === 'handover') h += `<div class="pxalert hand"><b>Nusileidimas – MIST perdavimas</b><span>Komanda perduoda pacientą. Pažymėkite, ką pasakė, ir perduokite į Role 1.</span>${btn('view', 'hand', 'Atidaryti perdavimą', 'pxalertgo')}</div>`;
+    if (sc.evacT != null) h += `<div class="pxalert hand"><b>Evakuacija atvyko – ATMISTER</b><span>Komanda perduoda pacientą Role 2.</span>${btn('view', 'hand', 'ATMISTER įvertinimas', 'pxalertgo')}</div>`;
+    h += `<p class="pxlbl">Dabar svarbiausia · ${sc.set === 'role1' ? 'ETC' : 'MARCH'}</p>`;
+    h += ADV.length ? ADV.map((a, i) => `<button class="pxadv ${a.lvl}" data-act="px" data-k="adv" data-x="${i}"><span class="pxL">${E(a.L)}</span><span class="pxadvt"><b>${E(a.n)}</b><small>${E(a.why)}</small></span><i>›</i></button>`).join('') : '<p class="muted">Skubių veiksmų pagal rodiklius nėra – stebėkite, vertinkite pakartotinai.</p>';
+    h += btn('view', 'all', 'Visi veiksmai ir paieška ›', 'pxb wide');
+    const done = (sc.log || []).filter(l => l.kind === 'tx' && l.by !== 'instr' && (!sc.r1t0 || sc.set !== 'role1' || l.t >= sc.r1t0)).slice(-6).reverse();
+    if (done.length) h += '<p class="pxlbl">Atlikta</p><div class="pxdone">' + done.map(l => `<span><small>${T(l.t)}</small> ${E(l.n.split(' (')[0])}</span>`).join('') + '</div>';
+    h += '<section class="pnl"><h2>Apžiūros radiniai' + (P.local ? '' : ' <span class="apx">≈</span>') + '</h2>' + (P.local ? '' : '<p class="apxt mt0">Pulse šių radinių neskaičiuoja – programėlė juos apytiksliai išveda iš rodiklių ir sužalojimų.</p>') + '<div class="pxf">' + findings(P).map(f => `<div class="${f[2] ? 'bad' : ''}"><small>${E(f[0])}</small><b>${E(f[1])}</b></div>`).join('') + '</div>' +
+      htxLine(P) + '</section>';
+    return h;
+  }
+  function htxLine(P) { const H = P.v && P.v.htx; if (!H) return ''; return Object.keys(H).filter(s => H[s].drained).map(s => `<p class="muted">Drenas ${s === 'R' ? 'dešinėje' : 'kairėje'}: išbėgo ${H[s].out} ml</p>`).join(''); }
+
+  // ── visi veiksmai (su paieška) ──
+  function allHtml(P) {
+    const sc = P.sc, set = sc.set, other = set === 'role1' ? 'medevac' : 'role1';
+    const q = Q.trim().toLowerCase();
+    let h = `<div class="pxqw"><input class="inp pxq" id="pxq" type="search" placeholder="Paieška: dren, kalc, ketam, turnik…" autocomplete="off" aria-label="Veiksmų paieška" value="${E(Q)}"></div>`;
+    const order = j => ['bleed', 'aw', 'ptx', 'optx', 'htx', 'tam', 'tbi', 'burn', 'bronch', 'pain'].indexOf(j.k);
+    h += '<section class="pnl" data-q="sužalojimai"><h2>Sužalojimai</h2>' + (sc.inj.length ? sc.inj.slice().sort((a, b) => order(a) - order(b)).filter(j => !q || (PCAT.injName(j).name + ' ' + PCAT.cardActions(j, set).map(a => a[1]).join(' ') + ' ' + PCAT.cardActions(j, other).map(a => a[1]).join(' ')).toLowerCase().indexOf(q) >= 0).map(j => cardHtml(P, j) + offCard(P, j, other)).join('') : '<p class="muted">Sužalojimų nėra.</p>') + btn('sh-inj', 'live', '＋ Naujas sužalojimas', 'pxb wide ins') + '</section>';
+    h += txHtml(P, null, q);
+    // kitos aplinkos veiksmai – pilki su paaiškinimu (nieko neslepiame)
+    const off = PCAT.TX.flatMap(g => g[2].filter(x => x[5] && x[5] !== set).map(x => [g[1], x])).filter(([g, x]) => !q || (x[1] + ' ' + g).toLowerCase().indexOf(q) >= 0);
+    if (off.length) h += `<section class="pnl"><h2>Neprieinama ${set === 'role1' ? 'Role 1' : 'MEDEVAC'}</h2>` + off.map(([g, x]) => `<button class="pxrow" disabled data-q="${E((x[1] + ' ' + g).toLowerCase())}"><span><b>${E(x[1])}</b><small>tik ${x[5] === 'role1' ? 'Role 1 (ETC gidas)' : 'MEDEVAC (MARCH gidas)'}</small></span></button>`).join('') + '</section>';
+    return h;
+  }
+  function offCard(P, j, other) {
+    const here = PCAT.cardActions(j, P.sc.set).map(a => a[0]), miss = PCAT.cardActions(j, other).filter(a => a[4] === 'team' && here.indexOf(a[0]) < 0);
+    if (!miss.length) return '';
+    return '<div class="pxoff">' + miss.map(a => `<span data-q="${E(a[1].toLowerCase())}">${E(a[1])} – tik ${other === 'role1' ? 'Role 1 (ETC)' : 'MEDEVAC'}</span>`).join('') + '</div>';
+  }
+
+  // ── perdavimas (MIST / ATMISTER) ──
+  let HM = LS('sim-pu-hm', {}), HO = Object.assign({ skip: 1, reprobe: 1, team2: 1 }, LS('sim-pu-ho', {}));
+  function handHtml(P) {
+    const sc = P.sc, kind = sc.set === 'role1' ? 'atm' : 'mist', I = PSCEN.handItems(P, kind), key = (sc.nonce || '') + kind, M = HM[key] || {};
+    let h = `<section class="pnl"><h2>${kind === 'mist' ? 'MIST perdavimas (pagal MARCH)' : 'ATMISTER perdavimas (pagal ETC)'}</h2><p class="muted mt0">Komanda sako garsiai. Pažymėkite, kas pasakyta teisingai – žemiau programėlė rodo, kas iš tikrųjų įvyko.</p>`;
+    h += I.map((it, i) => { const k = it[0] + i, m = M[k]; return `<div class="pxhand"><span class="pxhL">${E(it[0])}</span><span class="pxht"><small>${E(it[1])}</small>${E(it[2])}</span><span class="pxyn"><button class="${m === 1 ? 'y' : ''}" data-act="px" data-k="hm" data-x="${k}|1" aria-label="Pasakyta">✓</button><button class="${m === 0 ? 'n' : ''}" data-act="px" data-k="hm" data-x="${k}|0" aria-label="Nepasakyta / klaida">✕</button></span></div>`; }).join('');
+    const yes = Object.values(M).filter(x => x === 1).length;
+    h += `<p class="muted">Įvertinimas: ${yes} / ${I.length}</p></section>`;
+    if (kind === 'mist' && RUN.indexOf(P.st) >= 0) {
+      h += '<section class="pnl"><h2>Perkėlimas į Role 1</h2>' +
+        [['skip', 'Praleisti pervežimą +3 min', 'modelis perskaičiuos greitai'], ['reprobe', 'Monitorius: prijungti daviklius iš naujo', 'Role 1 komanda prijungia EKG, SpO₂, AKS'], ['team2', 'Kita komanda (Role 1)', 'vertinimas atskirai']].map(o => `<button class="pxrow" data-act="px" data-k="ho" data-x="${o[0]}"><span><b>${E(o[1])}</b><small>${E(o[2])}</small></span><i>${HO[o[0]] ? 'Taip' : 'Ne'}</i></button>`).join('') +
+        btn('torole1', null, 'Perduoti į Role 1 →', 'pxgo') + '</section>';
+    }
+    if (kind === 'atm' && RUN.indexOf(P.st) >= 0) h += '<section class="pnl">' + btn('stop', null, '■ Baigti scenarijų – ataskaita<small>laikykite 1,5 s</small>', 'pxgo red', ' data-hold="1"') + '</section>';
+    return h;
+  }
+  // ── Role 1 priėmimas ──
+  function recvHtml(P) {
+    const sc = P.sc, v = P.v || {}, R = PSCEN.takeover(P);
+    let h = '<div class="pxrecv"><b>Kas pasikeitė</b><dl>' +
+      `<dt>Gidas</dt><dd>MARCH → ETC (procedūros, vaistai, dozės)</dd><dt>AKS tikslas</dt><dd>sAKS 80–90 (GST – ≥ 110)${v.sys != null ? ' · dabar ' + v.sys + (v.sys > 90 ? ' – virš tikslo' : v.sys < 80 ? ' – žemiau tikslo' : ' – tiksle') : ''}</dd>` +
+      `<dt>Priemonės</dt><dd>kraujo bankas ${sc.kit ? sc.kit.max : 6} vnt., pirštinė torakostomija, drenas, RSI, e-FAST, šildymas</dd><dt>Laikmačiai</dt><dd>TXA – geriausia per 90 min; kalcis po 1-ojo ir kas 4 vnt.; vertinimas kas 15 min</dd></dl></div>`;
+    h += '<p class="pxlbl">Perimta iš MEDEVAC – patikrinkite</p>' + R.map(r => `<div class="pxtk ${r[0]}"><b>${r[0] === 'ok' ? '✓' : r[0] === 'bad' ? '✕' : '!'}</b><span>${E(r[1])}<small>${E(r[2])}</small></span></div>`).join('');
+    if (sc.team2) h += '<p class="muted">Komanda pasikeitė – Role 1 vertinimas skaičiuojamas atskirai.</p>';
+    h += btn('recvok', null, 'Pradėti Role 1', 'pxgo');
+    return h;
+  }
+  // ── scenarijaus įvykiai (skiltyje „Įvykiai“) ──
+  function scenEvHtml(P) {
+    const sc = P.sc, S = sc.scen && PSCEN.get(sc.scen.id); if (!S || !sc.evd) return '';
+    const ph = sc.ph === 'handover' ? 'medevac' : sc.ph, P0 = (sc.phs || [])[sc.phs.length - 1], base = ph === 'role1' && P0 ? P0.t0 : 0;
+    const L = S.ev.filter(e => e.ph === ph && !e.hide);
+    return `<section class="pnl"><h2>Scenarijaus įvykiai</h2>${btn('auto', sc.scen.auto ? 0 : 1, sc.scen.auto ? 'Automatiškai: įjungta' : 'Automatiškai: išjungta', 'chip pxch' + (sc.scen.auto ? ' on' : ''))}` +
+      L.map(e => { const f = sc.evd[e.id]; return `<div class="pxsev2${f != null ? ' done' : ''}"><span><b>${E(e.n)}</b><small>${f != null ? '✓ įvyko ' + T(f) : (e.at != null ? 'planuota ' + T(base + e.at) : 'kai įvyks sąlyga') + (e.when ? ' · su sąlyga' : '')}</small></span>${f == null ? btn('sev', e.id, 'Sukelti', 'chip pxch') : ''}</div>`; }).join('') + '</section>';
+  }
+  // ── sAKS kreivė per visą grandinę ──
+  function curveSvg(sc) {
+    const H = (sc.vh || []).filter(x => x[2] != null); if (H.length < 3) return '';
+    const t0 = H[0][0], t1 = H[H.length - 1][0], W = 340, X = t => 34 + (t - t0) / Math.max(1, t1 - t0) * W, Y = s => 10 + (140 - Math.max(30, Math.min(140, s))) / 110 * 150;
+    let g = `<rect x="34" y="${Y(70)}" width="${W}" height="${Y(30) - Y(70)}" fill="#3a1c1c"/>`;
+    (sc.phs || []).forEach(p => {
+      const a = Math.max(t0, p.t0), b = p.t1 != null ? Math.min(t1, p.t1) : t1; if (b <= a) return;
+      if (p.ph === 'medevac') g += `<line x1="${X(a)}" y1="${Y(100)}" x2="${X(b)}" y2="${Y(100)}" stroke="#FAC775" stroke-dasharray="4 4" stroke-width="1.5"/><text x="${X(a) + 3}" y="20" fill="#FAC775" font-size="10">MEDEVAC</text>`;
+      if (p.ph === 'role1') g += `<rect x="${X(a)}" y="${Y(90)}" width="${X(b) - X(a)}" height="${Y(80) - Y(90)}" fill="#0C447C" opacity=".6"/><text x="${X(b) - 3}" y="20" fill="#9DC1E6" font-size="10" text-anchor="end">Role 1</text>`;
+    });
+    const pts = H.map(x => X(x[0]).toFixed(1) + ',' + Y(x[2]).toFixed(1)).join(' ');
+    const lo = H.reduce((m, x) => x[2] < m[2] ? x : m, H[0]);
+    return `<svg viewBox="0 0 380 180" class="pxcurve" role="img" aria-label="Sistolinis AKS per scenarijų">${g}<polyline points="${pts}" fill="none" stroke="#F1EFE8" stroke-width="2" stroke-linejoin="round"/>` +
+      [[100, '100'], [80, '80'], [70, '70']].map(([s, l]) => `<text x="30" y="${Y(s) + 3}" fill="#B4B2A9" font-size="10" text-anchor="end">${l}</text>`).join('') +
+      `<text x="${X(lo[0])}" y="${Math.min(172, Y(lo[2]) + 12)}" fill="#ff9a9a" font-size="10" text-anchor="middle">${lo[2]} (${T(lo[0])})</text><text x="34" y="176" fill="#B4B2A9" font-size="10">${T(t0)}</text><text x="374" y="176" fill="#B4B2A9" font-size="10" text-anchor="end">${T(t1)}</text></svg>`;
+  }
+  function evalHtml(P) {
+    const sc = P.sc; if (!sc.scen) return '';
+    const ST = { ok: ['✓', 'ok'], late: ['~', 'amb'], bad: ['✕', 'bad'], wait: ['…', ''] };
+    return (sc.phs || []).filter(p => p.ph === 'medevac' || p.ph === 'role1').map(p => {
+      const L = PSCEN.evaluate(sc, p.ph, P.simt), kc = L.filter(x => x.c === 'K'), ko = kc.filter(x => x.st === 'ok').length;
+      return `<section class="pnl"><h2>${p.ph === 'medevac' ? 'MEDEVAC (MARCH)' : 'Role 1 (ETC)'}${p.pre ? ' <small class="tag pxtag">atkartota</small>' : ''}</h2><p class="muted mt0">Kritiniai laiku ${ko} / ${kc.length} · langai – juodraštis, tvirtina instruktoriai</p><div class="pxev2">` +
+        L.map(x => `<div class="${ST[x.st][1]}"><b>${ST[x.st][0]}</b><span>${E(x.n)}<small>${x.c === 'K' ? 'kritinis' : x.c === 'S' ? 'svarbus' : 'pageidautinas'}${x.win ? ' · ' + E(x.win) : ''}</small></span><i>${E(x.txt)}</i></div>`).join('') + '</div></section>';
+    }).join('');
+  }
+
   function runningHtml(P) {
     const sc = P.sc, R = [];
     sc.inf.forEach(f => { const done = Math.max(0, Math.min(f.tot, P.simt - f.t0)), left = f.tot - done; R.push(`<div class="pxrun"><span>🩸 <b>${E(f.n)}</b> <small>${left > 0 ? 'liko ' + T(left) : 'sulašėjo'}</small></span><i class="pfb2"><i style="width:${Math.round(done / Math.max(1, f.tot) * 100)}%"></i></i>${left > 0 ? btn('istop', f.cmp, 'Stabdyti', 'chip pxch') : ''}</div>`); });
@@ -106,7 +280,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     return R.length ? '<section class="pnl"><h2>Vykdoma</h2>' + R.join('') + '</section>' : '';
   }
   function actBtn(P, j, a, by) {
-    const ok = !a[3] || sup(P, a[3]), ap = PCAT.apx('act:' + a[0]), pl = pend(P, a[1] + ' – ' + PCAT.injName(j).name);
+    const ok = !a[3] || sup(P, a[3]), ap = LOCAL ? '' : PCAT.apx('act:' + a[0]), pl = pend(P, a[1] + ' – ' + PCAT.injName(j).name);
     return `<button class="pxa${a[4] === 'instr' ? ' ins' : ''}${ap ? ' isapx' : ''}${pl != null ? ' pend' : ''}" data-act="px" data-k="card" data-x="${j.id}|${a[0]}"${by ? ` data-by="${by}"` : ''}${ok && pl == null ? '' : ' disabled'}${ap ? ` title="${E(ap)}"` : ''}><b>${E(a[1])}${ap ? '<span class="apx">≈</span>' : ''}</b>${pl != null ? pendS(pl) : (a[5] ? `<small>⏱ ${E(a[5])}</small>` : '') + (ap ? '<small class="apxs">Pulse neturi – apytiksliai</small>' : '') + (ok ? '' : '<small>nepalaikoma</small>')}</button>`;
   }
   function cardHtml(P, j) {
@@ -128,14 +302,16 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
       (P.v && P.v.bv && sc.bv0 ? `<p class="muted">Kraujo tūris ${P.v.bv} ml (netekta apie ${Math.max(0, Math.round((sc.bv0 - P.v.bv) / 50) * 50)} ml)</p>` : '') + '</section>';
     return h;
   }
-  function txHtml(P, by) {
+  function txHtml(P, by, q) {
     const G = PCAT.txFor(P.sc.set);
     let h = '';
-    G.forEach(([L, n, items]) => {
+    G.forEach(([L, n, items0]) => {
+      const items = q ? items0.filter(it => (it[1] + ' ' + n).toLowerCase().indexOf(q) >= 0) : items0;
+      if (!items.length) return;
       h += `<section class="pnl" id="pxg-${L}"><h2>${E(L.replace('A2', 'AB').replace('Mon', '♥'))} · ${E(n)}</h2>`;
       items.forEach(it => {
         const ok = it[0] !== 'o2' || sup(P, [{ k: 'o2' }]), pl = it[2] ? null : pend(P, it[1]);
-        const dr = it[2] && it[2].indexOf('drug:') === 0 && it[2] !== 'drug:abx' ? PCAT.drugBy(it[2].slice(5), P.sc.set) : null, log = it[4] === 'log' || it[4] === 'rsi' || it[2] === 'drug:abx' || (dr && !dr.pulse);
+        const dr = it[2] && it[2].indexOf('drug:') === 0 && it[2] !== 'drug:abx' ? PCAT.drugBy(it[2].slice(5), P.sc.set) : null, log = !LOCAL && (it[4] === 'log' || it[4] === 'rsi' || it[2] === 'drug:abx' || (dr && !dr.pulse));
         h += `<button class="pxrow${pl != null ? ' pend' : ''}" data-act="px" data-k="tx" data-x="${it[0]}"${by ? ` data-by="${by}"` : ''}${ok && pl == null ? '' : ' disabled'}><span><b>${E(it[1])}</b>${pl != null ? pendS(pl) : it[3] ? `<small>⏱ ${E(it[3])}</small>` : ''}</span><i>${log ? logB : ''}${it[2] ? ' ›' : ''}</i></button>`;
       });
       h += '</section>';
@@ -146,7 +322,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     // grupės antraštėmis (ne kiekvienoje kortelėje); sustojimas – laikyti 1,5 s; ROSC – paprastas paspaudimas
     const L = PCAT.EVENTS.filter(e => !e[3] || e[3] === P.sc.set), arr = ['vf', 'asys'], G = [], apE = { painup: 'inj:pain' };
     L.filter(e => arr.indexOf(e[0]) < 0 && e[0] !== 'rosc').forEach(e => { if (G.indexOf(e[2]) < 0) G.push(e[2]); });
-    const eb = e => { const pl = pend(P, e[1]), ap = apE[e[0]] && PCAT.apx(apE[e[0]]); return `<button class="pxe${pl != null ? ' pend' : ''}" data-act="px" data-k="ev" data-x="${e[0]}"${pl != null ? ' disabled' : ''}><b>${E(e[1])}${ap ? '<span class="apx">≈</span>' : ''}</b>${pl != null ? pendS(pl) : ap ? '<small class="apxs">Pulse neturi – apytiksliai</small>' : ''}</button>`; };
+    const eb = e => { const pl = pend(P, e[1]), ap = !LOCAL && apE[e[0]] && PCAT.apx(apE[e[0]]); return `<button class="pxe${pl != null ? ' pend' : ''}" data-act="px" data-k="ev" data-x="${e[0]}"${pl != null ? ' disabled' : ''}><b>${E(e[1])}${ap ? '<span class="apx">≈</span>' : ''}</b>${pl != null ? pendS(pl) : ap ? '<small class="apxs">Pulse neturi – apytiksliai</small>' : ''}</button>`; };
     return '<section class="pnl"><h2>Įvykiai <small class="tag pxtag">sukelia instruktorius</small></h2>' + G.map(g => `<p class="lbl pxlb">${E(g[0].toUpperCase() + g.slice(1))}</p><div class="pxev">` + L.filter(e => e[2] === g && arr.indexOf(e[0]) < 0 && e[0] !== 'rosc').map(eb).join('') + '</div>').join('') + '</section>' +
       '<section class="pnl"><h2>Širdies sustojimas</h2><p class="muted mt0">Sustojimą sukelti – laikykite paspaudę 1,5 s.</p><div class="pxev">' + L.filter(e => arr.indexOf(e[0]) >= 0).map(e => `<button class="pxe red" data-act="px" data-k="ev" data-x="${e[0]}" data-hold="1"><b>${E(e[1])}</b><small>laikykite 1,5 s</small></button>`).join('') +
       L.filter(e => e[0] === 'rosc').map(e => { const pl = pend(P, e[1]); return `<button class="pxe grn" data-act="px" data-k="ev" data-x="rosc"${pl != null ? ' disabled' : ''}><b>${E(e[1])}</b>${pl != null ? pendS(pl) : ''}</button>`; }).join('') + '</div></section>';
@@ -185,20 +361,27 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
   }
   function repHtml(P) {
     const sc = P.sc;
-    let h = '<section class="pnl"><h2>Pagrindiniai laikai <small class="tag pxtag">nuo komandos atvykimo</small></h2><div class="pxm">' + metrics(P).map(m => `<div><span>${E(m[0])}</span>${m[1]}<small>${E(m[2])}</small></div>`).join('') + '</div></section>';
+    const cv = curveSvg(sc);
+    let h = (cv ? '<section class="pnl"><h2>sAKS per visą scenarijų</h2>' + cv + '<p class="muted">Geltona brūkšninė – MEDEVAC tikslas ~100; mėlyna juosta – Role 1 tikslas 80–90; raudona – &lt; 70.</p></section>' : '') + evalHtml(P) + handSum(sc) + '<section class="pnl"><h2>Pagrindiniai laikai <small class="tag pxtag">nuo komandos atvykimo</small></h2><div class="pxm">' + metrics(P).map(m => `<div><span>${E(m[0])}</span>${m[1]}<small>${E(m[2])}</small></div>`).join('') + '</div></section>';
     const txt = mist(P);
     h += `<section class="pnl"><h2>Perdavimas – etalonas aptarimui</h2><pre class="pxpre">${E(txt)}</pre>${btn('copy', null, 'Kopijuoti ataskaitą', 'pxb wide')}</section>`;
     const items = sc.log.map(l => ({ t: l.t, n: l.n, c: l.star ? 'star' : l.by === 'team' ? 'team' : 'ins' })).concat((P.cm || []).map(c => ({ t: c.t, n: '⚠ ' + c.title, c: 'cm' }))).sort((a, b) => a.t - b.t);
     h += '<section class="pnl"><h2>Eiga</h2><div class="pxtl">' + items.map(i => `<div class="${i.c}"><small>${T(i.t)}</small><span>${E(i.n)}</span></div>`).join('') + '</div><p class="muted">Rodiklių grafikas – skiltyje „Žurnalas“. Mėlyna – komanda, pilka – instruktorius, ★ – žymės.</p></section>';
     return h;
   }
+  function handSum(sc) {
+    const H = sc.hand || {}; if (!H.mist && !H.atm) return '';
+    const f = (k, n, tot) => H[k] ? `<div><span>${n}</span><b class="${Object.values(H[k].m).filter(x => x === 1).length === tot ? 'ok' : 'bad'}">${Object.values(H[k].m).filter(x => x === 1).length} / ${tot}</b><small>pažymėta ${T(H[k].t)}</small></div>` : '';
+    return '<section class="pnl"><h2>Perdavimai</h2><div class="pxm">' + f('mist', 'MIST (MEDEVAC → Role 1)', 4) + f('atm', 'ATMISTER (Role 1 → Role 2)', 8) + '</div></section>';
+  }
   // ── apatinis meniu ir atšaukimas ──
   function railHtml(P) {
     return '<div class="pxrail" aria-label="MARCH-PAWS skyriai">' + PCAT.txFor(P.sc.set).map(g => btn('rail', g[0], g[0].replace('A2', 'AB').replace('Mon', '♥'), 'pxl', ` aria-label="${E(g[1])}"`)).join('') + '</div>';
   }
-  function navHtml() {
-    const V = [['pt', 'Pacientas', '🩺'], ['tx', 'Gydymas', '💉'], ['ev', 'Įvykiai', '⚡'], ['rep', 'Ataskaita', '📋']];
-    return '<nav class="pxnav">' + V.map(v => `<button class="${view === v[0] ? 'on' : ''}" data-act="px" data-k="view" data-x="${v[0]}"><span>${v[2]}</span>${v[1]}</button>`).join('') + '</nav>';
+  function navHtml(P) {
+    const r1 = P && P.sc && P.sc.set === 'role1';
+    const V = [['pt', 'Būklė'], ['all', 'Veiksmai'], ['ev', 'Įvykiai'], ['hand', r1 ? 'ATMISTER' : 'MIST'], ['rep', 'Ataskaita']];
+    return '<nav class="pxnav n5">' + V.map(v => `<button class="${view === v[0] || (v[0] === 'hand' && view === 'recv') ? 'on' : ''}" data-act="px" data-k="view" data-x="${v[0]}">${v[1]}</button>`).join('') + '</nav>';
   }
   function undoHtml(P) {
     const q = (P.q || []).slice(-1)[0]; if (!q) return '';
@@ -213,14 +396,15 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     const sec = Math.round((Date.now() - waitT) / 1000), mon = !P || !P.sc, conn = P && P.st === 'conn', re = !mon && P.sc.on;
     const now = mon ? 0 : conn ? 1 : 2;
     const steps = re ? [['Ryšys su Pulse serveriu nutrūko', true], ['Monitorius jungiasi iš naujo' + (sec > 10 ? ' – serveris gali būti persikrovęs (iki 1–2 min.)' : ''), !conn], ['Sesija atkuriama', false]]
+      : P && P.local ? [[mon ? 'Komanda siunčiama monitoriui – laukiama atsakymo' : 'Monitorius gavo komandą', !mon], ['Paleidžiamas taisyklių modelis', now > 1], ['Ruošiama priešistorė' + (P.sc && P.sc.scen && P.sc.scen.mode === 'role1' ? ' ir MEDEVAC dalis' : ''), false]]
       : [[mon ? 'Komanda siunčiama monitoriui – laukiama atsakymo' : 'Monitorius gavo komandą', !mon], ['Monitorius jungiasi prie Pulse serverio' + (conn && sec > 10 ? ' – serveris pabunda (iki 1–2 min.)' : ''), now > 1], ['Pulse ruošia paciento modelį' + (P && P.ff ? ' ir prasuka laiką' : ''), false]];
-    return '<section class="pnl pxwait"><h2>' + (re ? 'Atkuriamas ryšys su Pulse' : 'Pradedama') + '</h2><div class="pxspin" aria-hidden="true"></div>' +
+    return '<section class="pnl pxwait"><h2>' + (re ? (P.local ? 'Atkuriamas modelis' : 'Atkuriamas ryšys su Pulse') : 'Pradedama') + '</h2><div class="pxspin" aria-hidden="true"></div>' +
       '<ol class="pxsteps">' + steps.map((s0, i) => `<li class="${s0[1] ? 'done' : i === now ? 'now' : ''}">${s0[1] ? '✓ ' : ''}${E(s0[0])}</li>`).join('') + '</ol>' +
       `<p><b>${E(mon ? '' : P.msg || '')}</b></p><p class="muted">Laukiama ${sec} s.${sec > 150 ? ' Ilgai – patikrinkite internetą monitoriaus telefone ir Pulse serverį (Nustatymai → Pulse serveris → Tikrinti ryšį).' : ''}</p>` +
       (re ? btn('stop0', 'rep', 'Baigti scenarijų (ataskaita)', 'pxb wide') : btn('stop0', null, 'Atšaukti', 'pxb wide')) + '</section>';
   }
   function render(P, local, mver) {
-    lastP = P;
+    lastP = P; LOCAL = P && P.engSet ? P.engSet !== 'pulse' : SU.eng !== 'pulse';
     let pre = '';
     const cur = typeof VER !== 'undefined' ? VER : '';
     // mver: null – monitoriaus nuotraukos dar nėra; '' – monitorius siunčia nuotrauką be versijos (sena programėlė)
@@ -240,8 +424,12 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     if (P && P.st === 'off' && P.sc && P.sc.lost) pre += `<div class="mira p1 pxwarn">⚠ ${E(P.msg || 'Pulse sesija prarasta – pradėkite iš naujo.')}</div>`;
     const live = P && P.sc && (RUN.indexOf(P.st) >= 0 || P.st === 'dead');
     if (!live) return pre + (P && P.sc && P.sc.end != null && view === 'rep' ? headHtml(P) + repHtml(P) + btn('view', 'pt', '＋ Naujas scenarijus', 'pxgo') : setupHtml(P, local));
-    const body = view === 'tx' ? txHtml(P) : view === 'ev' ? evHtml(P) : view === 'rep' ? repHtml(P) : ptHtml(P);
-    return pre + '<div class="pxw">' + headHtml(P) + body + '<div class="pxbot">' + undoHtml(P) + (view === 'tx' ? railHtml(P) : '') + navHtml() + '</div></div>';
+    const sc = P.sc, nk = sc.nonce || '';
+    if (sc.ph === 'role1' && sc.r1t0 != null && seenR1 !== nk + sc.r1t0) { seenR1 = nk + sc.r1t0; LSs('sim-pu-r1', seenR1); view = 'recv'; }
+    if (sc.ph === 'handover' && seenH !== nk) { seenH = nk; LSs('sim-pu-h', seenH); view = 'hand'; }
+    if (view === 'tx') view = 'all';
+    const body = view === 'all' ? allHtml(P) : view === 'ev' ? scenEvHtml(P) + evHtml(P) : view === 'rep' ? repHtml(P) : view === 'hand' ? handHtml(P) : view === 'recv' && sc.set === 'role1' ? recvHtml(P) : statusHtml(P);
+    return pre + '<div class="pxw">' + headHtml(P) + body + '<div class="pxbot">' + undoHtml(P) + (view === 'all' ? railHtml(P) : '') + navHtml(P) + '</div></div>';
   }
 
   // ── apatiniai lapai ──
@@ -287,7 +475,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     } else if (sheet.kind === 'fluid') {
       title = 'Kraujas / skysčiai';
       const comp = P.comp || [];
-      body = '<div class="pxgrid">' + PCAT.FLUIDS.map(f => { const has = !comp.length || comp.indexOf(f[0]) >= 0, alt = !!PCAT.apx('fl:' + f[0]); return `<button class="pxsg${sheet.cmp === f[0] ? ' on' : ''}" data-act="px" data-k="sf-c" data-x="${f[0]}"${has || alt ? '' : ' disabled'}><b>${E(f[1])}${alt ? '<span class="apx">≈</span>' : ''}</b>${alt ? '<small class="apxs">Pulse neturi – lašinamas NaCl</small>' : !has ? '<small>Pulse neturi – neprieinama</small>' : ''}</button>`; }).join('') + '</div>' +
+      body = '<div class="pxgrid">' + PCAT.FLUIDS.map(f => { const has = !comp.length || comp.indexOf(f[0]) >= 0, alt = !LOCAL && !!PCAT.apx('fl:' + f[0]); return `<button class="pxsg${sheet.cmp === f[0] ? ' on' : ''}" data-act="px" data-k="sf-c" data-x="${f[0]}"${has || alt ? '' : ' disabled'}><b>${E(f[1])}${alt ? '<span class="apx">≈</span>' : ''}</b>${alt ? '<small class="apxs">Pulse neturi – lašinamas NaCl</small>' : !has ? '<small>Pulse neturi – neprieinama</small>' : ''}</button>`; }).join('') + '</div>' +
         '<p class="lbl pxlb">Tūris</p>' + seg('sf-v', PCAT.VOLS.map(v => [v, v + ' ml']), sheet.ml) +
         '<p class="lbl pxlb">Greitis</p>' + seg('sf-r', PCAT.RATES.map(r => [r[0], r[1]]), sheet.rate).replace('class="pxseg"', 'class="pxseg wrap"') +
         (P.sc && P.sc.set === 'medevac' && /Blood|PackedRBC|Plasma/.test(sheet.cmp || '') ? `<p class="muted">Kraujo atsargos: ${Math.max(0, P.sc.kit.max - Math.ceil(P.sc.kit.used))} / ${P.sc.kit.max} vnt.</p>` : '');
@@ -297,15 +485,15 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
       if (!sheet.id) {
         title = sheet.grp || 'Vaistai';
         const G = []; L.forEach(d => { if (G.indexOf(d.g) < 0) G.push(d.g); });
-        body = G.map(g => `<p class="lbl pxlb">${E(g)}</p><div class="pxgrid">` + L.filter(d => d.g === g).map(d => `<button class="pxsg" data-act="px" data-k="sd-id" data-x="${d.id}"><b>${E(d.n)}</b>${!d.pulse || PCAT.apx('drug:' + d.id) ? `<small class="apxs"><span class="apx">≈</span> ${d.pulse ? 'apytiksliai' : d.lo ? 'tik žurnale' : 'Pulse neturi – tik žurnale'}</small>` : '<small>Pulse skaičiuoja</small>'}</button>`).join('') + '</div>').join('') + `<p class="muted">Pagal ${E(PCAT.SETTINGS[set].src)} gidą.</p>`;
+        body = G.map(g => `<p class="lbl pxlb">${E(g)}</p><div class="pxgrid">` + L.filter(d => d.g === g).map(d => `<button class="pxsg" data-act="px" data-k="sd-id" data-x="${d.id}"><b>${E(d.n)}</b>${LOCAL ? '' : !d.pulse || PCAT.apx('drug:' + d.id) ? `<small class="apxs"><span class="apx">≈</span> ${d.pulse ? 'apytiksliai' : d.lo ? 'tik žurnale' : 'Pulse neturi – tik žurnale'}</small>` : '<small>Pulse skaičiuoja</small>'}</button>`).join('') + '</div>').join('') + `<p class="muted">Pagal ${E(PCAT.SETTINGS[set].src)} gidą.</p>`;
       } else {
         const D = PCAT.drugBy(sheet.id, set), kg = +((P.sc && P.sc.pat && P.sc.pat.kg) || SU.pat.kg || 80);
         title = D.n;
         const opts = [];
         D.r.forEach(r => r[1].forEach(v => opts.push({ route: r[0], dose: v, unit: r[2], l: num(v) + ' ' + r[2] + ' ' + r[0] })));
         D.kg.forEach(k => { let v = k[1] * kg, u = 'mg'; if (v < 1) { v = Math.round(v * 1000); u = 'mcg'; } else v = Math.round(v * 10) / 10; if (k[1] >= 100) { v = Math.round(k[1] * kg / 100) / 10; u = 'g'; } opts.push({ route: k[0], dose: v, unit: u, l: num(v) + ' ' + u + ' ' + k[0], s: k[2] + ' × ' + kg + ' kg' }); });
-        body = (D.pulse ? apxB('drug:' + D.id, 1) : '') + '<div class="pxgrid">' + opts.map((o, i) => { const ap = D.pulse && PCAT.apx('route:' + o.route); return `<button class="pxsg${sheet.oi === i ? ' on' : ''}" data-act="px" data-k="sd-o" data-x="${i}"><b>${ap ? '<span class="apx">≈</span> ' : ''}${E(o.l)}</b>${o.s ? `<small>${E(o.s)}</small>` : ''}${ap ? `<small class="apxs">≈ ${E(ap)}</small>` : ''}</button>`; }).join('') + '</div>' +
-          (D.note ? `<p class="muted">${E(D.note)}</p>` : '') + (D.pulse ? '' : D.lo ? '<p class="apxt"><span class="apx">≈</span> Modelyje tik žurnale (žr. pastabą).</p>' : '<p class="apxt"><span class="apx">≈</span> Pulse šio vaisto neturi – modelis nereaguoja, veiksmas žymimas tik žurnale.</p>');
+        body = (D.pulse && !LOCAL ? apxB('drug:' + D.id, 1) : '') + '<div class="pxgrid">' + opts.map((o, i) => { const ap = !LOCAL && D.pulse && PCAT.apx('route:' + o.route); return `<button class="pxsg${sheet.oi === i ? ' on' : ''}" data-act="px" data-k="sd-o" data-x="${i}"><b>${ap ? '<span class="apx">≈</span> ' : ''}${E(o.l)}</b>${o.s ? `<small>${E(o.s)}</small>` : ''}${ap ? `<small class="apxs">≈ ${E(ap)}</small>` : ''}</button>`; }).join('') + '</div>' +
+          (D.note ? `<p class="muted">${E(D.note)}</p>` : '') + (D.pulse || LOCAL ? '' : D.lo ? '<p class="apxt"><span class="apx">≈</span> Modelyje tik žurnale (žr. pastabą).</p>' : '<p class="apxt"><span class="apx">≈</span> Pulse šio vaisto neturi – modelis nereaguoja, veiksmas žymimas tik žurnale.</p>');
         sheet.opts = opts;
         foot = (sheet.fixed ? '' : btn('sd-back', null, '‹ Atgal', 'pxb')) + btn('sd-ok', null, 'Suleista', 'pxgo sm', sheet.oi != null ? '' : ' disabled');
       }
@@ -320,7 +508,19 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
   const vib = () => { try { navigator.vibrate && navigator.vibrate(20); } catch (e) {} };
   function startCmd() {
     const c = PULSE.cfg(), m = mechBy(SU.mech);
-    return { c: 'pulse', op: 'start', nonce: sent ? sent.n : '', url: c.url, token: c.token, ff: SU.ff, sc: { set: SU.set, pat: SU.pat, mech: m[0], mechN: m[1], inj: SU.inj } };
+    const o = { c: 'pulse', op: 'start', eng: SU.eng === 'pulse' ? 'pulse' : 'local', nonce: sent ? sent.n : '', url: c.url, token: c.token, ff: SU.ff, sc: { set: SU.set, pat: SU.pat, mech: m[0], mechN: m[1], inj: SU.inj } };
+    if (SU.scen && PSCEN.get(SU.scen)) o.scen = { id: SU.scen, mode: SU.mode, out: SU.out, auto: !!SU.auto, team2: SU.mode === 'chain' && !!SU.team2 };
+    return o;
+  }
+  function txAct(x, by, C) {
+    const P = lastP || {}, it = PCAT.TX.flatMap(g => g[2]).find(i => i[0] === x); if (!it) return null;
+    if (it[2] === 'o2') { openSheet('o2', { dev: P.sc && P.sc.o2 ? P.sc.o2.dev : 'NonRebreatherMask', flow: P.sc && P.sc.o2 ? P.sc.o2.flow : 0, by }); return null; }
+    if (it[2] === 'fluid') { openSheet('fluid', { cmp: (P.comp || []).indexOf('Blood') >= 0 || !P.comp ? 'Blood' : 'Saline', ml: P.sc && P.sc.set === 'medevac' ? 500 : 500, rate: 'pb', by }); return null; }
+    if (it[2] === 'drug') { openSheet('drug', { by }); return null; }
+    if (it[2] === 'drug:abx') { openSheet('drug', { grp: 'Antibiotikai', by }); return null; }
+    if (it[2] && it[2].indexOf('drug:') === 0) { openSheet('drug', { id: it[2].slice(5), fixed: 1, by }); return null; }
+    closeSheetIfTeam();
+    return C({ op: 'tx', code: x, n: it[1] });
   }
   function click(el) {
     const k = el.dataset.k, x = el.dataset.x, by = el.dataset.by || (sheet && sheet.kind === 'team' ? 'team' : 'instr'), P = lastP || {};
@@ -328,6 +528,27 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     switch (k) {
       // pasiruošimas
       case 'su-set': SU.set = x; saveSU(); rerender(); return null;
+      case 'su-scen': SU.scen = x; saveSU(); rerender(); return null;
+      case 'su-mode': SU.mode = x; saveSU(); rerender(); return null;
+      case 'su-out': SU.out = x; saveSU(); rerender(); return null;
+      case 'su-auto': SU.auto = !SU.auto; saveSU(); rerender(); return null;
+      case 'su-team2': SU.team2 = !SU.team2; saveSU(); rerender(); return null;
+      case 'su-eng': SU.eng = x; LOCAL = x !== 'pulse'; saveSU(); if (x === 'pulse') PULSE.wake(() => rerender()); rerender(); return null;
+      case 'wake': PULSE.wake(() => rerender()); rerender(); return null;
+      case 'adv': {
+        const a = ADV[+x]; if (!a || !a.act) return null; const A = a.act;
+        if (A.k === 'card') { const [iid, ac] = A.x.split('|'); return C({ op: 'card', iid, a: ac }); }
+        if (A.k === 'tx') return txAct(A.x, by, C);
+        if (A.k === 'drug') { openSheet('drug', { id: A.id, fixed: 1, by }); return null; }
+        if (A.k === 'view') { view = A.x; LSs('sim-pu-view', view); rerender(); scrollTop(); }
+        return null;
+      }
+      case 'hm': { const sc = P.sc; if (!sc) return null; const kind = sc.set === 'role1' ? 'atm' : 'mist', key = (sc.nonce || '') + kind, [k, val] = x.split('|'); const M = HM[key] = HM[key] || {}; M[k] = M[k] === +val ? null : +val; Object.keys(HM).filter(z => z !== key && z.indexOf(sc.nonce || '#') !== 0).forEach(z => delete HM[z]); LSs('sim-pu-hm', HM); rerender(); return C({ op: 'hand', kind, m: M }); }
+      case 'ho': HO[x] = HO[x] ? 0 : 1; LSs('sim-pu-ho', HO); rerender(); return null;
+      case 'torole1': view = 'recv'; LSs('sim-pu-view', view); return C({ op: 'phase', to: 'role1', skip: HO.skip ? 180 : 0, reprobe: !!HO.reprobe, team2: !!HO.team2 });
+      case 'recvok': view = 'pt'; LSs('sim-pu-view', view); rerender(); scrollTop(); return null;
+      case 'sev': return C({ op: 'sev', id: x });
+      case 'auto': return C({ op: 'auto', on: x === '1' });
       case 'su-mech': SU.mech = x; SU.inj = mechBy(x)[3].map(j => Object.assign({}, j)); saveSU(); rerender(); return null;
       case 'su-del': SU.inj.splice(+x, 1); saveSU(); rerender(); return null;
       case 'su-ff': SU.ff = +x; saveSU(); rerender(); return null;
@@ -349,16 +570,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
       case 'undo': return C({ op: 'undo', uid: x });
       case 'team': lastP = PULSE.status(); openSheet('team'); vib(); return null;
       case 'copy': { try { navigator.clipboard.writeText(mist(P) + '\n\n' + metrics(P).map(m => m[0] + ': ' + m[1].replace(/<[^>]+>/g, '')).join('\n')); toast2('Nukopijuota'); } catch (e) { toast2('Nepavyko nukopijuoti'); } return null; }
-      case 'tx': {
-        const it = PCAT.TX.flatMap(g => g[2]).find(i => i[0] === x); if (!it) return null;
-        if (it[2] === 'o2') { openSheet('o2', { dev: P.sc && P.sc.o2 ? P.sc.o2.dev : 'NasalCannula', flow: P.sc && P.sc.o2 ? P.sc.o2.flow : 0, by }); return null; }
-        if (it[2] === 'fluid') { openSheet('fluid', { cmp: (P.comp || []).indexOf('Blood') >= 0 || !P.comp ? 'Blood' : 'Saline', ml: 500, rate: 'pb', by }); return null; }
-        if (it[2] === 'drug') { openSheet('drug', { by }); return null; }
-        if (it[2] === 'drug:abx') { openSheet('drug', { grp: 'Antibiotikai', by }); return null; }
-        if (it[2] && it[2].indexOf('drug:') === 0) { openSheet('drug', { id: it[2].slice(5), fixed: 1, by }); return null; }
-        closeSheetIfTeam();
-        return C({ op: 'tx', code: x, n: it[1] });
-      }
+      case 'tx': return txAct(x, by, C);
       // lapai
       case 'sh-x': closeSheet(); return null;
       case 'sh-inj': openSheet('inj', { mode: x }); return null;
@@ -408,6 +620,13 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     if (o && send(o) === false && o.op === 'start') { sent = null; rerender(); }   // komanda neišsiųsta (nėra ryšio) – nelaukti
   }
 
+  // paieška „Visi veiksmai“ – filtruojama vietoje (be perpiešimo, kol rašoma)
+  document.addEventListener('input', e => {
+    if (!e.target || e.target.id !== 'pxq') return;
+    Q = e.target.value; const q = Q.trim().toLowerCase(), root = e.target.closest('.pxw') || document;
+    root.querySelectorAll('.pxcd,.pxrow,.pxoff span').forEach(el => { el.style.display = !q || el.textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none'; });
+    root.querySelectorAll('section.pnl').forEach(sec => { const it = sec.querySelectorAll('.pxcd,.pxrow'); if (it.length) sec.style.display = !q || [...it].some(i => i.style.display !== 'none') ? '' : 'none'; });
+  });
   // ── monitoriaus gydymo juosta ──
   function strip(P) {
     if (!P || !P.sc || !(RUN.indexOf(P.st) >= 0 || P.st === 'dead')) return '';

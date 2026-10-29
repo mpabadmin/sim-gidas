@@ -58,6 +58,7 @@ const PCAT = (() => {
   function injName(j) {
     const t = injBy(j.k) || { n: j.k };
     const sv = (t.sevs || SEV).find(s => Math.abs(s[2] - j.sev) < 1e-6);
+    if (j.lbl) return { name: j.lbl, sev: sv ? sv[1] : '' };   // scenarijaus pavadinimas
     let w = t.n;
     if (j.loc) w += ' – ' + (locBy(j.loc) || [0, j.loc])[1].toLowerCase();
     if (j.side) w += ' – ' + (j.side === 'R' ? 'dešinė' : 'kairė');
@@ -88,8 +89,10 @@ const PCAT = (() => {
     if (j.k === 'ptx' || j.k === 'optx') {
       if (j.state === 'active' || j.state === 'retension') {
         A.push(['ndc', 'Adatinė dekompresija', 'decomp', [{ k: 'ndc', side: j.side }], 'team', '1–2 min']);
-        A.push(['fthor', 'Pirštinė torakostomija', 'decomp', [{ k: 'ndc', side: j.side }], 'team', '2–3 min']);
+        A.push(['fthor', 'Pirštinė torakostomija', 'decomp', [{ k: 'ndc', side: j.side, fthor: 1 }], 'team', '2–3 min']);
         if (j.k === 'optx') A.push(['occl', 'Okliuzinis tvarstis (krūtinės lipdukas)', j.k === 'optx' ? 'occl' : j.state, [{ k: 'occl', side: j.side }], 'team', '30–60 s']);
+        if (j.k === 'ptx' && j.wound && !j.sealed) A.push(['seal', 'Krūtinės lipdukas (žaizda)', j.state, [], 'team', '30–60 s']);
+        if (j.k === 'ptx' && j.wound && j.sealed) A.push(['burp', 'Atpūsti lipduką', j.state, [], 'team', '10 s']);
       }
       if (j.state === 'decomp' || j.state === 'occl') A.push(['retens', 'Vėl įsitempė', 'retension', [{ k: 'tpx', side: j.side, sev: j.sev, open: false }], 'instr', '']);
       if (j.state !== 'drained') A.push(['tube', 'Krūtinės drenas', 'drained', [{ k: 'ndc', side: j.side }], 'team', '10–15 min']);
@@ -120,6 +123,8 @@ const PCAT = (() => {
   // [kodas, pavadinimas, lapas (o2|fluid|drug:<id>|null), trukmė, tipas (log|o2off|probe:…), aplinkos ('' – abi)]
   const TX = [
     ['M', 'Masyvus kraujavimas', [
+      ['sweep', 'Kraujo paieška (rankomis per galūnes, kirkšnis, pažastis)', null, '1 min', 'log', ''],
+      ['tqchk', 'Turniketų / tamponavimo patikra', null, '1 min', 'log', ''],
       ['txa', 'TXA 2 g IV/IO', 'drug:txa', '10 min', '', ''],
       ['pelvic', 'Dubens diržas', null, '2 min', 'log', '']
     ]],
@@ -141,6 +146,7 @@ const PCAT = (() => {
     ]],
     ['H', 'Hipotermija / galva', [
       ['hpmk', 'Hipotermijos prevencija (HPMK)', null, '2–3 min', 'log', ''],
+      ['warm', 'Aktyvus šildymas, šilti skysčiai', null, '5 min', 'log', 'role1'],
       ['head30', 'Galva pakelta 30°', null, '', 'log', ''],
       ['hts', 'Hipertoninis NaCl 250 ml', 'drug:hts', '10–15 min', '', '']
     ]],
@@ -153,9 +159,10 @@ const PCAT = (() => {
     ]],
     ['W', 'Žaizdos, įtvarai, kita', [
       ['wound', 'Žaizdų tvarstymas / patikra', null, '', 'log', ''], ['splint', 'Įtvaras', null, '5 min', 'log', ''], ['eye', 'Akies apsauga (skydelis)', null, '', 'log', ''],
-      ['cath', 'Šlapimo kateteris', null, '5 min', 'log', 'role1'], ['card', 'Nukentėjusiojo kortelė (DD 1380) užpildyta', null, '', 'log', '']
+      ['cath', 'Šlapimo kateteris', null, '5 min', 'log', 'role1'], ['la', 'Vietinė nejautra (prieš torakostomiją / drenas)', null, '2 min', 'log', 'role1'], ['card', 'Nukentėjusiojo kortelė (DD 1380) užpildyta', null, '', 'log', '']
     ]],
     ['Mon', 'Stebėjimas', [
+      ['avpu', 'AVPU įvertintas ir įrašytas į kortelę', null, '', 'log', ''],
       ['ecgon', 'EKG elektrodai uždėti', null, '', 'probe:ecg:1', ''], ['spo2on', 'SpO₂ daviklis uždėtas', null, '', 'probe:spo2:1', ''], ['nibpon', 'AKS manžetė uždėta', null, '', 'probe:nibp:1', '']
     ]]
   ];
@@ -186,7 +193,7 @@ const PCAT = (() => {
       D('cfx', 'Cefaleksinas', null, 'Antibiotikai', [['PO', [500], 'mg']], 'alternatyva cefadroksiliui')
     ],
     role1: [
-      D('ket', 'Ketaminas', 'Ketamine', 'Analgezija / anestezija', [['IV', [25], 'mg'], ['IO', [25], 'mg'], ['IM', [100, 300], 'mg'], ['IN', [50], 'mg']], 'analgezija kartoti kas 30 min; šoke dozę mažinti 50 % (ETC)', [['IV', 0.2, 'analgezija 0,2 mg/kg'], ['IV', 0.3, 'analgezija 0,3 mg/kg'], ['IV', 0.5, 'analgezija maks. 0,5 mg/kg'], ['IV', 1, 'sedacija 1 mg/kg'], ['IV', 2, 'sedacija / indukcija 2 mg/kg']]),
+      D('ket', 'Ketaminas', 'Ketamine', 'Analgezija / anestezija', [['IV', [25], 'mg'], ['IO', [25], 'mg'], ['IM', [100, 300], 'mg'], ['IN', [50], 'mg']], 'analgezija 0,2–0,5 mg/kg, kartoti kas 30 min; sedacijai / indukcijai šoke dozę mažinti 50 % (ETC)', [['IV', 0.2, 'analgezija 0,2 mg/kg'], ['IV', 0.3, 'analgezija 0,3 mg/kg'], ['IV', 0.5, 'analgezija maks. 0,5 mg/kg'], ['IV', 1, 'sedacija 1 mg/kg'], ['IV', 2, 'sedacija / indukcija 2 mg/kg']]),
       D('fen', 'Fentanilis', 'Fentanyl', 'Analgezija / anestezija', [['IV', [50, 100], 'mcg'], ['IO', [50, 100], 'mcg'], ['IN', [100], 'mcg']], 'medicinos personalui', [['IV', 0.001, '1 mcg/kg']]),
       D('mor', 'Morfinas', 'Morphine', 'Analgezija / anestezija', [['IV', [2, 3], 'mg'], ['IO', [2, 3], 'mg'], ['IM', [10], 'mg']], 'nutraukti, kai KD < 10 k./min', [['IV', 0.1, '0,1 mg/kg']]),
       D('nal', 'Naloksonas', 'Naloxone', 'Analgezija / anestezija', [['IV', [0.1, 0.2], 'mg'], ['IM', [0.4, 2], 'mg'], ['IN', [1.8], 'mg']], 'ETC – maks. 2 mg'),
@@ -229,6 +236,7 @@ const PCAT = (() => {
     ['vib', 'Vibracija (artefaktai)', 'transportas', 'medevac'],
     ['noise', 'Triukšmas – aliarmai negirdimi', 'transportas', 'medevac'],
     ['land', 'Nusileidimas – perdavimas (MIST)', 'transportas', 'medevac'],
+    ['evac', 'Evakuacija atvyko – ATMISTER', 'evakuacija', 'role1'],
     ['vf', 'Skilvelių virpėjimas', 'sustojimas', ''],
     ['asys', 'Asistolija', 'sustojimas', ''],
     ['rosc', 'ROSC – pulsas grįžo', 'sustojimas', '']
@@ -263,6 +271,8 @@ const PCAT = (() => {
     'act:tqconv': 'Pulse nemodeliuoja reperfuzijos (K⁺, acidozė) – tik žurnale',
     'act:htube': 'Pulse 4.3.1 drenas pleuros kraujo nepašalina – drenavus sustabdomas tolesnis kaupimasis',
     'act:fthor': 'Pulse neturi pirštinės torakostomijos – modeliuojama kaip dekompresija',
+    'act:seal': 'Uždaram pneumotoraksui lipdukas modelio nekeičia – tik žurnale',
+    'act:burp': 'Modelyje – tik žurnale',
     'fl:LactatedRingers': 'Pulse neturi Ringerio tirpalo – lašinamas kaip NaCl 0,9 %',
     'drug:esket': 'Pulse neturi esketamino – modeliuojama kaip ketaminas',
     'route:OTFC': 'Pulse neturi transmukozinio vartojimo – ≈ 100 mcg į raumenį',
