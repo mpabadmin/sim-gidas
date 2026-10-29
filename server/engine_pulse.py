@@ -391,8 +391,7 @@ class PulseEngine:
                     x.get_flow_rate().set_value(float(a.get('sev', 0.5)) * 200, _u('VolumePerTimeUnit', 'mL_Per_min'))
                 else:
                     x.get_severity().set_value(max(0.0, min(1.0, float(a.get('sev', 0.5)))))
-            elif hasattr(x, 'get_flow_rate'):
-                x.get_flow_rate().set_value(200.0, _u('VolumePerTimeUnit', 'mL_Per_min'))
+            # drenas – Pulse numatytasis drenavimo greitis (nustačius 200 ml/min bandymuose hemodinamika griuvo)
             return x
         if k in ('bronch', 'asthma', 'stress'):
             x = getattr(pa, {'bronch': 'SEBronchoconstriction', 'asthma': 'SEAsthmaAttack', 'stress': 'SEAcuteStress'}[k])()
