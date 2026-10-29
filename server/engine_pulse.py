@@ -98,6 +98,43 @@ def _enum(name):
     raise AttributeError(name)
 
 
+class _IntEnum:
+    """Enum pakaitalas su sveikojo skaičiaus reikšme (taiso Pulse Python enum su kortežo reikšme)."""
+    def __init__(self, e):
+        self.name = e.name
+        self.value = e.value[0] if isinstance(e.value, tuple) else e.value
+
+    def __eq__(self, o):
+        return getattr(o, 'name', o) == self.name
+
+    def __hash__(self):
+        return hash(self.name)
+
+
+def _fix_enums(x):
+    from enum import Enum
+    fixed = False
+    names = set(getattr(x, '__dict__', {}).keys())
+    for c in type(x).__mro__:
+        names.update(getattr(c, '__slots__', ()))
+    for n in names:
+        try:
+            v = getattr(x, n)
+        except Exception:
+            continue
+        if isinstance(v, Enum) and isinstance(v.value, tuple):
+            setattr(x, n, _IntEnum(v))
+            fixed = True
+    return fixed
+
+
+def _err(ex):
+    import traceback
+    tb = traceback.extract_tb(ex.__traceback__)
+    where = f' ({os.path.basename(tb[-1].filename)}:{tb[-1].lineno} {tb[-1].line})' if tb else ''
+    return f'{type(ex).__name__}: {ex}{where}'[:300]
+
+
 def _u(cls, unit):
     from pulse.cdm import scalars
     return getattr(getattr(scalars, cls), unit)
@@ -248,6 +285,10 @@ class PulseEngine:
             x = pa.SEPericardialEffusion()
             x.get_effusion_rate().set_value(float(a.get('rate', 5)), _u('VolumePerTimeUnit', 'mL_Per_min'))
             return x
+        if k == 'burn' and not hasattr(pa, 'SEBurnWound'):
+            # Pulse 4.3.1 Python sąsajoje nudegimo veiksmo nėra – plazmos netekimą apytiksliai modeliuojame lėtu „kraujavimu“ per odą
+            return self.build({'k': 'hem', 'cmp': 'Skin' if hasattr(_enum('eHemorrhage_Compartment'), 'Skin') else 'Muscle',
+                               'sev': max(0.05, min(0.5, float(a.get('tbsa', 0.3)) * 0.6))})
         if k == 'burn':
             x = pa.SEBurnWound()
             x.get_total_body_surface_area().set_value(max(0.0, min(1.0, float(a.get('tbsa', 0.3)))))
@@ -268,9 +309,23 @@ class PulseEngine:
             return False, f'nepalaikoma: {type(ex).__name__}: {ex}'
         try:
             ok = self.e.process_action(x)
-            return (ok is not False), ''
+            return (ok is not False), self._note(a)
+        except TypeError as ex:
+            # Pulse 4.3.x: kai kurių Python enum reikšmės – kortežai (Intravenous = 0,), protobuf jų nepriima
+            if 'tuple' not in str(ex) or not _fix_enums(x):
+                return False, _err(ex)
+            try:
+                ok = self.e.process_action(x)
+                return (ok is not False), self._note(a)
+            except Exception as ex2:
+                return False, _err(ex2)
         except Exception as ex:
-            return False, f'{type(ex).__name__}: {ex}'
+            return False, _err(ex)
+
+    def _note(self, a):
+        if a.get('k') == 'burn' and not hasattr(_pa(), 'SEBurnWound'):
+            return 'apytiksliai: šioje Pulse versijoje nudegimas modeliuojamas kaip skysčių netekimas per odą'
+        return ''
 
     def supported(self):
         """Kurie veiksmai sukuriami šioje versijoje (be taikymo)."""
