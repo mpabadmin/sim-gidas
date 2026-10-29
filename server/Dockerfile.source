@@ -1,0 +1,25 @@
+# Atsarginis variantas: Pulse statomas iš šaltinio (ilgai – 1–2 val.). Naudoti, jei kitware/pulse atvaizdas netinka.
+# az acr build ... -f Dockerfile.source --timeout 10800
+FROM ubuntu:24.04 AS build
+ARG PULSE_REF=4.4.0
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends git build-essential python3 python3-dev python3-venv python3-pip default-jdk-headless ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+RUN python3 -m venv /venv && /venv/bin/pip install --no-cache-dir "cmake>=3.31" protobuf numpy
+ENV VIRTUAL_ENV=/venv PATH=/venv/bin:$PATH
+RUN git clone --depth 1 --branch ${PULSE_REF} https://gitlab.kitware.com/physiology/engine.git /src
+RUN cmake -S /src -B /b -DCMAKE_BUILD_TYPE=Release -DPulse_PYTHON_HOME_DIR=/venv -DPython3_FIND_VIRTUALENV=ONLY \
+      -DPulse_JAVA_API=ON -DPulse_PYTHON_API=ON -DPulse_GEN_DATA=ON -DCMAKE_INSTALL_PREFIX=/pulse \
+ && cmake --build /b -j"$(nproc)" && (cmake --install /b/Innerbuild 2>/dev/null || true)
+RUN test -d /pulse/bin || cp -r /b/install /pulse
+
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv libgomp1 && rm -rf /var/lib/apt/lists/*
+COPY --from=build /venv /venv
+COPY --from=build /pulse /pulse
+ENV PATH=/venv/bin:$PATH PULSE_BIN=/pulse/bin PORT=8080 MAX_SESSIONS=3 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY ws.py engine_pulse.py engine_mock.py pulse_server.py entrypoint.sh /app/
+RUN chmod +x /app/entrypoint.sh && (timeout 900 /app/entrypoint.sh selftest 2>&1 | head -150 || true)
+EXPOSE 8080
+ENTRYPOINT ["/app/entrypoint.sh"]
