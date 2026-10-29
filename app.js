@@ -1,6 +1,6 @@
 'use strict';
 // ───────── SIM – programėlės eiga: pradžia, monitorius, instruktoriaus pultas, scenarijai, žurnalas, nustatymai ─────────
-const VER = 'v8 · 2026-10-29';
+const VER = 'v8.1 · 2026-10-29';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
 const LSg = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
@@ -114,7 +114,7 @@ function playTick() {
   if ($('#drawer.on') && !inputBusy()) rerenderPanel();
 }
 setInterval(playTick, 500);
-function hostSnap() { const s = SIM.snapshot(); s.pl = playInfo(); s.pu = PULSE.status(); return s; }
+function hostSnap() { const s = SIM.snapshot(); s.pl = playInfo(); s.pu = PULSE.status(); s.ver = VER; return s; }
 function hostSend(o) { let n = 0; if (RTC.role() === 'host' && RTC.open() && RTC.send(o)) n++; if (RELAY.role() === 'host' && RELAY.up() && RELAY.send(o)) n++; return n > 0; }
 function pushSnap() { if (route() === 'monitorius') hostSend({ c: 'snap', s: hostSnap() }); }
 setInterval(pushSnap, 1000);
@@ -231,7 +231,7 @@ function stripHtml(compact) {
 }
 function headHtml() { return `<div id="mirror" class="mirw">${mirrorHtml()}</div>` + stripHtml(); }
 function tabBody() {
-  switch (UI.tab) { case 'sc': return scTab(); case 'act': return actTab(); case 'log': return logTab(); case 'set': return setTab(); case 'link': return linkTab(); case 'pu': return PUI.render(tgt() === 'local' ? PULSE.status() : (snap() || {}).pu, tgt() === 'local'); default: return ctlTab(); }
+  switch (UI.tab) { case 'sc': return scTab(); case 'act': return actTab(); case 'log': return logTab(); case 'set': return setTab(); case 'link': return linkTab(); case 'pu': return PUI.render(tgt() === 'local' ? PULSE.status() : (snap() || {}).pu, tgt() === 'local', (snap() || {}).ver); default: return ctlTab(); }
 }
 const durChips = () => '<div class="chips">' + DUR.map(([d, t]) => chip('dur', d, dur === d, t)).join('') + '</div>';
 
@@ -645,7 +645,7 @@ document.addEventListener('click', async e => {
     case 'd-': case 'd+': if (hold && hold.n) { hold = null; return; } hold = null; stepParam(k, a === 'd+' ? 1 : -1); return;
     case 'apply': applyDraft(); return;
     case 'undo': draft = {}; break;
-    case 'px': PUI.onClick(el, o => { if (send(o)) { if (o.op === 'start') toast('Pulse: ruošiamas modelis…'); } puT = 0; setTimeout(() => { if (!inputBusy()) rerenderTab(); }, 300); }); return;
+    case 'px': PUI.onClick(el, o => { if (send(o)) { if (o.op === 'start') toast('Nusiųsta monitoriui – žr. būseną'); } puT = 0; setTimeout(() => { if (!inputBusy()) rerenderTab(); }, 300); }); return;
     case 'pu-save': { const u = ($('#pu-url') || {}).value || '', t = ($('#pu-tok') || {}).value || ''; PULSE.saveCfg({ url: u.trim(), token: t.trim() }); toast('Išsaugota'); break; }
     case 'pu-test': { const u = ($('#pu-url') || {}).value || '', t = ($('#pu-tok') || {}).value || '', r = $('#pu-res'); PULSE.saveCfg({ url: u.trim(), token: t.trim() }); if (r) r.textContent = 'Tikrinama… (jei serveris miega – iki 3 min.)'; PULSE.test(u.trim(), t.trim(), m => { const x = $('#pu-res'); if (x) x.textContent = m; }); return; }
     case 'mac': { const m = MAC.find(x => x[0] === k); if (!m) return; const o = { c: 'apply', v: macro(k, T()), d: dur, mk: m[1] }; if (k === 'stab') o.r = 'sinus'; if (send(o)) toast(m[1] + (dur ? ' – per ' + DUR.find(x => x[0] === dur)[1] : '')); draft = {}; break; }

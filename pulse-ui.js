@@ -202,12 +202,29 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     const q = (P.q || []).slice(-1)[0]; if (!q) return '';
     return `<div class="pxsnack"><span><small>Bus atlikta po ${q.left} s${P.q.length > 1 ? ' · laukia dar ' + (P.q.length - 1) : ''}</small><b>${E(q.n)}</b></span>${btn('undo', q.uid, 'Atšaukti', 'pxb')}</div>`;
   }
-  function render(P, local) {
+  // laukimas: jungiamasi prie serverio / ruošiamas modelis – aiški būsena su laiku ir atšaukimu
+  let waitT = 0, waitSt = '';
+  function waitHtml(P) {
+    if (waitSt !== P.st || !waitT) { if (!waitT) waitT = Date.now(); waitSt = P.st; }
+    const sec = Math.round((Date.now() - waitT) / 1000), conn = P.st === 'conn';
+    const steps = [['Komanda nusiųsta monitoriui', true], ['Monitorius jungiasi prie Pulse serverio' + (conn && sec > 10 ? ' – serveris pabunda (iki 1–2 min.)' : ''), !conn], ['Pulse ruošia paciento modelį' + (P.ff ? ' ir prasuka laiką' : ''), false]];
+    return '<section class="pnl pxwait"><h2>Pradedama</h2><div class="pxspin" aria-hidden="true"></div>' +
+      '<ol class="pxsteps">' + steps.map((s0, i) => `<li class="${s0[1] ? 'done' : i === (conn ? 1 : 2) ? 'now' : ''}">${s0[1] ? '✓ ' : ''}${E(s0[0])}</li>`).join('') + '</ol>' +
+      `<p><b>${E(P.msg || '')}</b></p><p class="muted">Laukiama ${sec} s.${sec > 150 ? ' Ilgai – patikrinkite internetą monitoriaus telefone ir Pulse serverį (Nustatymai → Pulse serveris → Tikrinti ryšį).' : ''}</p>` +
+      btn('stop0', null, 'Atšaukti', 'pxb wide') + '</section>';
+  }
+  function render(P, local, mver) {
     lastP = P;
+    let pre = '';
+    const cur = typeof VER !== 'undefined' ? VER : '';
+    if (!local && (P == null || (mver != null && mver !== cur) || (P && P.st === 'run' && !P.sc))) pre += `<div class="mira p1 pxwarn">⚠ Monitoriaus telefone kita programėlės versija (${E(mver || 'sena')}, čia ${E(cur)}). Atnaujinkite monitoriaus telefoną: uždarykite ir vėl atidarykite SIM (gali reikėti 2 kartų).</div>`;
+    if (P && P.sc && (P.st === 'load' || P.st === 'conn')) return pre + headHtml(P) + waitHtml(P);
+    waitT = 0;
+    if (P && P.st === 'err' && P.msg) pre += `<div class="mira p1 pxwarn">✕ ${E(P.msg)}</div>`;
     const live = P && P.sc && (RUN.indexOf(P.st) >= 0 || P.st === 'dead');
-    if (!live) return P && P.sc && P.sc.end != null && view === 'rep' ? headHtml(P) + repHtml(P) + btn('view', 'pt', '＋ Naujas scenarijus', 'pxgo') : setupHtml(P, local);
+    if (!live) return pre + (P && P.sc && P.sc.end != null && view === 'rep' ? headHtml(P) + repHtml(P) + btn('view', 'pt', '＋ Naujas scenarijus', 'pxgo') : setupHtml(P, local));
     const body = view === 'tx' ? txHtml(P) : view === 'ev' ? evHtml(P) : view === 'rep' ? repHtml(P) : ptHtml(P);
-    return '<div class="pxw">' + headHtml(P) + body + '<div class="pxbot">' + undoHtml(P) + (view === 'tx' ? railHtml(P) : '') + navHtml() + '</div></div>';
+    return pre + '<div class="pxw">' + headHtml(P) + body + '<div class="pxbot">' + undoHtml(P) + (view === 'tx' ? railHtml(P) : '') + navHtml() + '</div></div>';
   }
 
   // ── apatiniai lapai ──
@@ -299,6 +316,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
       case 'su-ff': SU.ff = +x; saveSU(); rerender(); return null;
       case 'start': view = 'pt'; LSs('sim-pu-view', view); cmOpen = false; return C(startCmd());
       case 'resume': return C({ op: 'resume' });
+      case 'stop0': waitT = 0; return C({ op: 'stop' });
       case 'view': view = x; LSs('sim-pu-view', view); rerender(); scrollTop(); return null;
       // eiga
       case 'pause': return C({ op: 'pause', on: x === '1' });
