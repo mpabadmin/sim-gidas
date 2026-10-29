@@ -66,9 +66,9 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     h += `<section class="pnl"><h2>Įžanga komandai</h2><p class="pxpre">${E(prebrief())}</p></section>`;
     h += '<section class="pnl"><h2>Ženklas ≈</h2><p class="mt0"><span class="apx">≈</span> – <b>Pulse 4.3.1 tokios funkcijos neturi</b>: rodiklių pokytį apytiksliai sukuria programėlė (pvz. nudegimai, GST, skausmas, intubacija, perikardiocentezė). Visa kita skaičiuoja Pulse.</p></section>';
     // serveris
-    const tokOk = local ? PULSE.cfg().token : true;
-    h += '<section class="pnl">' + (P && P.st === 'err' ? `<p class="mira p1">${E(P.msg)}</p>` : '') + (!tokOk ? '<p class="mira p1">Įveskite Pulse serverio žetoną: Nustatymai → Pulse serveris.</p>' : '') +
-      (P && P.msg && P.st === 'off' ? `<p class="muted">${E(P.msg)}</p>` : '') +
+    const tokOk = local ? PULSE.cfg().token : (!P || P.tok !== false || String(PULSE.cfg().token || '').trim());
+    h += '<section class="pnl">' + (!tokOk ? `<p class="mira p1">Pulse serverio žetono nėra ${local ? 'šiame telefone' : 'nei šiame, nei monitoriaus telefone'}: įveskite jį Nustatymai → Pulse serveris.</p>` : '') +
+      (P && P.msg && P.st === 'off' && !(P.sc && P.sc.lost) ? `<p class="muted">${E(P.msg)}</p>` : '') +
       (P && P.sid && P.st !== 'dead' && P.sc && P.sc.end == null ? btn('resume', null, 'Atkurti ankstesnę sesiją', 'pxb wide') : '') +
       (P && P.sc && P.sc.end != null ? btn('view', 'rep', 'Ankstesnio scenarijaus ataskaita', 'pxb wide') : '') +
       `<p class="muted">Rodiklius skaičiuoja Kitware Pulse fiziologijos modelis${P && P.eng ? ' (' + E(P.eng + ' ' + P.ver) + ')' : ''}. Jei serveris miegojo, pradžia užtrunka iki 1–2 min.</p></section>`;
@@ -89,7 +89,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     const run = RUN.indexOf(P.st) >= 0, sp = P.speed || 1;
     // pauzė – viršutinėje juostoje (stabdo ir monitorių, ir Pulse), todėl čia jos nekartojame
     let h = `<div class="pxh"><div class="pxh1"><span class="pxclkw"><b class="pxclk">${T(P.simt)}</b><small class="pxst2 ${P.st}">${P.st === 'off' && P.sc && P.sc.end != null ? 'baigta' : stTxt[P.st] || P.st} · nuo sužeidimo</small></span>` +
-      (run ? `<button class="pxi pxstop" data-act="px" data-k="stop" data-hold="1" aria-label="Baigti (laikykite 1,5 s)">■ Baigti<small>laikykite</small></button>` : '') + '</div>';
+      (run || P.st === 'dead' ? `<button class="pxi pxstop" data-act="px" data-k="stop" data-hold="1" aria-label="Baigti (laikykite 1,5 s)">■ Baigti<small>laikykite</small></button>` : '') + '</div>';
     if (run) h += '<div class="pxh2">' + btn('speed', sp, '×' + sp, 'pxi', ' aria-label="Greitis: ×' + sp + ' (keisti)"') + btn('mark', null, '★', 'pxi', ' aria-label="Pažymėti aptarimui"') + btn('skip', 300, '⏭ +5 min', 'chip pxch') + btn('skip', 900, '⏭ +15 min', 'chip pxch') + (P.skip ? `<span class="muted">praleidžiama… liko ${T(P.skip)}</span>` : '') + (P.msg && P.st !== 'run' ? `<span class="muted">${E(P.msg)}</span>` : '') + '</div>';
     else if (P.msg) h += `<div class="pxh2"><span class="muted">${E(P.msg)}</span></div>`;
     if (P.eng && !P.pulse) h += '<div class="pxh2"><span class="mira p1">Serveryje veikia testinis variklis, ne Pulse</span></div>';
@@ -203,24 +203,38 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     return `<div class="pxsnack"><span><small>Bus atlikta po ${q.left} s${P.q.length > 1 ? ' · laukia dar ' + (P.q.length - 1) : ''}</small><b>${E(q.n)}</b></span>${btn('undo', q.uid, 'Atšaukti', 'pxb')}</div>`;
   }
   // laukimas: jungiamasi prie serverio / ruošiamas modelis – aiški būsena su laiku ir atšaukimu
-  let waitT = 0, waitSt = '';
+  // sent – PRADĖTI išsiųstas, laukiama, kol monitorius patvirtins (scenarijaus nonce momentinėje nuotraukoje)
+  let waitT = 0, sent = null, late = '';
+  const SENT_S = 15;
   function waitHtml(P) {
-    if (waitSt !== P.st || !waitT) { if (!waitT) waitT = Date.now(); waitSt = P.st; }
-    const sec = Math.round((Date.now() - waitT) / 1000), conn = P.st === 'conn';
-    const steps = [['Komanda nusiųsta monitoriui', true], ['Monitorius jungiasi prie Pulse serverio' + (conn && sec > 10 ? ' – serveris pabunda (iki 1–2 min.)' : ''), !conn], ['Pulse ruošia paciento modelį' + (P.ff ? ' ir prasuka laiką' : ''), false]];
-    return '<section class="pnl pxwait"><h2>Pradedama</h2><div class="pxspin" aria-hidden="true"></div>' +
-      '<ol class="pxsteps">' + steps.map((s0, i) => `<li class="${s0[1] ? 'done' : i === (conn ? 1 : 2) ? 'now' : ''}">${s0[1] ? '✓ ' : ''}${E(s0[0])}</li>`).join('') + '</ol>' +
-      `<p><b>${E(P.msg || '')}</b></p><p class="muted">Laukiama ${sec} s.${sec > 150 ? ' Ilgai – patikrinkite internetą monitoriaus telefone ir Pulse serverį (Nustatymai → Pulse serveris → Tikrinti ryšį).' : ''}</p>` +
-      btn('stop0', null, 'Atšaukti', 'pxb wide') + '</section>';
+    if (!waitT) waitT = (sent && sent.at) || Date.now();
+    const sec = Math.round((Date.now() - waitT) / 1000), mon = !P || !P.sc, conn = P && P.st === 'conn', re = !mon && P.sc.on;
+    const now = mon ? 0 : conn ? 1 : 2;
+    const steps = re ? [['Ryšys su Pulse serveriu nutrūko', true], ['Monitorius jungiasi iš naujo' + (sec > 10 ? ' – serveris gali būti persikrovęs (iki 1–2 min.)' : ''), !conn], ['Sesija atkuriama', false]]
+      : [[mon ? 'Komanda siunčiama monitoriui – laukiama atsakymo' : 'Monitorius gavo komandą', !mon], ['Monitorius jungiasi prie Pulse serverio' + (conn && sec > 10 ? ' – serveris pabunda (iki 1–2 min.)' : ''), now > 1], ['Pulse ruošia paciento modelį' + (P && P.ff ? ' ir prasuka laiką' : ''), false]];
+    return '<section class="pnl pxwait"><h2>' + (re ? 'Atkuriamas ryšys su Pulse' : 'Pradedama') + '</h2><div class="pxspin" aria-hidden="true"></div>' +
+      '<ol class="pxsteps">' + steps.map((s0, i) => `<li class="${s0[1] ? 'done' : i === now ? 'now' : ''}">${s0[1] ? '✓ ' : ''}${E(s0[0])}</li>`).join('') + '</ol>' +
+      `<p><b>${E(mon ? '' : P.msg || '')}</b></p><p class="muted">Laukiama ${sec} s.${sec > 150 ? ' Ilgai – patikrinkite internetą monitoriaus telefone ir Pulse serverį (Nustatymai → Pulse serveris → Tikrinti ryšį).' : ''}</p>` +
+      (re ? btn('stop0', 'rep', 'Baigti scenarijų (ataskaita)', 'pxb wide') : btn('stop0', null, 'Atšaukti', 'pxb wide')) + '</section>';
   }
   function render(P, local, mver) {
     lastP = P;
     let pre = '';
     const cur = typeof VER !== 'undefined' ? VER : '';
-    if (!local && (P == null || (mver != null && mver !== cur) || (P && P.st === 'run' && !P.sc))) pre += `<div class="mira p1 pxwarn">⚠ Monitoriaus telefone kita programėlės versija (${E(mver || 'sena')}, čia ${E(cur)}). Atnaujinkite monitoriaus telefoną: uždarykite ir vėl atidarykite SIM (gali reikėti 2 kartų).</div>`;
+    // mver: null – monitoriaus nuotraukos dar nėra; '' – monitorius siunčia nuotrauką be versijos (sena programėlė)
+    if (!local && mver != null && (mver !== cur || !P || (P.st === 'run' && !P.sc))) pre += `<div class="mira p1 pxwarn">⚠ Monitoriaus telefone kita programėlės versija (${E(mver || 'sena')}, čia ${E(cur)}). Atnaujinkite monitoriaus telefoną: uždarykite ir vėl atidarykite SIM (gali reikėti 2 kartų).</div>`;
+    if (!local && mver == null) pre += '<div class="mira p2 pxwarn">Nėra ryšio su monitoriumi – prisijunkite (monitoriaus QR kodas arba kambario kodas), tada spauskite PRADĖTI.</div>';
+    // PRADĖTI išsiųstas: laukti monitoriaus patvirtinimo; sena versija nonce neatsiunčia – priimama, jei ji pati pradėjo
+    if (sent) {
+      if (P && P.sc && (P.sc.nonce === sent.n || (P.sc.nonce == null && RUN.concat(['dead', 'err']).indexOf(P.st) >= 0))) sent = null;
+      else if (Date.now() - sent.at > SENT_S * 1000) { sent = null; waitT = 0; late = 'Monitorius per ' + SENT_S + ' s nesureagavo į komandą PRADĖTI. Tikriausiai monitoriaus telefone sena SIM versija arba nutrūko ryšys – atnaujinkite monitoriaus telefoną (uždarykite ir vėl atidarykite SIM) ir bandykite dar kartą.'; }
+      else return pre + waitHtml(P && P.sc && P.sc.nonce === sent.n ? P : null);
+    }
     if (P && P.sc && (P.st === 'load' || P.st === 'conn')) return pre + headHtml(P) + waitHtml(P);
     waitT = 0;
+    if (late) pre += `<div class="mira p1 pxwarn">⚠ ${E(late)}</div>`;
     if (P && P.st === 'err' && P.msg) pre += `<div class="mira p1 pxwarn">✕ ${E(P.msg)}</div>`;
+    if (P && P.st === 'off' && P.sc && P.sc.lost) pre += `<div class="mira p1 pxwarn">⚠ ${E(P.msg || 'Pulse sesija prarasta – pradėkite iš naujo.')}</div>`;
     const live = P && P.sc && (RUN.indexOf(P.st) >= 0 || P.st === 'dead');
     if (!live) return pre + (P && P.sc && P.sc.end != null && view === 'rep' ? headHtml(P) + repHtml(P) + btn('view', 'pt', '＋ Naujas scenarijus', 'pxgo') : setupHtml(P, local));
     const body = view === 'tx' ? txHtml(P) : view === 'ev' ? evHtml(P) : view === 'rep' ? repHtml(P) : ptHtml(P);
@@ -303,7 +317,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
   const vib = () => { try { navigator.vibrate && navigator.vibrate(20); } catch (e) {} };
   function startCmd() {
     const c = PULSE.cfg(), m = mechBy(SU.mech);
-    return { c: 'pulse', op: 'start', url: c.url, token: c.token, ff: SU.ff, sc: { set: SU.set, pat: SU.pat, mech: m[0], mechN: m[1], inj: SU.inj } };
+    return { c: 'pulse', op: 'start', nonce: sent ? sent.n : '', url: c.url, token: c.token, ff: SU.ff, sc: { set: SU.set, pat: SU.pat, mech: m[0], mechN: m[1], inj: SU.inj } };
   }
   function click(el) {
     const k = el.dataset.k, x = el.dataset.x, by = el.dataset.by || (sheet && sheet.kind === 'team' ? 'team' : 'instr'), P = lastP || {};
@@ -314,9 +328,9 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
       case 'su-mech': SU.mech = x; SU.inj = mechBy(x)[3].map(j => Object.assign({}, j)); saveSU(); rerender(); return null;
       case 'su-del': SU.inj.splice(+x, 1); saveSU(); rerender(); return null;
       case 'su-ff': SU.ff = +x; saveSU(); rerender(); return null;
-      case 'start': view = 'pt'; LSs('sim-pu-view', view); cmOpen = false; return C(startCmd());
+      case 'start': view = 'pt'; LSs('sim-pu-view', view); cmOpen = false; late = ''; sent = { at: Date.now(), n: Math.random().toString(36).slice(2, 8) }; return C(startCmd());
       case 'resume': return C({ op: 'resume' });
-      case 'stop0': waitT = 0; return C({ op: 'stop' });
+      case 'stop0': waitT = 0; sent = null; if (x === 'rep') { view = 'rep'; LSs('sim-pu-view', view); } return C({ op: 'stop' });
       case 'view': view = x; LSs('sim-pu-view', view); rerender(); scrollTop(); return null;
       // eiga
       case 'pause': return C({ op: 'pause', on: x === '1' });
@@ -388,7 +402,7 @@ const apxB = (key, full) => { const t = PCAT.apx(key); return t ? (full ? `<smal
     sendFn = send;
     if (el.dataset.hold === '1') { if (Date.now() - holdDone > 1500) toast2('Laikykite paspaudę 1,5 s'); return; }
     const o = click(el);
-    if (o) send(o);
+    if (o && send(o) === false && o.op === 'start') { sent = null; rerender(); }   // komanda neišsiųsta (nėra ryšio) – nelaukti
   }
 
   // ── monitoriaus gydymo juosta ──

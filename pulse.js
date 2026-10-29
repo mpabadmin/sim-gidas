@@ -14,6 +14,7 @@ const PULSE = (() => {
   const mmss = s => { s = Math.max(0, Math.round(+s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
 
   // ── būsena (monitoriaus pusėje) ──
+  let startFn = null;       // nepatvirtintas „start“ (kol serveris neatsiuntė „started“) – kartojamas prisijungus iš naujo
   let ws = null, st = 'off', info = null, simt = 0, speed = 1, paused = false, alive = true, msg = '', lastV = null, retry = 0, wantRun = false, reqId = 0, skipLeft = 0, ffInfo = null;
   const pend = {};          // laukiama serverio atsakymo: id → {n, a, by}
   let SC = null;            // scenarijus: {set, pat, mech, mechN, inj[], inf[], o2, kit, log[], arrest, min, t0}
@@ -38,17 +39,17 @@ const PULSE = (() => {
   function connect(then) {
     const c = cfg(), u = wsUrl(c);
     if (!u) { setSt('err', 'Pulse serveris nenustatytas (Nustatymai → Pulse serveris)'); return; }
-    if (!String(c.token || '').trim()) { wantRun = false; setSt('err', 'Įveskite Pulse serverio žetoną: Nustatymai → Pulse serveris'); return; }
+    if (!String(c.token || '').trim()) { wantRun = false; startFn = null; connect.q = null; setSt('err', 'Pulse serverio žetonas neįvestas – įveskite jį instruktoriaus arba monitoriaus telefone: Nustatymai → Pulse serveris'); return; }
     if (ws && ws.readyState <= 1) { if (then && ws.readyState === 1) then(); else if (then) connect.q = then; return; }
-    connect.q = then || null;
+    connect.q = then || connect.q || null;   // pakartotinis bandymas neturi pamesti laukiančios komandos
     if (st !== 'conn') setSt('conn', 'Jungiamasi prie serverio… (jei jis miegojo – iki 1–2 min.)');
     let opened = false;
     try { ws = new WebSocket(u); } catch (e) { setSt('err', 'Netinkamas serverio adresas'); return; }
-    ws.onopen = () => { retry = 0; opened = true; tx({ t: 'hello' }); const q = connect.q; connect.q = null; if (q) q(); else if (c.sid && wantRun) tx({ t: 'resume', sid: c.sid }); };
+    ws.onopen = () => { retry = 0; opened = true; tx({ t: 'hello' }); const q = connect.q; connect.q = null; if (q) q(); else if (wantRun) { const sid = cfg().sid; if (sid) tx({ t: 'resume', sid }); else if (startFn) startFn(); } };
     ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (x) { return; } onMsg(m); };
     ws.onclose = ev => {
       ws = null;
-      if (ev.code === 4001) { wantRun = false; setSt('err', 'Neteisingas žetonas – patikrinkite nustatymus'); return; }
+      if (ev.code === 4001) { wantRun = false; startFn = null; connect.q = null; setSt('err', 'Neteisingas Pulse serverio žetonas – patikrinkite: Nustatymai → Pulse serveris'); return; }
       if (wantRun) { retry = Math.min(retry + 1, 6); setSt('conn', opened || /nutrūko/.test(msg) ? 'Ryšys su serveriu nutrūko – jungiamasi iš naujo…' : 'Serveris nepasiekiamas – bandoma dar kartą… (jei jis ką tik paleistas, gali užtrukti 1–2 min.)'); setTimeout(() => { if (wantRun) connect(); }, 1500 * retry); }
       else if (st !== 'err') setSt('off');
     };
@@ -65,9 +66,9 @@ const PULSE = (() => {
   function onMsg(m) {
     switch (m.t) {
       case 'info': info = m; onChange(); break;
-      case 'started': saveCfg({ sid: m.sid }); simt = +m.simt || 0; ffInfo = null; if (m.speed) speed = m.speed; paused = !!m.paused; alive = true; setSt(paused ? 'pause' : 'run', m.resumed ? 'Sesija atkurta' : ''); if (!m.resumed) L('Pulse: modeliavimas pradėtas' + (simt ? ' (praėjus ' + mmss(simt) + ' nuo sužeidimo)' : '')); break;
+      case 'started': saveCfg({ sid: m.sid }); startFn = null; if (SC) SC.on = 1; simt = +m.simt || 0; ffInfo = null; if (m.speed) speed = m.speed; paused = !!m.paused; alive = true; setSt(paused ? 'pause' : 'run', m.resumed ? 'Sesija atkurta' : ''); if (!m.resumed) L('Pulse: modeliavimas pradėtas' + (simt ? ' (praėjus ' + mmss(simt) + ' nuo sužeidimo)' : '')); break;
       case 'ff': ffInfo = { done: m.done, tot: m.tot }; setSt('load', 'Prasukama iki ' + mmss(m.tot) + ' nuo sužeidimo… ' + Math.round(m.done / Math.max(1, m.tot) * 100) + ' %'); break;
-      case 'gone': saveCfg({ sid: '' }); wantRun = false; L('Pulse: sesija serveryje nebeegzistuoja'); setSt('off', 'Ankstesnė sesija serveryje nebeegzistuoja (serveris buvo paleistas iš naujo) – monitorius rodo paskutines Pulse reikšmes. Pradėkite iš naujo.'); break;
+      case 'gone': saveCfg({ sid: '' }); wantRun = false; startFn = null; Q = []; if (SC && SC.on) { SC.end = simt; SC.lost = 1; } keep(); L('Pulse: sesija serveryje nebeegzistuoja'); setSt('off', 'Ankstesnė sesija serveryje nebeegzistuoja (serveris buvo paleistas iš naujo) – monitorius rodo paskutines Pulse reikšmes. Pradėkite iš naujo.'); break;
       case 'vit': {
         simt = +m.simt || simt; if (m.speed) speed = m.speed; skipLeft = m.skip || 0; alive = m.alive !== false; lastV = m.v || lastV;
         applyVitals(m.v || {}, alive);
@@ -92,7 +93,7 @@ const PULSE = (() => {
       case 'dead': { alive = false; const c = cfg(); if (c.deadSid && c.deadSid === c.sid) { setSt('dead', 'Modeliuojamas pacientas mirė – pradėkite iš naujo'); break; } saveCfg({ deadSid: c.sid }); }
         L('Pulse: negrįžtama būklė (mirtis) – ' + mmss(m.simt)); setSt('dead', 'Modeliuojamas pacientas mirė – pradėkite iš naujo'); break;
       case 'stopped': if (st !== 'err') setSt('off'); break;
-      case 'err': if (m.code === 'auth') wantRun = false; setSt(wantRun ? st : 'err', m.msg || 'Serverio klaida'); if (/užimtas|Variklio/.test(m.msg || '')) { wantRun = false; setSt('err', m.msg); } break;
+      case 'err': if (m.code === 'auth') { wantRun = false; startFn = null; } setSt(wantRun ? st : 'err', m.msg || 'Serverio klaida'); if (/užimtas|Variklio/.test(m.msg || '')) { wantRun = false; startFn = null; setSt('err', m.msg); } break;
     }
   }
   // Pulse rodikliai → monitorius (1,2 s sklandus perėjimas)
@@ -190,7 +191,8 @@ const PULSE = (() => {
         rec(nm + (sim ? (PCAT.apx('drug:' + p.id) || PCAT.apx('route:' + p.route) ? ' (≈ apytiksliai)' : '') : ' (tik žurnale – Pulse šio vaisto neturi)'), by); break;
       }
       default: {
-        if (/^probe:/.test(code)) { const [, k, on] = code.split(':'); if (typeof exec === 'function') exec({ c: 'probe', k, on: on === '1' }); }
+        const it = PCAT.TX.flatMap(g => g[2]).find(i => i[0] === code), ty = (it && it[4]) || code;   // daviklių kodai – katalogo 5-ame lauke (probe:ecg:1)
+        if (/^probe:/.test(ty)) { const [, k, on] = ty.split(':'); if (typeof exec === 'function') exec({ c: 'probe', k, on: on === '1' }); }
         if (code === 'txa' && SC.tTxa == null) SC.tTxa = simt;
         rec(label || code, by);
       }
@@ -243,19 +245,21 @@ const PULSE = (() => {
   // ── komandos (vykdomos monitoriuje) ──
   function cmd(o) {
     const c = cfg();
-    if (o.url) saveCfg({ url: o.url, token: o.token || '' });
+    if (o.url && String(o.token || '').trim()) saveCfg({ url: o.url, token: o.token });   // instruktorius be žetono – naudojami monitoriaus nustatymai
     switch (o.op) {
       case 'start': {
         const S = o.sc || {}, set = PCAT.SETTINGS[S.set] ? S.set : 'role1';
-        wantRun = true; hist = []; alog = []; Q = []; Object.keys(pend).forEach(k => delete pend[k]);
-        SC = { set, pat: S.pat || {}, mech: S.mech || '', mechN: S.mechN || '', inj: [], inf: [], o2: null, kit: { max: PCAT.SETTINGS[set].blood, used: 0 }, log: [], arrest: '', min: { sys: 999, spo2: 100 }, ff: +o.ff || 0 };
+        wantRun = true; hist = []; alog = []; Q = []; startFn = null; connect.q = null; Object.keys(pend).forEach(k => delete pend[k]); saveCfg({ sid: '', deadSid: '' });
+        SC = { set, pat: S.pat || {}, mech: S.mech || '', mechN: S.mechN || '', inj: [], inf: [], o2: null, kit: { max: PCAT.SETTINGS[set].blood, used: 0 }, log: [], arrest: '', min: { sys: 999, spo2: 100 }, ff: +o.ff || 0, nonce: o.nonce || '' };
         const acts = [];
         (S.inj || []).forEach(j => { const x = newInj(j, 0); SC.inj.push(x); hpush(x, 'Sužeidimas'); const a = PCAT.injAct(x); if (a) { acts.push(a); alog.push({ a, t: 0 }); } });
         if (typeof PULSE_CM !== 'undefined') PULSE_CM.reset();
         keep();
         SIM.sesStart(); SIM.setLabel((PCAT.SETTINGS[set].n + ' · ' + (SC.mechN || 'Pulse')).slice(0, 40), '');
+        // švari pradžia: sinusinis ritmas, visi davikliai prijungti, be artefaktų (ankstesnio scenarijaus likučiai)
+        try { SIM.setRhythm('sinus'); ['ecg', 'spo2', 'nibp'].forEach(k => SIM.setProbe(k, true)); SIM.setArt('motion', false); SIM.setArt('cpr', false); SIM.unmute(); } catch (e) {}
         L('Pulse: ' + PCAT.SETTINGS[set].n + ' · ' + (SC.mechN || 'scenarijus') + (SC.inj.length ? ' – ' + SC.inj.map(iname).join('; ') : ''));
-        const go = () => { tx({ t: 'start', state: (S.pat && S.pat.state) || '', acts, speed: 1, ff: SC.ff }); setSt('load', SC.ff ? 'Prasukama iki ' + mmss(SC.ff) + ' nuo sužeidimo…' : 'Ruošiamas modelis…'); };
+        const go = startFn = () => { tx({ t: 'start', state: (S.pat && S.pat.state) || '', acts, speed: 1, ff: SC.ff }); setSt('load', SC.ff ? 'Prasukama iki ' + mmss(SC.ff) + ' nuo sužeidimo…' : 'Ruošiamas modelis…'); };
         if (ws && ws.readyState === 1) go(); else connect(go);
         break;
       }
@@ -266,7 +270,7 @@ const PULSE = (() => {
       case 'speed': if (tx({ t: 'speed', x: +o.x || 1 })) { speed = +o.x || 1; L('Pulse greitis ×' + speed, 'sys'); } onChange(); break;
       case 'skip': if (tx({ t: 'skip', s: +o.s || 300 })) { skipLeft = +o.s || 300; L('Praleista ' + Math.round((+o.s || 300) / 60) + ' min', 'sys'); } onChange(); break;
       case 'pause': tx({ t: o.on ? 'pause' : 'run' }); paused = !!o.on; setSt(o.on ? 'pause' : 'run'); break;
-      case 'stop': { const was = st; wantRun = false; Q = []; tx({ t: 'stop' }); saveCfg({ sid: '' }); L('Pulse: modeliavimas baigtas'); setTimeout(() => { try { ws && ws.close(); } catch (e) {} }, 200); if (SC) { SC.end = simt; keep(); } setSt('off', was === 'conn' || was === 'err' ? '' : 'Modeliavimas baigtas – ataskaita skiltyje „Ataskaita“. Monitorius rodo paskutines Pulse reikšmes (normalūs: Rodikliai → Atkurti normą).'); break; }
+      case 'stop': { const was = st; wantRun = false; Q = []; startFn = null; connect.q = null; tx({ t: 'stop' }); saveCfg({ sid: '' }); L('Pulse: modeliavimas baigtas'); setTimeout(() => { try { ws && ws.close(); } catch (e) {} }, 200); if (SC && !SC.on) SC = null; if (SC) { SC.end = simt; keep(); } setSt('off', !SC ? 'Pradžia atšaukta' : was === 'conn' || was === 'err' ? 'Modeliavimas baigtas – ataskaita skiltyje „Ataskaita“.' : 'Modeliavimas baigtas – ataskaita skiltyje „Ataskaita“. Monitorius rodo paskutines Pulse reikšmes (normalūs: Rodikliai → Atkurti normą).'); break; }
       case 'probe': wantRun = false; connect(() => setTimeout(() => setSt('off', info ? 'Serveris pasiekiamas: ' + info.engine + ' ' + info.version : ''), 300)); break;
     }
   }

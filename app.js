@@ -762,6 +762,12 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   const had = !!navigator.serviceWorker.controller; let pend = false;
   navigator.serviceWorker.register('sw.js').catch(() => {});
   // nauja versija įdiegta – perkrauti (monitoriaus metu – tik išėjus iš jo)
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!had) return; if (route() === 'monitorius') { pend = true; toast('Atnaujinta – nauja versija įsijungs išėjus iš monitoriaus'); } else location.reload(); });
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!had) return; if (route() === 'monitorius' && PULSE.running()) { pend = true; toast('Atnaujinta – nauja versija įsijungs pasibaigus Pulse modeliavimui arba išėjus iš monitoriaus'); } else { toast('Atnaujinama į naują versiją…'); setTimeout(() => location.reload(), 800); } });
   window.addEventListener('hashchange', () => { if (pend && route() !== 'monitorius') location.reload(); });
+  setInterval(() => { if (pend && route() === 'monitorius' && !PULSE.running()) location.reload(); }, 5000);
+  // atnaujinimų paieška: programėlė telefone dažnai lieka atidaryta ilgai (be naujo puslapio įkėlimo naršyklė jų netikrina)
+  const upd = () => navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {});
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') upd(); });
+  window.addEventListener('focus', upd);
+  setInterval(upd, 10 * 60 * 1000);
 }
