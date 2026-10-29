@@ -8,6 +8,15 @@ cd "$(dirname "$0")/.."            # server/
 CFG="$HOME/.sim-pulse.env"
 LOC_ARG=${LOC:-}
 [ -f "$CFG" ] && . "$CFG"
+# Cloud Shell be saugyklos nieko neišsaugo – atkuriame nustatymus iš jau sukurtų Azure išteklių
+if [ ! -f "$CFG" ] && az group show -n "${RG:-sim-pulse-rg}" -o none 2>/dev/null; then
+  ACR=${ACR:-$(az acr list -g "${RG:-sim-pulse-rg}" --query '[0].name' -o tsv 2>/dev/null || true)}
+  TOKEN=${TOKEN:-$(az containerapp secret show -n "${APP:-sim-pulse}" -g "${RG:-sim-pulse-rg}" --secret-name simtoken --query value -o tsv 2>/dev/null || true)}
+  [ -n "$ACR" ] && echo "Rastas ankstesnis registras: $ACR"
+  [ -n "$TOKEN" ] && echo "Rastas ankstesnis žetonas (adresas ir žetonas nesikeis)"
+fi
+[ -z "${ACR:-}" ] && unset ACR
+[ -z "${TOKEN:-}" ] && unset TOKEN
 [ -n "$LOC_ARG" ] && LOC=$LOC_ARG          # komandinėje eilutėje nurodytas regionas svarbiau už išsaugotą
 RG=${RG:-sim-pulse-rg}
 LOC=${LOC:-swedencentral}
