@@ -95,7 +95,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
       const wt = w.st === 'ready' ? `<b class="ok">✓ Serveris pabudęs</b> – ${E(w.msg)}${w.ses ? ' · sesijos ' + E(w.ses) : ''}. Budrus dar ${w.left} min.` : w.st === 'waking' ? `<b class="amb">Žadinama… ${w.sec} s</b> (miegantis serveris pasileidžia per 1–2 min.)` : w.st === 'err' ? `<b class="bad">✕ ${E(w.msg)}</b>` : 'Serveris gali miegoti – pažadinkite iš anksto, kad PRADĖTI veiktų be laukimo.';
       h += `<div class="pxwake"><button class="pxb${w.st === 'ready' ? '' : ' pri'}" data-act="px" data-k="wake">${w.st === 'ready' ? 'Laikyti budrų' : w.st === 'waking' ? 'Žadinama…' : 'Pažadinti Pulse serverį'}</button><p class="muted">${wt}</p></div>` +
         `<p class="mt0"><span class="apx">≈</span> – <b>Pulse 4.3.1 tokios funkcijos neturi</b>: rodiklių pokytį apytiksliai sukuria programėlė (pvz. nudegimai, GST, skausmas, intubacija, perikardiocentezė). Visa kita skaičiuoja Pulse.</p>`;
-      const tokOk = local ? PULSE.cfg().token : (!P || P.tok !== false || String(PULSE.cfg().token || '').trim());
+      const tokOk = local ? PULSE.cfg().token : (!P || (P.ptok != null ? P.ptok : P.tok !== false) || String(PULSE.cfg().token || '').trim());
       if (!tokOk) h += `<p class="mira p1">Pulse serverio žetono nėra ${local ? 'šiame telefone' : 'nei šiame, nei monitoriaus telefone'}: įveskite jį Nustatymai → Pulse serveris.</p>`;
     } else h += '<p class="mt0 muted">Rodikliai skaičiuojami telefone paprastomis taisyklėmis (ATLS šoko klasės, TCCC / ETC mokomosios reikšmės). <b>Visas variklis apytikslis (≈)</b> – reikšmės mokomosios, ne klinikinės. Internetas nereikalingas.</p>';
     h += '</section>';
@@ -426,7 +426,6 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
     if (!live) return pre + (P && P.sc && P.sc.end != null && view === 'rep' ? headHtml(P) + repHtml(P) + btn('view', 'pt', '＋ Naujas scenarijus', 'pxgo') : setupHtml(P, local));
     const sc = P.sc, nk = sc.nonce || '';
     if (sc.ph === 'role1' && sc.r1t0 != null && seenR1 !== nk + sc.r1t0) { seenR1 = nk + sc.r1t0; LSs('sim-pu-r1', seenR1); view = 'recv'; }
-    if (sc.ph === 'handover' && seenH !== nk) { seenH = nk; LSs('sim-pu-h', seenH); view = 'hand'; }
     if (view === 'tx') view = 'all';
     const body = view === 'all' ? allHtml(P) : view === 'ev' ? scenEvHtml(P) + evHtml(P) : view === 'rep' ? repHtml(P) : view === 'hand' ? handHtml(P) : view === 'recv' && sc.set === 'role1' ? recvHtml(P) : statusHtml(P);
     return pre + '<div class="pxw">' + headHtml(P) + body + '<div class="pxbot">' + undoHtml(P) + (view === 'all' ? railHtml(P) : '') + navHtml(P) + '</div></div>';

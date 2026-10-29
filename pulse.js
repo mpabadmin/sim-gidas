@@ -402,7 +402,7 @@ const PULSE = (() => {
     return { st, msg, eng: info ? info.engine : (isLocal() ? PLOCAL.ENGINE : ''), ver: info ? info.version : '', pulse: !!(info && info.pulse), local: isLocal(), engSet: cfg().eng, simt: Math.round(simt), speed, skip: skipLeft, ff: ffInfo,
       sup: info ? Object.keys(info.supported || {}).filter(k => info.supported[k] === true) : null, comp: info ? info.compounds : null, sub: info ? info.substances : null, hemc: info ? info.hem_cmp || null : null,
       v: lastV ? { hr: lastV.hr && Math.round(lastV.hr), sys: lastV.sys && Math.round(lastV.sys), dia: lastV.dia && Math.round(lastV.dia), spo2: lastV.spo2 && Math.round(lastV.spo2), rr: lastV.rr && Math.round(lastV.rr), temp: lastV.temp && r1(lastV.temp), bv: lastV.bv && Math.round(lastV.bv), lost: lastV.lost, htx: lastV.htx, co: lastV.co && r1(lastV.co), map: lastV.map && Math.round(lastV.map) } : null,
-      sc: SC, q: Q.map(x => ({ uid: x.uid, n: x.n, by: x.by, left: Math.max(0, Math.ceil((x.at - now) / 1000)) })), cm: typeof PULSE_CM !== 'undefined' ? PULSE_CM.list() : [], h: hist.slice(0, 5), sid: cfg().sid ? 1 : 0, tok: isLocal() || !!String(cfg().token || '').trim() };
+      sc: SC, q: Q.map(x => ({ uid: x.uid, n: x.n, by: x.by, left: Math.max(0, Math.ceil((x.at - now) / 1000)) })), cm: typeof PULSE_CM !== 'undefined' ? PULSE_CM.list() : [], h: hist.slice(0, 5), sid: cfg().sid ? 1 : 0, tok: isLocal() || !!String(cfg().token || '').trim(), ptok: !!String(cfg().token || '').trim() };
   }
   const running = () => wantRun && (st === 'run' || st === 'pause' || st === 'load' || st === 'conn');
   // monitoriaus perkrovimas – atkurti sesiją ir scenarijų
