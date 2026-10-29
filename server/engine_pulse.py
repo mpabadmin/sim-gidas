@@ -143,6 +143,55 @@ def _u(cls, unit):
 SIDE = {'L': 'Left', 'R': 'Right'}
 
 
+def hem_compartments():
+    try:
+        e = _enum('eHemorrhage_Compartment')
+        return [m.name for m in e]
+    except Exception:
+        return []
+
+
+def tbi_overlay(v, tbi, clock):
+    """Sunkios GST poveikis (Pulse 4.3.1 SEBrainInjury rodiklių beveik nekeičia): didėjant intrakranijiniam spaudimui
+    per ~5–20 min – Cushingo reakcija: bradikardija, hipertenzija, retas nereguliarus kvėpavimas. Lengva GST (<0,5) – be poveikio."""
+    if not tbi or not v or v.get('hr') in (None, 0):
+        return v
+    sev, t0 = tbi
+    if sev < 0.5 or (v.get('sys') or 0) < 40:
+        return v
+    k = (sev - 0.5) / 0.5                                   # 0..1
+    f = max(0.0, min(1.0, (clock - t0) / (1200 - 700 * k)))  # pilnas poveikis per 20 min (sev 0,5) … 8 min (sev 1)
+    f *= 0.4 + 0.6 * k
+    out = dict(v)
+    out['hr'] = max(35.0, v['hr'] * (1 - 0.45 * f))
+    if v.get('sys') is not None:
+        out['sys'] = v['sys'] + 55 * f
+    if v.get('dia') is not None:
+        out['dia'] = v['dia'] + 20 * f
+    if v.get('map') is not None:
+        out['map'] = v['map'] + 32 * f
+    if v.get('rr') is not None:
+        wob = math.sin(clock / 9.0) * 3 * f                  # nereguliarus kvėpavimas
+        out['rr'] = max(4.0, v['rr'] * (1 - 0.5 * f) + wob)
+    return out
+_CACHE = {}
+
+
+def _known(kind, name):
+    """Ar junginys/medžiaga yra šios Pulse versijos duomenyse. Pulse process_action() grąžina None ir apie nežinomą
+    pavadinimą tik rašo į žurnalą, todėl be šios patikros klientas gautų ack ok=True, nors niekas nevyksta."""
+    if kind not in _CACHE:
+        try:
+            _CACHE[kind] = set(compounds() if kind == 'c' else substances())
+        except Exception:
+            _CACHE[kind] = set()
+    return not _CACHE[kind] or name in _CACHE[kind]
+
+
+# Pulse 4.3.1 neturi šių junginių – artimiausias pakaitalas (pranešama ack žinutėje)
+COMPOUND_ALT = {'LactatedRingers': 'Saline'}
+
+
 class PulseEngine:
     name = 'Pulse'
 
@@ -152,6 +201,9 @@ class PulseEngine:
         self.keys = []
         self.alive = True
         self.t = 0.0
+        self.clock = 0.0      # modeliavimo laikas (pagal advance)
+        self.later = []       # [(laikas, veiksmas)] – atidėti veiksmai (pvz. drenavimo pabaiga)
+        self.tbi = None       # (sunkumas, pradžia) – GST poveikis rodikliams (Pulse 4.3.1 jo beveik nerodo)
 
     def load(self, state):
         from pulse.engine.PulseEngine import PulseEngine as PE
@@ -207,12 +259,21 @@ class PulseEngine:
                 out[k] = None
         if out.get('spo2') is not None and out['spo2'] <= 1.0:
             out['spo2'] *= 100.0
-        return out
+        return tbi_overlay(out, self.tbi, self.clock)
 
     def advance(self, dt):
         ok = self.e.advance_time_s(float(dt))
+        self.clock += float(dt)
         if ok is False:
             self.alive = False
+        if self.later and self.alive:
+            due = [x for x in self.later if x[0] <= self.clock]
+            self.later = [x for x in self.later if x[0] > self.clock]
+            for _, a in due:
+                try:
+                    self.apply(a)
+                except Exception:
+                    pass
         return self.alive
 
     # ── veiksmai ──
@@ -221,12 +282,19 @@ class PulseEngine:
         if k in ('hem', 'hem_stop'):
             x = pa.SEHemorrhage()
             cmp = _enum('eHemorrhage_Compartment')
+            if not hasattr(cmp, a.get('cmp', 'RightLeg')):
+                raise ValueError(f'kraujavimo vietos {a.get("cmp")} šioje Pulse versijoje nėra')
             x.set_compartment(getattr(cmp, a.get('cmp', 'RightLeg')))
             x.get_severity().set_value(0.0 if k == 'hem_stop' else max(0.0, min(1.0, float(a.get('sev', 0.5)))))
             return x
         if k in ('inf', 'inf_stop'):
             x = pa.SESubstanceCompoundInfusion()
-            x.set_compound(a.get('cmp', 'Saline'))
+            c = a.get('cmp', 'Saline')
+            if not _known('c', c) and _known('c', COMPOUND_ALT.get(c, '?')):
+                c = COMPOUND_ALT[c]
+            if not _known('c', c):
+                raise ValueError(f'junginio {c} šioje Pulse versijoje nėra')
+            x.set_compound(c)
             rate = 0.0 if k == 'inf_stop' else float(a.get('rate', 50))
             x.get_rate().set_value(rate, _u('VolumePerTimeUnit', 'mL_Per_min'))
             x.get_bag_volume().set_value(float(a.get('ml', 500)), _u('VolumeUnit', 'mL'))
@@ -261,14 +329,18 @@ class PulseEngine:
             x = pa.SEAirwayObstruction()
             x.get_severity().set_value(max(0.0, min(1.0, float(a.get('sev', 0.0)))))
             return x
-        if k == 'intub':
-            x = pa.SEIntubation()
-            x.set_type(getattr(_enum('eIntubationType' if hasattr(pa, 'eIntubationType') else 'eIntubation_Type'), 'Tracheal'))
+        if k in ('intub', 'cric', 'sga'):
+            # Pulse 4.3.1: SEIntubation savaime kvėpuojančiam pacientui obstrukcijos nepanaikina (bandymai: SpO₂ toliau krenta,
+            # KD ↑) – užtikrinti kvėpavimo takai modeliuojami kaip obstrukcijos pašalinimas
+            x = pa.SEAirwayObstruction()
+            x.get_severity().set_value(0.0)
             return x
         if k == 'bolus':
             x = pa.SESubstanceBolus()
             route = _enum('eSubstance_Administration') if hasattr(pa, 'eSubstance_Administration') else _enum('eSubstanceAdministration')
             x.set_admin_route(getattr(route, 'Intramuscular' if a.get('route') == 'IM' else 'Intravenous'))
+            if not a.get('sub') or not _known('s', a.get('sub')):
+                raise ValueError(f'medžiagos {a.get("sub")} šioje Pulse versijoje nėra')
             x.set_substance(a.get('sub'))
             x.get_dose().set_value(1.0, _u('VolumeUnit', 'mL'))
             x.get_concentration().set_value(float(a.get('mg', 1)), _u('MassPerVolumeUnit', 'mg_Per_mL'))
@@ -281,14 +353,16 @@ class PulseEngine:
                 pass
             x.get_severity().set_value(max(0.0, min(1.0, float(a.get('sev', 0.5)))))
             return x
-        if k == 'eff':
+        if k in ('eff', 'pcd'):
+            # pcd – perikardiocentezė: skystis siurbiamas neigiamu greičiu, po 'dur' s sustabdoma (atidėtas veiksmas)
             x = pa.SEPericardialEffusion()
-            x.get_effusion_rate().set_value(float(a.get('rate', 5)), _u('VolumePerTimeUnit', 'mL_Per_min'))
+            rate = -abs(float(a.get('drain', 150))) if k == 'pcd' else float(a.get('rate', 5))
+            x.get_effusion_rate().set_value(rate, _u('VolumePerTimeUnit', 'mL_Per_min'))
             return x
         if k == 'burn' and not hasattr(pa, 'SEBurnWound'):
             # Pulse 4.3.1 Python sąsajoje nudegimo veiksmo nėra – plazmos netekimą apytiksliai modeliuojame lėtu „kraujavimu“ per odą
             return self.build({'k': 'hem', 'cmp': 'Skin' if hasattr(_enum('eHemorrhage_Compartment'), 'Skin') else 'Muscle',
-                               'sev': max(0.05, min(0.5, float(a.get('tbsa', 0.3)) * 0.6))})
+                               'sev': max(0.02, min(0.2, float(a.get('tbsa', 0.3)) * 0.2))})
         if k == 'burn':
             x = pa.SEBurnWound()
             x.get_total_body_surface_area().set_value(max(0.0, min(1.0, float(a.get('tbsa', 0.3)))))
@@ -296,13 +370,47 @@ class PulseEngine:
         if k == 'arrest':
             x = pa.SEArrhythmia() if hasattr(pa, 'SEArrhythmia') else pa.SECardiacArrest()
             if hasattr(x, 'set_rhythm'):
-                x.set_rhythm(getattr(_enum('eHeartRhythm'), a.get('rhythm', 'Asystole')))
+                hr_ = _enum('eHeartRhythm')
+                want = a.get('rhythm', 'Asystole')
+                alts = {'CoarseVentricularFibrillation': ['CoarseVentricularFibrillation', 'VentricularFibrillation', 'FineVentricularFibrillation', 'Asystole'],
+                        'PulselessVentricularTachycardia': ['PulselessVentricularTachycardia', 'CoarseVentricularFibrillation', 'Asystole'],
+                        'NormalSinus': ['NormalSinus']}.get(want, [want])
+                name = next((n for n in alts if hasattr(hr_, n)), None)
+                if not name:
+                    raise ValueError(f'ritmo {want} šioje Pulse versijoje nėra')
+                x.set_rhythm(getattr(hr_, name))
             else:
                 x.set_state(getattr(_enum('eSwitch'), 'On'))
+            return x
+        if k in ('htx', 'tube'):
+            x = getattr(pa, 'SEHemothorax' if k == 'htx' else 'SETubeThoracostomy')()
+            x.set_side(getattr(_enum('eSide'), SIDE[a.get('side', 'L')]))
+            if k == 'htx':
+                if hasattr(x, 'get_severity'):
+                    x.get_severity().set_value(max(0.0, min(1.0, float(a.get('sev', 0.5)))))
+                else:
+                    x.get_flow_rate().set_value(float(a.get('sev', 0.5)) * 200, _u('VolumePerTimeUnit', 'mL_Per_min'))
+            elif hasattr(x, 'get_flow_rate'):
+                x.get_flow_rate().set_value(200.0, _u('VolumePerTimeUnit', 'mL_Per_min'))
+            return x
+        if k in ('bronch', 'asthma', 'stress'):
+            x = getattr(pa, {'bronch': 'SEBronchoconstriction', 'asthma': 'SEAsthmaAttack', 'stress': 'SEAcuteStress'}[k])()
+            x.get_severity().set_value(max(0.0, min(1.0, float(a.get('sev', 0.5)))))
+            return x
+        if k == 'pain':
+            x = pa.SEPainStimulus()
+            x.set_location(str(a.get('loc') or 'LeftLeg'))
+            x.get_severity().set_value(max(0.0, min(1.0, float(a.get('sev', 0.6)))))
             return x
         raise KeyError(k)
 
     def apply(self, a):
+        k = a.get('k')
+        if k == 'tbi':
+            sev = max(0.0, min(1.0, float(a.get('sev', 0.5))))
+            self.tbi = (sev, self.clock) if sev > 0 else None
+        if k == 'pcd':
+            self.later.append((self.clock + float(a.get('dur', 90) or 90), {'k': 'eff', 'rate': 0}))
         try:
             x = self.build(a)
         except Exception as ex:
@@ -323,15 +431,25 @@ class PulseEngine:
             return False, _err(ex)
 
     def _note(self, a):
+        c = a.get('cmp')
+        if a.get('k') in ('inf', 'inf_stop') and not _known('c', c) and c in COMPOUND_ALT:
+            return f'apytiksliai: {c} šioje Pulse versijoje nėra – naudojamas {COMPOUND_ALT[c]}'
         if a.get('k') == 'burn' and not hasattr(_pa(), 'SEBurnWound'):
             return 'apytiksliai: šioje Pulse versijoje nudegimas modeliuojamas kaip skysčių netekimas per odą'
+        if a.get('k') == 'tbi':
+            return 'apytiksliai: GST poveikis (Cushingo reakcija) pridedamas prie Pulse rodiklių'
+        if a.get('k') in ('intub', 'cric', 'sga'):
+            return 'kvėpavimo takai užtikrinti (obstrukcija pašalinta)'
         return ''
 
     def supported(self):
         """Kurie veiksmai sukuriami šioje versijoje (be taikymo)."""
         demo = {'hem': {'k': 'hem'}, 'hem_stop': {'k': 'hem_stop'}, 'inf': {'k': 'inf', 'cmp': 'Saline'}, 'o2': {'k': 'o2'},
                 'tpx': {'k': 'tpx'}, 'ndc': {'k': 'ndc'}, 'occl': {'k': 'occl'}, 'aw': {'k': 'aw', 'sev': 0.5}, 'intub': {'k': 'intub'},
-                'bolus': {'k': 'bolus', 'sub': 'Morphine', 'mg': 5}, 'tbi': {'k': 'tbi'}, 'eff': {'k': 'eff'}, 'burn': {'k': 'burn'}, 'arrest': {'k': 'arrest'}}
+                'bolus': {'k': 'bolus', 'sub': 'Morphine', 'mg': 5}, 'tbi': {'k': 'tbi'}, 'eff': {'k': 'eff'}, 'burn': {'k': 'burn'}, 'arrest': {'k': 'arrest'},
+                'vf': {'k': 'arrest', 'rhythm': 'CoarseVentricularFibrillation'}, 'rosc': {'k': 'arrest', 'rhythm': 'NormalSinus'},
+                'pcd': {'k': 'pcd'}, 'htx': {'k': 'htx'}, 'tube': {'k': 'tube'}, 'bronch': {'k': 'bronch'}, 'asthma': {'k': 'asthma'},
+                'stress': {'k': 'stress'}, 'pain': {'k': 'pain'}, 'cric': {'k': 'cric'}, 'sga': {'k': 'sga'}, 'occl': {'k': 'occl'}}
         out = {}
         for k, a in demo.items():
             try:

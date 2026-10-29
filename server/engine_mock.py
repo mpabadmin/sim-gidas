@@ -46,12 +46,16 @@ class MockEngine:
         self.low_t = 0.0
         self.lost = 0.0
         self.arrest = False
+        self.bronch = 0.0
+        self.pain = 0.0
+        self.htx = {}
 
     def load(self, state):
         return True
 
     def supported(self):
-        return {k: True for k in ('hem', 'hem_stop', 'inf', 'o2', 'tpx', 'ndc', 'occl', 'aw', 'intub', 'bolus', 'tbi', 'eff', 'burn', 'arrest')}
+        return {k: True for k in ('hem', 'hem_stop', 'inf', 'o2', 'tpx', 'ndc', 'occl', 'aw', 'intub', 'bolus', 'tbi', 'eff', 'burn', 'arrest',
+                                  'vf', 'rosc', 'pcd', 'htx', 'tube', 'bronch', 'asthma', 'stress', 'pain', 'cric', 'sga')}
 
     def apply(self, a):
         k = a.get('k')
@@ -81,8 +85,22 @@ class MockEngine:
                 self.open[s] = False
         elif k == 'aw':
             self.aw = max(0.0, min(1.0, float(a.get('sev', 0.0))))
-        elif k == 'intub':
+        elif k in ('intub', 'cric', 'sga'):
             self.intub, self.aw = True, 0.0
+        elif k == 'pcd':
+            self.eff_rate, self.eff_vol = 0.0, max(0.0, self.eff_vol - abs(float(a.get('drain', 150))) * float(a.get('dur', 90) or 90) / 60)
+        elif k == 'htx':
+            s_ = a.get('side', 'L')
+            self.htx[s_] = max(0.0, min(1.0, float(a.get('sev', 0.5))))
+            self.hem['Thorax' + s_] = self.htx[s_] * 0.5
+        elif k == 'tube':
+            s_ = a.get('side', 'L')
+            self.htx.pop(s_, None)
+            self.tpx[s_] = min(self.tpx.get(s_, 0), 0.05)
+        elif k in ('bronch', 'asthma'):
+            self.bronch = max(0.0, min(1.0, float(a.get('sev', 0.5))))
+        elif k in ('pain', 'stress'):
+            self.pain = max(0.0, min(1.0, float(a.get('sev', 0.6))))
         elif k == 'bolus':
             self.drugs.append([a.get('sub', ''), self.t, float(a.get('mg', 1))])
         elif k == 'tbi':
@@ -92,7 +110,11 @@ class MockEngine:
         elif k == 'burn':
             self.burn = max(0.0, min(1.0, float(a.get('tbsa', 0.3))))
         elif k == 'arrest':
-            self.arrest = True
+            self.arrest = a.get('rhythm') != 'NormalSinus'
+            if not self.arrest:
+                self.low_t = 0.0
+            elif not a.get('rhythm'):
+                self.alive = False      # be ritmo – negrįžtama būklė (testams)
         else:
             return False, 'nežinomas veiksmas'
         return True, ''
@@ -129,7 +151,7 @@ class MockEngine:
                 self.tpx[s] = min(1.0, self.tpx[s] + 0.004 * m * 60 / 60)
         # tikslinis SpO₂
         tp = max(self.tpx.values() or [0])
-        tgt = 98.0 - 30 * tp - 55 * self.aw * (0 if self.intub else 1)
+        tgt = 98.0 - 30 * tp - 55 * self.aw * (0 if self.intub else 1) - 25 * self.bronch - 12 * max(self.htx.values() or [0])
         tgt += (self.fio2 - 0.21) * 12
         opi = self._drug('Morphine', 90) + self._drug('Fentanyl', 45)
         nal = self._drug('Naloxone', 45)
@@ -142,11 +164,13 @@ class MockEngine:
             self.low_t += dt
         else:
             self.low_t = max(0.0, self.low_t - dt)
-        if self.low_t > 180 or self.arrest:
+        if self.low_t > (600 if self.arrest else 180):
             self.alive = False
         self.temp += (-0.3 * (1 if self.hem or self.burn else 0.2) / 3600.0) * dt - d * 0.0002 * dt
 
     def vitals(self):
+        if self.arrest and self.alive:
+            return {'hr': 0, 'sys': 18, 'dia': 18, 'map': 18, 'spo2': round(self.spo2), 'rr': 0, 'temp': round(self.temp, 1), 'bv': round(self.bv), 'co': 0}
         if not self.alive:
             return {'hr': 0, 'sys': 0, 'dia': 0, 'map': 0, 'spo2': None, 'rr': 0, 'temp': round(self.temp, 1), 'bv': round(self.bv), 'co': 0}
         d = max(0.0, (self.bv0 - self.bv) / self.bv0)
@@ -176,6 +200,10 @@ class MockEngine:
         epi = self._drug('Epinephrine', 3)
         opi = max(0.0, self._drug('Morphine', 90) + self._drug('Fentanyl', 45) - 2 * self._drug('Naloxone', 45))
         mid = self._drug('Midazolam', 60)
+        anal = min(1.0, ket + opi * 0.8)
+        hr += 25 * self.pain * (1 - anal)
+        sys += 15 * self.pain * (1 - anal)
+        rr += 12 * self.bronch + 4 * self.pain * (1 - anal)
         hr += 10 * ket + 35 * epi + 25 * self._drug('Naloxone', 45) * (1 if opi > 0 else 0)
         sys += 10 * ket + 35 * epi - 8 * opi - 6 * mid
         rr -= 4 * opi + 2 * mid

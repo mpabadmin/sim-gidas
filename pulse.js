@@ -5,7 +5,8 @@
 // Serverio protokolas – server/pulse_server.py.
 const PULSE = (() => {
   const KEY = 'sim-pulse';
-  const cfg = () => Object.assign({ url: '', token: '', sid: '', state: '' }, (() => { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } })());
+  const DEF_URL = 'wss://sim-pulse.greenriver-b16085e7.swedencentral.azurecontainerapps.io/ws';   // numatytasis serveris (Azure); keičiamas nustatymuose
+  const cfg = () => { const c = Object.assign({ url: '', token: '', sid: '', state: '' }, (() => { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } })()); if (!c.url) c.url = DEF_URL; return c; };
   const saveCfg = o => { try { localStorage.setItem(KEY, JSON.stringify(Object.assign(cfg(), o))); } catch (e) {} };
   // ── paruošti scenarijai (pradinės traumos) ──
   const PRESETS = [
@@ -62,28 +63,33 @@ const PULSE = (() => {
   let hems = [];            // aktyvūs kraujavimai (skyriai)
   let hist = [];            // paskutiniai veiksmai
   let onChange = () => {};
+  const keep = () => saveCfg({ hems, acts, hist });   // monitoriaus perkrovimui (kraujavimai, infuzijos, istorija)
   const setSt = (s, m) => { st = s; if (m != null) msg = m; onChange(); };
   function wsUrl(c) {
-    let u = String(c.url || '').trim(); if (!u) return '';
+    let u = String(c.url || '').trim().replace(/\s+/g, ''); if (!u) return '';
+    u = u.replace(/^[a-z]+:\/\//i, x => x.toLowerCase());   // telefono klaviatūra dažnai rašo „Wss://“
     if (/^https?:\/\//.test(u)) u = u.replace(/^http/, 'ws');
     if (!/^wss?:\/\//.test(u)) u = 'wss://' + u;
-    if (!/\/ws(\?|$)/.test(u)) u = u.replace(/\/?$/, '/ws');
-    return u + (c.token ? (u.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(c.token) : '');
+    u = u.replace(/\/ws\/+(\?|$)/, '/ws$1');
+    if (!/\/ws(\?|$)/.test(u)) u = u.replace(/\/?(\?|$)/, '/ws$1');
+    const tok = String(c.token || '').trim();
+    return u + (tok ? (u.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(tok) : '');
   }
   function connect(then) {
     const c = cfg(), u = wsUrl(c);
     if (!u) { setSt('err', 'Pulse serveris nenustatytas (Nustatymai → Pulse serveris)'); return; }
     if (ws && ws.readyState <= 1) { if (then && ws.readyState === 1) then(); else if (then) connect.q = then; return; }
     connect.q = then || null;
-    setSt('conn', 'Jungiamasi prie serverio… (pirmą kartą gali užtrukti 1–3 min., kol serveris pasileidžia)');
+    if (st !== 'conn') setSt('conn', 'Jungiamasi prie serverio… (pirmą kartą gali užtrukti 1–3 min., kol serveris pasileidžia)');
+    let opened = false;
     try { ws = new WebSocket(u); } catch (e) { setSt('err', 'Netinkamas serverio adresas'); return; }
-    ws.onopen = () => { retry = 0; tx({ t: 'hello' }); const q = connect.q; connect.q = null; if (q) q(); else if (c.sid && wantRun) tx({ t: 'resume', sid: c.sid }); };
+    ws.onopen = () => { retry = 0; opened = true; tx({ t: 'hello' }); const q = connect.q; connect.q = null; if (q) q(); else if (c.sid && wantRun) tx({ t: 'resume', sid: c.sid }); };
     ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (x) { return; } onMsg(m); };
     ws.onclose = ev => {
       ws = null;
       if (ev.code === 4001) { wantRun = false; setSt('err', 'Neteisingas žetonas – patikrinkite nustatymus'); return; }
-      if (wantRun) { retry = Math.min(retry + 1, 6); setSt('conn', 'Ryšys su serveriu nutrūko – jungiamasi iš naujo…'); setTimeout(() => { if (wantRun) connect(); }, 1500 * retry); }
-      else if (st !== 'err') setSt('off', '');
+      if (wantRun) { retry = Math.min(retry + 1, 6); setSt('conn', opened || /nutrūko/.test(msg) ? 'Ryšys su serveriu nutrūko – jungiamasi iš naujo…' : 'Serveris nepasiekiamas – bandoma dar kartą… (jei jis ką tik paleistas, gali užtrukti 1–3 min.)'); setTimeout(() => { if (wantRun) connect(); }, 1500 * retry); }
+      else if (st !== 'err') setSt('off');
     };
   }
   const tx = o => { if (ws && ws.readyState === 1) { ws.send(JSON.stringify(o)); return true; } return false; };
@@ -91,24 +97,25 @@ const PULSE = (() => {
     switch (m.t) {
       case 'info': info = m; onChange(); break;
       case 'started': saveCfg({ sid: m.sid }); simt = +m.simt || 0; if (m.speed) speed = m.speed; paused = !!m.paused; alive = true; setSt(paused ? 'pause' : 'run', m.resumed ? 'Sesija atkurta' : ''); if (!m.resumed) SIM.log('mark', 'Pulse: modeliavimas pradėtas (' + (m.engine || '') + ')'); break;
-      case 'gone': saveCfg({ sid: '' }); wantRun = false; acts = []; setSt('off', 'Ankstesnė sesija serveryje nebeegzistuoja – pradėkite iš naujo'); break;
-      case 'vit': simt = +m.simt || simt; if (m.speed) speed = m.speed; alive = m.alive !== false; lastV = m.v || lastV; applyVitals(m.v || {}, alive); acts = acts.filter(a => simt - a.t0 < a.tot + 30); onChange(); break;
+      case 'gone': saveCfg({ sid: '' }); wantRun = false; acts = []; hems = []; keep(); SIM.log('mark', 'Pulse: sesija serveryje nebeegzistuoja'); setSt('off', 'Ankstesnė sesija serveryje nebeegzistuoja (serveris buvo paleistas iš naujo) – monitorius rodo paskutines Pulse reikšmes. Pradėkite iš naujo.'); break;
+      case 'vit': simt = +m.simt || simt; if (m.speed) speed = m.speed; alive = m.alive !== false; lastV = m.v || lastV; applyVitals(m.v || {}, alive); acts = acts.filter(a => simt - a.t0 < a.tot + 30); if (!alive && st !== 'dead') setSt('dead', 'Modeliuojamas pacientas mirė – pradėkite iš naujo'); else onChange(); break;
       case 'ack': {
         const p = pend[m.id]; delete pend[m.id];
         if (!p) break;
         hist.unshift({ n: p.n, ok: m.ok, t: m.simt, e: m.msg || '' }); hist = hist.slice(0, 8);
         if (p.a.k === 'hem' && m.ok && hems.indexOf(p.a.cmp) < 0) hems.push(p.a.cmp);
         if (p.a.k === 'hem_stop' && m.ok) hems = hems.filter(c => c !== p.a.cmp);
-        if (p.silent) { onChange(); break; }
+        if (p.silent) { keep(); onChange(); break; }
         if (m.ok) {
           SIM.log('mark', 'Pulse: ' + p.n);
-          if (p.a.k === 'inf') acts.push({ id: m.id, n: p.n, t0: +m.simt || simt, tot: Math.round(p.a.ml / Math.max(1, p.a.rate) * 60), cmp: p.a.cmp });
+          if (p.a.k === 'inf') acts = acts.filter(a => a.cmp !== p.a.cmp), acts.push({ id: m.id, n: p.n, t0: +m.simt || simt, tot: Math.round(p.a.ml / Math.max(1, p.a.rate) * 60), cmp: p.a.cmp });
           if (p.a.k === 'inf_stop') acts = acts.filter(a => a.cmp !== p.a.cmp);
         } else SIM.log('mark', 'Pulse: nepavyko – ' + p.n + (m.msg ? ' (' + m.msg.slice(0, 60) + ')' : ''));
-        onChange(); break;
+        keep(); onChange(); break;
       }
-      case 'dead': alive = false; SIM.log('mark', 'Pulse: negrįžtama būklė (mirtis) – ' + mmss(m.simt)); setSt('dead', 'Modeliuojamas pacientas mirė – pradėkite iš naujo'); break;
-      case 'stopped': setSt('off', ''); break;
+      case 'dead': { alive = false; const c = cfg(); if (c.deadSid && c.deadSid === c.sid) { setSt('dead', 'Modeliuojamas pacientas mirė – pradėkite iš naujo'); break; } saveCfg({ deadSid: c.sid }); }   // atkuriant sesiją serveris „dead“ siunčia dar kartą – žurnale tik kartą
+        SIM.log('mark', 'Pulse: negrįžtama būklė (mirtis) – ' + mmss(m.simt)); setSt('dead', 'Modeliuojamas pacientas mirė – pradėkite iš naujo'); break;
+      case 'stopped': setSt('off'); break;
       case 'err': if (m.code === 'auth') wantRun = false; setSt(wantRun ? st : 'err', m.msg || 'Serverio klaida'); if (/užimtas|Variklio/.test(m.msg || '')) { wantRun = false; setSt('err', m.msg); } break;
     }
   }
@@ -135,7 +142,7 @@ const PULSE = (() => {
       case 'start': {
         const p = PRESETS.find(x => x[0] === o.preset) || PRESETS[0];
         wantRun = true; acts = []; hist = []; Object.keys(pend).forEach(k => delete pend[k]);
-        hems = p[3].filter(a => a.k === 'hem').map(a => a.cmp);
+        hems = p[3].filter(a => a.k === 'hem').map(a => a.cmp); keep();
         SIM.sesStart(); SIM.setLabel('Pulse: ' + p[1], '');
         const go = () => { tx({ t: 'start', state: o.state || '', acts: p[3], speed: +o.speed || 1 }); setSt('load', 'Ruošiamas modelis…'); };
         if (ws && ws.readyState === 1) go(); else connect(go);
@@ -152,7 +159,7 @@ const PULSE = (() => {
       case 'istop': { const id = 'a' + (++reqId), x = { k: 'inf_stop', cmp: o.cmp, ml: 1 }; pend[id] = { n: 'Infuzija sustabdyta', a: x, t: simt }; tx({ t: 'act', id, a: x }); break; }
       case 'speed': if (tx({ t: 'speed', x: +o.x || 1 })) { speed = +o.x || 1; SIM.log('sys', 'Pulse greitis ×' + speed); } onChange(); break;
       case 'pause': tx({ t: o.on ? 'pause' : 'run' }); paused = !!o.on; setSt(o.on ? 'pause' : 'run'); break;
-      case 'stop': wantRun = false; tx({ t: 'stop' }); saveCfg({ sid: '' }); acts = []; SIM.log('mark', 'Pulse: modeliavimas baigtas'); setTimeout(() => { try { ws && ws.close(); } catch (e) {} }, 200); setSt('off', ''); break;
+      case 'stop': { const was = st; wantRun = false; tx({ t: 'stop' }); saveCfg({ sid: '' }); acts = []; hems = []; keep(); SIM.log('mark', 'Pulse: modeliavimas baigtas'); setTimeout(() => { try { ws && ws.close(); } catch (e) {} }, 200); setSt('off', was === 'conn' || was === 'err' ? '' : 'Modeliavimas baigtas – monitorius rodo paskutines Pulse reikšmes (normalūs: Rodikliai → Atkurti normą).'); break; }
       case 'probe': wantRun = false; connect(() => setTimeout(() => setSt('off', info ? 'Serveris pasiekiamas: ' + info.engine + ' ' + info.version : ''), 300)); break;
       case 'cfg': break;
     }
@@ -165,7 +172,7 @@ const PULSE = (() => {
   }
   const running = () => wantRun && (st === 'run' || st === 'pause' || st === 'load' || st === 'conn');
   // monitoriaus perkrovimas – atkurti sesiją
-  function boot() { const c = cfg(); if (c.sid && c.url) { wantRun = true; connect(() => tx({ t: 'resume', sid: c.sid })); } }
+  function boot() { const c = cfg(); if (c.sid && c.url) { hems = Array.isArray(c.hems) ? c.hems : []; acts = Array.isArray(c.acts) ? c.acts : []; hist = Array.isArray(c.hist) ? c.hist : []; wantRun = true; connect(() => tx({ t: 'resume', sid: c.sid })); } }
   // ── pultas ──
   const esc2 = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
   function avail(a, P) {
@@ -179,7 +186,7 @@ const PULSE = (() => {
   function tab(P, local) {
     const c = cfg(); let h = '';
     if (!local && (!P || P.st === 'none') && c.url) P = { st: 'off', msg: 'Monitorius naudos šio telefono Pulse nustatymus.' };
-    const stTxt = { none: 'nenustatytas', off: 'neprisijungta', conn: 'jungiamasi…', load: 'ruošiamas modelis…', run: 'vyksta', pause: 'pauzė', dead: 'pacientas mirė', err: 'klaida' };
+    const stTxt = { none: 'nenustatytas', off: 'nevyksta', conn: 'jungiamasi…', load: 'ruošiamas modelis…', run: 'vyksta', pause: 'pauzė', dead: 'pacientas mirė', err: 'klaida' };
     if (!P || P.st === 'none') {
       return '<section class="pnl"><h2>Pulse fiziologijos modelis</h2><p class="mt0">Rodikliai skaičiuojami Kitware Pulse varikliu: gydymo veiksmai (kraujas, dekompresija, vaistai…) keičia rodiklius pagal fiziologinį modelį.</p>' +
         '<p class="muted">Reikia Pulse serverio. Įveskite jo adresą ir žetoną: <b>Nustatymai → Pulse serveris</b> (arba atidarykite nuorodą, kurią pateikė diegimo skriptas).</p>' +
@@ -194,6 +201,7 @@ const PULSE = (() => {
         `<button class="chip" data-act="pu" data-k="pause" data-x="${P.st === 'pause' ? 0 : 1}">${P.st === 'pause' ? '▶ Tęsti' : '⏸ Pauzė'}</button><button class="chip" data-act="pu" data-k="stop">■ Baigti</button></div>`;
       if (P.v && P.v.bv) h += `<p class="muted">Kraujo tūris ${Math.round(P.v.bv)} ml${P.v.co ? ' · širdies išstūmis ' + String(P.v.co).replace('.', ',') + ' l/min' : ''}${P.v.map ? ' · VAKS ' + Math.round(P.v.map) : ''}</p>`;
     }
+    if (P.st === 'conn') h += '<div class="chips"><button class="chip" data-act="pu" data-k="stop">■ Atšaukti</button></div>';
     h += '</section>';
     if (!run) {
       h += '<section class="pnl"><h2>Pradėti modeliavimą</h2><div class="pres">' + PRESETS.map(p => `<button class="stb" data-act="pu" data-k="start" data-x="${p[0]}"><span><b>${esc2(p[1])}</b><small>${esc2(p[2])}</small></span></button>`).join('') + '</div>' +
@@ -222,13 +230,13 @@ const PULSE = (() => {
     else if (k === 'speed') o.x = +x;
     else if (k === 'pause') o.on = x === '1';
     else if (k === 'istop') o.cmp = x;
-    else if (k === 'stop' && !confirm('Baigti Pulse modeliavimą?')) return null;
+    else if (k === 'stop' && !confirm(el.textContent.indexOf('Atšaukti') >= 0 ? 'Nutraukti jungimąsi prie Pulse serverio?' : 'Baigti Pulse modeliavimą?')) return null;
     return o;
   }
   function settingsHtml(local) {
     const c = cfg();
-    return `<label class="rl">Serverio adresas<input class="inp" id="pu-url" placeholder="wss://….azurecontainerapps.io/ws" value="${esc2(c.url)}" autocomplete="off" spellcheck="false"></label>` +
-      `<label class="rl">Žetonas (token)<input class="inp" id="pu-tok" value="${esc2(c.token)}" autocomplete="off" spellcheck="false"></label>` +
+    return `<label class="rl">Serverio adresas<input class="inp" id="pu-url" placeholder="wss://….azurecontainerapps.io/ws" value="${esc2(c.url)}" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url"></label>` +
+      `<label class="rl">Žetonas (token)<input class="inp" id="pu-tok" value="${esc2(c.token)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>` +
       `<div class="acts"><button class="btn" data-act="pu-save">Išsaugoti</button><button class="btn" data-act="pu-test">Tikrinti ryšį</button></div><p class="muted" id="pu-res">${esc2(info ? 'Serveris: ' + info.engine + ' ' + info.version + (info.pulse ? '' : ' (testinis)') : '')}</p>` +
       '<p class="muted">Adresą ir žetoną pateikia diegimo skriptas (server/azure/diegti.sh). Užtenka įvesti instruktoriaus telefone – pradedant modeliavimą jie perduodami monitoriui.</p>';
   }

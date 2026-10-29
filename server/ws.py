@@ -8,11 +8,17 @@ import asyncio
 import base64
 import hashlib
 import json
+import os
 import struct
+import time
 from urllib.parse import urlsplit, parse_qs
 
 GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 MAX_MSG = 256 * 1024
+# Serveris siunčia ping kas PING_S s; jei iš kliento nieko negauta DEAD_S s – ryšys laikomas nutrūkusiu
+# (pusiau atviras TCP po mobiliojo tinklo pasikeitimo, Envoy/Azure ingress neveikimo laiko riba, kol modeliavimas pristabdytas).
+PING_S = float(os.environ.get('WS_PING_S', '20'))
+DEAD_S = float(os.environ.get('WS_DEAD_S', '60'))
 
 
 class WSClosed(Exception):
@@ -24,6 +30,7 @@ class WebSocket:
         self.r, self.w, self.path, self.query, self.headers = reader, writer, path, query, headers
         self.closed = False
         self._lock = asyncio.Lock()
+        self.last_rx = time.monotonic()
 
     async def send(self, obj):
         if self.closed:
@@ -49,11 +56,12 @@ class WebSocket:
         if n > MAX_MSG:
             raise WSClosed()
         mask = await self.r.readexactly(4) if masked else b''
-        data = bytearray(await self.r.readexactly(n))
-        if masked:
-            for i in range(n):
-                data[i] ^= mask[i & 3]
-        return bool(fin), op, bytes(data)
+        data = await self.r.readexactly(n)
+        self.last_rx = time.monotonic()
+        if masked and n:
+            k = (mask * (n // 4 + 1))[:n]
+            data = (int.from_bytes(data, 'little') ^ int.from_bytes(k, 'little')).to_bytes(n, 'little')
+        return bool(fin), op, data
 
     async def recv(self):
         """Grąžina kitą teksto žinutę (str). Kelia WSClosed, kai ryšys uždaromas."""
@@ -68,9 +76,10 @@ class WebSocket:
                 await self.close()
                 raise WSClosed()
             if op == 0x9:  # ping → pong
+                data = data[:125]
                 async with self._lock:
                     try:
-                        self.w.write(bytes([0x8A, len(data)]) + data[:125])
+                        self.w.write(bytes([0x8A, len(data)]) + data)
                         await self.w.drain()
                     except Exception:
                         pass
@@ -85,6 +94,22 @@ class WebSocket:
                 raise WSClosed()
             if fin:
                 return buf.decode('utf-8', 'replace')
+
+    async def keepalive(self):
+        """Siunčia ping; nutraukia ryšį, jei klientas (naršyklė atsako pong automatiškai) ilgai tyli."""
+        while not self.closed:
+            await asyncio.sleep(PING_S)
+            if time.monotonic() - self.last_rx > DEAD_S:
+                self.closed = True
+                try:
+                    self.w.transport.abort()  # pažadina recv() ir užstrigusį drain()
+                except Exception:
+                    pass
+                return
+            try:
+                self.w.write(b'\x89\x00')  # vienas write() – kadras nesusimaišo su kitais; drain nelaukiamas
+            except Exception:
+                pass
 
     async def close(self, code=1000):
         if self.closed:
@@ -128,9 +153,11 @@ async def serve(host, port, on_ws, on_http):
                               f'Sec-WebSocket-Accept: {acc}\r\n\r\n').encode())
                 await writer.drain()
                 ws = WebSocket(reader, writer, u.path, query, headers)
+                ka = asyncio.ensure_future(ws.keepalive())
                 try:
                     await on_ws(ws)
                 finally:
+                    ka.cancel()
                     await ws.close()
                 return
             if method == 'OPTIONS':

@@ -1,6 +1,6 @@
 'use strict';
 // ───────── SIM – programėlės eiga: pradžia, monitorius, instruktoriaus pultas, scenarijai, žurnalas, nustatymai ─────────
-const VER = 'v7 · 2026-10-29';
+const VER = 'v7.1 · 2026-10-29';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
 const LSg = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
@@ -80,7 +80,7 @@ function exec(o) {
       if (o.sync && ['vf', 'asys', 'pea'].indexOf(r0) >= 0) { L('shock', 'Kardioversija neįvyko – nėra R bangų (' + SIM.rhName(r0) + ')'); break; }
       SIM.sesStart(); SIM.shock(o.j, okR(o.r) ? o.r : null, o.v, o.sync); L('shock', (o.sync ? 'Kardioversija ' : 'Defibriliacija ') + SIM.state().shkJ + ' J' + (okR(o.r) && o.r !== r0 ? ' → ' + SIM.rhName(o.r) : '')); break;
     case 'pace': { const a = JSON.stringify(st.pace); SIM.setPace(o); const p = SIM.state().pace; if (JSON.stringify(p) !== a) L('set', p.on ? 'Stimuliacija ' + p.rate + '/min, ' + p.ma + ' mA' : 'Stimuliacija išjungta'); break; }
-    case 'pause': if (!!o.on !== !!st.pause) { SIM.setPause(o.on); L('sys', o.on ? 'Pauzė' : 'Tęsiama'); } break;
+    case 'pause': if (!!o.on !== !!st.pause) { SIM.setPause(o.on); L('sys', o.on ? 'Pauzė' : 'Tęsiama'); } if (PULSE.running() && (PULSE.status().st === 'pause') !== !!o.on) PULSE.cmd({ op: 'pause', on: !!o.on }); break;
     case 'ses':
       if (o.a === 'new') { SIM.sesNew(); SIM.sesStart(); if (PLAY) { PLAY.at = 0; PLAY.dur = 0; setPlay(PLAY); } L('sys', 'Nauja sesija'); }
       else if (!SIM.journal().ses.on) { SIM.sesStart(); L('sys', 'Sesija pradėta'); }
@@ -90,7 +90,7 @@ function exec(o) {
       if ('useD' in o) PREF.useD = o.useD ? 1 : 0;
       LSs('sim-playpref6', PREF); break;
     case 'test': SIM.testSound(); break;
-    case 'pulse': PULSE.cmd(o); break;
+    case 'pulse': if (o.op === 'start' && PLAY) setPlay(null); PULSE.cmd(o); break;
   }
 }
 // kitas automatinis etapas: st.nx (jei nurodytas) arba i + 1
@@ -184,8 +184,9 @@ const send = o => { if (tgt() === 'local') { exec(o); pushSnap(); setTimeout(mir
 const findScen = () => scen ? scenBy(scen.src, scen.id) : null;
 function curScen(s) { if (s && s.pl && s.pl.src) { const x = scenBy(s.pl.src, s.pl.id); if (x) return x; } return findScen(); }
 function curIdx(sc, s) { if (!sc || !s) return -1; if (s.pl && s.pl.src === sc.src && s.pl.id === sc.id) return +s.pl.i; return sc.st.findIndex(x => s.stage === x.n && s.label === sc.pav); }
-let slDrag = 0;
-function inputBusy() { const ae = document.activeElement; return slDrag || !!(ae && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && ae.type !== 'range' && ae.type !== 'checkbox'))); }
+let slDrag = 0, ptrT = 0;
+// ptrT – pirštas ant ekrano: neperpiešti (kitaip mygtukas pakeičiamas tarp paspaudimo ir atleidimo ir paspaudimas prarandamas)
+function inputBusy() { const ae = document.activeElement; return slDrag || (ptrT && Date.now() - ptrT < 1500) || !!(ae && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && ae.type !== 'range' && ae.type !== 'checkbox'))); }
 const T = () => (snap() || {}).t || SIM.targets();
 const hrOf = s => s.hrs !== undefined ? (s.hrs == null ? '---' : s.hrs) : !s.probe.ecg || s.rhythm === 'vf' ? '---' : s.rhythm === 'asys' ? 0 : s.rhythm === 'vt' ? Math.max(140, s.c.hr) : s.c.hr;
 function mirrorHtml() {
@@ -531,8 +532,9 @@ function render() {
 }
 function pulseLink() {
   const m = /[?&]pulse=([^&]+)/.exec(location.hash); if (!m) return;
-  const t = /[?&]pt=([^&]+)/.exec(location.hash);
-  PULSE.saveCfg({ url: decodeURIComponent(m[1]), token: t ? decodeURIComponent(t[1]) : '' });
+  const t = /[?&]pt=([^&]+)/.exec(location.hash), dec = x => { try { return decodeURIComponent(x).trim(); } catch (e) { return ''; } };
+  const u = dec(m[1]); if (!u) { history.replaceState(null, '', '#/nustatymai'); setTimeout(() => toast('Netinkama Pulse nuoroda'), 300); return; }
+  PULSE.saveCfg({ url: u, token: t ? dec(t[1]) : '' });
   history.replaceState(null, '', '#/nustatymai'); UI.so.pus = 1; saveUI(); setTimeout(() => toast('Pulse serveris išsaugotas'), 300);
 }
 let puT = 0;
@@ -567,7 +569,7 @@ setInterval(() => {
   const mv = $('#mutv'); if (mv && s) mv.textContent = s.mute ? SIM.mmss(s.mute * 1000) : mv.closest('.cbar') ? '' : '2 min';
   const pc = $('#plc'); if (pc) pc.innerHTML = plcTxt(s);
   const cs = $('#cst'); if (cs && r !== 'monitorius') cs.outerHTML = cstHtml();
-  if (UI.tab === 'pu' && !inputBusy() && Date.now() - puT > 2000) { puT = Date.now(); rerenderTab(); }
+  if (UI.tab === 'pu' && !inputBusy() && Date.now() - puT > 900) { puT = Date.now(); rerenderTab(); }
   if (UI.tab === 'log' && s && !inputBusy() && !(Date.now() - (chartPoint.t || 0) < 15000)) {
     if (tgt() === 'local') { if (s.ln !== logTab.n) rerenderTab(); }
     else if (remoteDump && remoteDump.n !== s.ln && Date.now() - dumpReqT > 2000) { dumpReqT = Date.now(); rsend({ c: 'dump' }); }
@@ -599,7 +601,7 @@ function liveApply(now) { clearTimeout(liveT); liveT = setTimeout(applyDraft, no
 function applyDraft() { if (!Object.keys(draft).length) return; if (send({ c: 'apply', v: draft, d: dur })) { if (!UI.live) toast(dur ? 'Keičiasi per ' + DUR.find(x => x[0] === dur)[1] : 'Pritaikyta'); draft = {}; if (!inputBusy() && !hold) rerenderPanel(); } }
 let hold = null, lp = null, lpFired = 0;
 document.addEventListener('pointerdown', e => {
-  const t = e.target;
+  const t = e.target; ptrT = Date.now();
   if (route() === 'monitorius' && t.closest && t.closest('#monroot') && !$('#drawer.on')) {
     lp = { x: e.clientX, y: e.clientY, t: setTimeout(() => { lp = null; lpFired = Date.now(); openDrawer(); if (navigator.vibrate) navigator.vibrate(30); }, 650) };
   }
@@ -612,7 +614,7 @@ document.addEventListener('pointermove', e => {
   if (lp && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 12) { clearTimeout(lp.t); lp = null; }
   if (e.target.closest && e.target.closest('#spkw') && (e.buttons || e.pointerType === 'mouse')) chartPoint(e);
 }, { passive: true });
-const endPtr = () => { if (lp) { clearTimeout(lp.t); lp = null; } if (hold) clearTimeout(hold.t); if (slDrag) { slDrag = 0; } };
+const endPtr = () => { ptrT = 0; if (lp) { clearTimeout(lp.t); lp = null; } if (hold) clearTimeout(hold.t); if (slDrag) { slDrag = 0; } };
 document.addEventListener('pointerup', endPtr, { passive: true });
 document.addEventListener('pointercancel', endPtr, { passive: true });
 document.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('#monroot, .pb')) e.preventDefault(); });

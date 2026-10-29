@@ -10,6 +10,7 @@ Veiksmai a.k: hem, hem_stop, inf, inf_stop, o2, o2_off, tpx, ndc, occl, aw, intu
 """
 import asyncio
 import json
+import math
 import os
 import secrets
 import sys
@@ -30,7 +31,8 @@ STEP = 1.0  # modeliuojamas žingsnis, s (Pulse viduje – 0,02 s)
 
 INFO = {'engine': 'Testinis', 'version': engine_mock.MockEngine.version, 'pulse': False, 'states': ['StandardMale@0s.json'],
         'compounds': ['Blood', 'Saline', 'LactatedRingers', 'Plasma', 'PackedRBC'],
-        'substances': ['Ketamine', 'Morphine', 'Fentanyl', 'Naloxone', 'Epinephrine', 'Midazolam'], 'supported': {}, 'error': ''}
+        'substances': ['Ketamine', 'Morphine', 'Fentanyl', 'Naloxone', 'Epinephrine', 'Midazolam'], 'supported': {}, 'error': '',
+        'hem_cmp': list(engine_mock.LIMB_MAX.keys())}
 Engine = engine_mock.MockEngine
 if os.environ.get('FORCE_MOCK') != '1':
     try:
@@ -38,7 +40,7 @@ if os.environ.get('FORCE_MOCK') != '1':
         b, ver = engine_pulse.setup()
         Engine = engine_pulse.PulseEngine
         INFO.update(engine='Pulse', version=ver, pulse=True, states=engine_pulse.states(), compounds=engine_pulse.compounds(),
-                    substances=engine_pulse.substances(), bin=b)
+                    substances=engine_pulse.substances(), bin=b, hem_cmp=engine_pulse.hem_compartments())
     except Exception as ex:  # Pulse nėra – testinis variklis
         INFO['error'] = f'{type(ex).__name__}: {ex}'
 try:
@@ -50,6 +52,51 @@ print('SIM Pulse serveris:', json.dumps({k: v for k, v in INFO.items() if k not 
 
 SESSIONS = {}
 LOCK = threading.Lock()
+DEAD_KEEP_S = 60  # miręs (negrįžtama būklė) ir atsijungęs – laikomas tik tiek, kad klientas spėtų sužinoti „dead“
+MAX_LAG = 3.0  # s modeliavimo: jei variklis lėtesnis už prašomą greitį, skola nekaupiama (kitaip vėliau – šuolis į priekį)
+
+# veiksmų laukų patikra (blogi duomenys neturi nulaužti sesijos gijos ar paduoti NaN/∞ varikliui)
+NUM = {'sev': (0.0, 1.0), 'tbsa': (0.0, 1.0), 'ml': (0.0, 5000.0), 'rate': (0.0, 1000.0), 'flow': (0.0, 60.0), 'mg': (0.0, 5000.0),
+       'drain': (0.0, 500.0), 'dur': (0.0, 3600.0)}
+STR = ('k', 'cmp', 'side', 'sub', 'dev', 'route', 'rhythm', 'id', 'loc')
+
+
+def num(x, default, lo, hi):
+    try:
+        f = float(x if x is not None else default)
+    except (TypeError, ValueError):
+        f = default
+    if not math.isfinite(f):
+        f = default if math.isnan(f) else (hi if f > 0 else lo)
+    return max(lo, min(hi, f))
+
+
+def clean_act(a):
+    """Grąžina (išvalytas veiksmas, '') arba (None, klaidos tekstas)."""
+    if not isinstance(a, dict) or not isinstance(a.get('k'), str):
+        return None, 'netinkamas veiksmas'
+    out = {}
+    for k, v in a.items():
+        if k in NUM:
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                return None, f'netinkama reikšmė: {k}'
+            if not math.isfinite(f):
+                return None, f'netinkama reikšmė: {k}'
+            out[k] = max(NUM[k][0], min(NUM[k][1], f))
+        elif k in STR:
+            if not isinstance(v, (str, int)) or isinstance(v, bool) or len(str(v)) > 64:
+                return None, f'netinkama reikšmė: {k}'
+            out[k] = str(v)
+        elif k == 'open':
+            out[k] = bool(v)
+    return out, ''
+
+
+def live_count():
+    """Sesijos, kurios skaičiuojasi į MAX_SESSIONS: veikiančios gijos su gyvu pacientu (mirusios / sugedusios CPU nenaudoja)."""
+    return sum(1 for x in SESSIONS.values() if not x.stopped and x.alive)
 
 
 def default_state():
@@ -60,11 +107,12 @@ def default_state():
 
 
 class Session:
-    def __init__(self, state, acts, speed):
+    def __init__(self, state, acts, speed, ff=0):
         self.sid = secrets.token_hex(6)
         self.state = state if state in INFO['states'] else default_state()
-        self.init_acts = acts or []
-        self.speed = max(0.25, min(20.0, float(speed or 1)))
+        self.init_acts = [a for a in acts if isinstance(a, dict)] if isinstance(acts, list) else []
+        self.speed = num(speed, 1.0, 0.25, 20.0)
+        self.ff = num(ff, 0.0, 0.0, 3600.0)   # „praėjo X s nuo sužeidimo“ – modelis prasukamas prieš pradedant
         self.cmds = deque()
         self.out = None          # asyncio.Queue (prijungtas klientas)
         self.loop = None
@@ -86,40 +134,82 @@ class Session:
             except RuntimeError:
                 pass
 
+    def apply(self, eng, a):
+        a, msg = clean_act(a)
+        if a is None:
+            return False, msg
+        try:
+            return eng.apply(a)
+        except Exception as ex:  # testinis variklis ar netikėta klaida – sesija tęsiasi
+            return False, f'{type(ex).__name__}: {ex}'[:300]
+
     def run(self):
         try:
             eng = Engine(INFO['version'])
             eng.load(self.state)
             for a in self.init_acts:
-                ok, msg = eng.apply(a)
+                ok, msg = self.apply(eng, a)
                 if not ok:
                     self.emit({'t': 'ack', 'id': a.get('id', 'init'), 'ok': False, 'msg': msg, 'simt': 0})
             eng.advance(STEP)
+            if self.ff >= STEP:
+                t_last = time.monotonic()
+                while self.simt < self.ff and not self.stopped:
+                    chunk = min(10.0, self.ff - self.simt)
+                    if not eng.advance(chunk):
+                        self.alive = False
+                        break
+                    self.simt += chunk
+                    if time.monotonic() - t_last >= 1.0:
+                        t_last = time.monotonic()
+                        self.emit({'t': 'ff', 'done': round(self.simt), 'tot': round(self.ff)})
             self.ready = True
             self.last_v = eng.vitals()
             self.emit({'t': 'started', 'sid': self.sid, 'state': self.state, 'simt': self.simt, 'engine': INFO['engine']})
-            wall0, sim0, last_send = time.monotonic(), 0.0, 0.0
+            wall0, sim0, last_send, sim_sent = time.monotonic(), self.simt, 0.0, self.simt
             while not self.stopped:
                 while self.cmds:
                     c = self.cmds.popleft()
                     if c[0] == 'act':
-                        ok, msg = eng.apply(c[2])
+                        ok, msg = self.apply(eng, c[2]) if self.alive else (False, 'pacientas miręs – pradėkite iš naujo')
                         self.emit({'t': 'ack', 'id': c[1], 'ok': ok, 'msg': msg, 'simt': round(self.simt, 1)})
                     elif c[0] == 'speed':
                         wall0, sim0 = time.monotonic(), self.simt
                         self.speed = c[1]
+                    elif c[0] == 'skip' and self.alive:
+                        # praleisti N s modelio laiko (kuo greičiau), rodant eigą
+                        end, t_last = self.simt + c[1], time.monotonic()
+                        while self.simt < end and not self.stopped:
+                            chunk = min(10.0, end - self.simt)
+                            if not eng.advance(chunk):
+                                self.alive = False
+                                self.last_v = eng.vitals()
+                                self.emit({'t': 'vit', 'simt': round(self.simt, 1), 'v': self.last_v, 'alive': False, 'speed': self.speed})
+                                self.emit({'t': 'dead', 'simt': round(self.simt, 1)})
+                                break
+                            self.simt += chunk
+                            if time.monotonic() - t_last >= 1.0:
+                                t_last = time.monotonic()
+                                self.last_v = eng.vitals()
+                                self.emit({'t': 'vit', 'simt': round(self.simt, 1), 'v': self.last_v, 'alive': self.alive, 'speed': self.speed, 'skip': round(end - self.simt)})
+                        wall0, sim0, last_send = time.monotonic(), self.simt, 0.0
                     elif c[0] == 'pause':
                         self.paused = True
                     elif c[0] == 'run':
                         self.paused = False
                         wall0, sim0 = time.monotonic(), self.simt
                 if self.paused or not self.alive:
-                    wall0, sim0 = time.monotonic(), self.simt
+                    wall0, sim0, last_send = time.monotonic(), self.simt, 0.0
                     time.sleep(0.1)
                     continue
-                target = sim0 + (time.monotonic() - wall0) * self.speed
+                it0 = time.monotonic()
+                target = sim0 + (it0 - wall0) * self.speed
+                if target - self.simt > MAX_LAG:  # variklis nespėja – lėtėjame, o ne kaupiame skolą
+                    wall0, sim0 = it0, self.simt + MAX_LAG
+                    target = sim0
                 n = 0
-                while self.simt + STEP <= target and n < 30 and not self.cmds:
+                # riboti ir laiku: lėtas variklis (Pulse ~12x) neturi vėlinti rodiklių siuntimo (kas ~1 s) ir komandų
+                while self.simt + STEP <= target and n < 30 and not self.cmds and time.monotonic() - it0 < 0.5:
                     if not eng.advance(STEP):
                         self.alive = False
                         break
@@ -127,9 +217,11 @@ class Session:
                     n += 1
                 now = time.monotonic()
                 if n and now - last_send >= 0.9:
-                    last_send = now
+                    eff = (self.simt - sim_sent) / (now - last_send) if last_send else self.speed
+                    last_send, sim_sent = now, self.simt
                     self.last_v = eng.vitals()
-                    self.emit({'t': 'vit', 'simt': round(self.simt, 1), 'v': self.last_v, 'alive': self.alive, 'speed': self.speed})
+                    self.emit({'t': 'vit', 'simt': round(self.simt, 1), 'v': self.last_v, 'alive': self.alive, 'speed': self.speed,
+                               'eff': round(eff, 1)})
                 if not self.alive:
                     self.last_v = eng.vitals()
                     self.emit({'t': 'vit', 'simt': round(self.simt, 1), 'v': self.last_v, 'alive': False, 'speed': self.speed})
@@ -149,7 +241,8 @@ def reaper():
         time.sleep(30)
         with LOCK:
             for sid, s in list(SESSIONS.items()):
-                if s.stopped or (s.detached_at and time.time() - s.detached_at > KEEP_S):
+                idle = time.time() - s.detached_at if s.detached_at else 0
+                if s.stopped or idle > KEEP_S or (idle > DEAD_KEEP_S and not s.alive):
                     s.stopped = True
                     SESSIONS.pop(sid, None)
 
@@ -157,7 +250,7 @@ def reaper():
 async def handle_ws(ws):
     if ws.path.rstrip('/') not in ('/ws', ''):
         return
-    if TOKEN and ws.query.get('token') != TOKEN:
+    if TOKEN and not secrets.compare_digest(str(ws.query.get('token', '')).encode(), TOKEN.encode()):
         await ws.send({'t': 'err', 'msg': 'Neteisingas žetonas (token)', 'code': 'auth'})
         await ws.close(4001)
         return
@@ -165,17 +258,35 @@ async def handle_ws(ws):
     q = asyncio.Queue()
     cur = {'s': None}
 
+    def mine():
+        """Šio ryšio sesija; None, jei jos nėra arba ją perėmė kitas ryšys (resume iš naujo lizdo)."""
+        s = cur['s']
+        if s is not None and s.out is not q:
+            cur['s'] = s = None
+        return s
+
+    def detach(s):
+        if s is not None and s.out is q:  # neatjungti, jei sesiją jau perėmė kitas ryšys
+            s.out = None
+            s.detached_at = time.time()
+
     def attach(s):
-        if cur['s'] and cur['s'] is not s:
-            cur['s'].detached_at = time.time()
-            cur['s'].out = None
+        old = mine()
+        if old is not None and old is not s:
+            detach(old)
         s.out, s.loop, s.detached_at = q, loop, None
         cur['s'] = s
 
     async def pump():
-        while True:
-            msg = await q.get()
-            await ws.send(msg)
+        try:
+            while True:
+                msg = await q.get()
+                await ws.send(msg)
+        except wsmod.WSClosed:
+            try:
+                ws.w.transport.abort()  # siuntimas neįmanomas – nutraukti ir skaitymą
+            except Exception:
+                pass
 
     pump_task = asyncio.ensure_future(pump())
     try:
@@ -185,59 +296,83 @@ async def handle_ws(ws):
                 m = json.loads(raw)
             except Exception:
                 continue
-            t, s = m.get('t'), cur['s']
-            if t == 'hello':
-                with LOCK:
-                    n = sum(1 for x in SESSIONS.values() if not x.stopped)
-                await ws.send(dict({'t': 'info', 'sessions': n, 'max': MAX_SESSIONS}, **{k: INFO[k] for k in ('engine', 'version', 'pulse', 'states', 'compounds', 'substances', 'supported')}))
-            elif t == 'start':
-                ns, busy = None, 0
-                with LOCK:
-                    if s:
-                        s.stopped = True
-                        SESSIONS.pop(s.sid, None)
-                    live = [x for x in SESSIONS.values() if not x.stopped]
-                    if len(live) >= MAX_SESSIONS:
-                        busy = len(live)
-                    else:
-                        ns = Session(m.get('state'), m.get('acts'), m.get('speed'))
-                        SESSIONS[ns.sid] = ns
-                if ns is None:
-                    await ws.send({'t': 'err', 'msg': f'Serveris užimtas: {busy}/{MAX_SESSIONS} sesijos'})
-                    continue
-                attach(ns)
-                ns.th.start()
-            elif t == 'resume':
-                with LOCK:
-                    rs = SESSIONS.get(str(m.get('sid', '')))
-                if rs and not rs.stopped:
-                    attach(rs)
-                    await ws.send({'t': 'started', 'sid': rs.sid, 'state': rs.state, 'simt': round(rs.simt, 1), 'resumed': True, 'engine': INFO['engine'], 'paused': rs.paused, 'speed': rs.speed})
-                    if rs.last_v:
-                        await ws.send({'t': 'vit', 'simt': round(rs.simt, 1), 'v': rs.last_v, 'alive': rs.alive, 'speed': rs.speed})
-                else:
-                    await ws.send({'t': 'gone', 'sid': m.get('sid')})
-            elif not s:
-                await ws.send({'t': 'err', 'msg': 'Sesija nepradėta'})
-            elif t == 'act' and isinstance(m.get('a'), dict):
-                s.cmds.append(('act', m.get('id'), m['a']))
-            elif t == 'speed':
-                s.cmds.append(('speed', max(0.25, min(20.0, float(m.get('x', 1))))))
-            elif t in ('pause', 'run'):
-                s.cmds.append((t,))
-            elif t == 'stop':
-                s.stopped = True
-                with LOCK:
-                    SESSIONS.pop(s.sid, None)
-                cur['s'] = None
-                await ws.send({'t': 'stopped'})
+            if not isinstance(m, dict):
+                continue
+            try:
+                await on_msg(ws, m, mine, attach, q)
+            except wsmod.WSClosed:
+                raise
+            except Exception as ex:  # bloga žinutė neturi nutraukti ryšio
+                traceback.print_exc()
+                await ws.send({'t': 'err', 'msg': f'Bloga žinutė: {type(ex).__name__}'})
     except wsmod.WSClosed:
         pass
     finally:
         pump_task.cancel()
-        if cur['s']:
-            cur['s'].out = None
-            cur['s'].detached_at = time.time()
+        s = mine()
+        if s is not None:
+            detach(s)
+            if not s.ready:  # klientas atsijungė dar negavęs sid – sesijos niekas nebeatkurs
+                s.stopped = True
+                with LOCK:
+                    SESSIONS.pop(s.sid, None)
+
+
+async def on_msg(ws, m, mine, attach, q):
+    t, s = m.get('t'), mine()
+    if t == 'hello':
+        with LOCK:
+            n = live_count()
+        await ws.send(dict({'t': 'info', 'sessions': n, 'max': MAX_SESSIONS}, **{k: INFO[k] for k in ('engine', 'version', 'pulse', 'states', 'compounds', 'substances', 'supported', 'hem_cmp')}))
+    elif t == 'start':
+        ns, busy = None, 0
+        with LOCK:
+            if s:
+                s.stopped = True
+                SESSIONS.pop(s.sid, None)
+            live = live_count()
+            if live >= MAX_SESSIONS:
+                busy = live
+            else:
+                ns = Session(m.get('state'), m.get('acts'), m.get('speed'), m.get('ff'))
+                SESSIONS[ns.sid] = ns
+        if ns is None:
+            await ws.send({'t': 'err', 'msg': f'Serveris užimtas: {busy}/{MAX_SESSIONS} sesijos'})
+            return
+        attach(ns)
+        ns.th.start()
+    elif t == 'resume':
+        with LOCK:
+            rs = SESSIONS.get(str(m.get('sid', '')))
+        if rs and not rs.stopped:
+            attach(rs)
+            if rs.ready:  # dar įkeliama – „started“ atsiųs pati sesijos gija
+                await ws.send({'t': 'started', 'sid': rs.sid, 'state': rs.state, 'simt': round(rs.simt, 1), 'resumed': True, 'engine': INFO['engine'], 'paused': rs.paused, 'speed': rs.speed})
+                if rs.last_v:
+                    await ws.send({'t': 'vit', 'simt': round(rs.simt, 1), 'v': rs.last_v, 'alive': rs.alive, 'speed': rs.speed})
+                if not rs.alive:
+                    await ws.send({'t': 'dead', 'simt': round(rs.simt, 1)})
+        else:
+            await ws.send({'t': 'gone', 'sid': m.get('sid')})
+    elif not s:
+        await ws.send({'t': 'err', 'msg': 'Sesija nepradėta'})
+    elif t == 'act':
+        if isinstance(m.get('a'), dict):
+            s.cmds.append(('act', m.get('id'), m['a']))
+        else:
+            await ws.send({'t': 'ack', 'id': m.get('id'), 'ok': False, 'msg': 'netinkamas veiksmas', 'simt': round(s.simt, 1)})
+    elif t == 'speed':
+        s.cmds.append(('speed', num(m.get('x'), 1.0, 0.25, 20.0)))
+    elif t == 'skip':
+        s.cmds.append(('skip', num(m.get('s'), 300.0, 1.0, 3600.0)))
+    elif t in ('pause', 'run'):
+        s.cmds.append((t,))
+    elif t == 'stop':
+        s.stopped = True
+        s.out = None  # po „stopped“ nebesiųsti rodiklių
+        with LOCK:
+            SESSIONS.pop(s.sid, None)
+        await ws.send({'t': 'stopped'})
 
 
 def selftest():
@@ -260,7 +395,10 @@ def selftest():
              'o2': {'k': 'o2', 'dev': 'NonRebreatherMask', 'flow': 12}, 'tpx': {'k': 'tpx', 'side': 'L', 'sev': 0.6},
              'ndc': {'k': 'ndc', 'side': 'L'}, 'occl': {'k': 'occl', 'side': 'L'}, 'aw': {'k': 'aw', 'sev': 0.6}, 'intub': {'k': 'intub'},
              'bolus': {'k': 'bolus', 'sub': 'Ketamine' if 'Ketamine' in INFO['substances'] else 'Morphine', 'mg': 25},
-             'tbi': {'k': 'tbi', 'sev': 0.7}, 'eff': {'k': 'eff', 'rate': 10}, 'burn': {'k': 'burn', 'tbsa': 0.3}}
+             'tbi': {'k': 'tbi', 'sev': 0.7}, 'eff': {'k': 'eff', 'rate': 100}, 'burn': {'k': 'burn', 'tbsa': 0.3},
+             'vf': {'k': 'arrest', 'rhythm': 'CoarseVentricularFibrillation'}, 'htx': {'k': 'htx', 'side': 'L', 'sev': 0.6},
+             'tube': {'k': 'tube', 'side': 'L'}, 'bronch': {'k': 'bronch', 'sev': 0.6}, 'asthma': {'k': 'asthma', 'sev': 0.6},
+             'stress': {'k': 'stress', 'sev': 0.6}, 'pain': {'k': 'pain', 'sev': 0.7, 'loc': 'LeftLeg'}, 'cric': {'k': 'cric'}}
     for k, a in tests.items():
         try:
             e = Engine(INFO['version'])
@@ -268,6 +406,10 @@ def selftest():
             ok, msg = e.apply(a)
             if ok and k == 'ndc':
                 e.apply({'k': 'tpx', 'side': 'L', 'sev': 0.6})
+            if ok and k == 'tube':
+                e.apply({'k': 'htx', 'side': 'L', 'sev': 0.6})
+            if ok and k == 'cric':
+                e.apply({'k': 'aw', 'sev': 0.8})
             e.advance(30)
             v = e.vitals()
             res['actions'][k] = {'ok': bool(ok), 'msg': msg, 'v30': v}
@@ -281,12 +423,12 @@ async def handle_http(path, query):
     j = lambda o, st='200 OK': (st, 'application/json; charset=utf-8', json.dumps(o, ensure_ascii=False, indent=1).encode())
     if path in ('/', '/health'):
         with LOCK:
-            n = sum(1 for x in SESSIONS.values() if not x.stopped)
+            n = live_count()
         return j({'ok': True, 'engine': INFO['engine'], 'version': INFO['version'], 'sessions': n, 'max': MAX_SESSIONS})
     if path == '/info':
         return j({k: v for k, v in INFO.items() if k != 'bin'})
     if path == '/selftest':
-        if TOKEN and query.get('token') != TOKEN:
+        if TOKEN and not secrets.compare_digest(str(query.get('token', '')).encode(), TOKEN.encode()):
             return j({'error': 'token'}, '403 Forbidden')
         return j(await asyncio.get_running_loop().run_in_executor(None, selftest))
     return j({'error': 'not found'}, '404 Not Found')
