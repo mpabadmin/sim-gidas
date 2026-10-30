@@ -2,7 +2,8 @@
 # SIM Pulse serverio diegimas į Azure Container Apps. Paleisti Azure Cloud Shell (Bash) – nieko diegti kompiuteryje nereikia:
 #   git clone https://github.com/mpabadmin/sim-gidas && bash sim-gidas/server/azure/diegti.sh
 # Pakartotinis paleidimas atnaujina serverį (nauja versija) ir išsaugo tą patį adresą bei žetoną.
-# Nustatymai (nebūtina): LOC=swedencentral CPU=1 MEM=2Gi MIN=0 DOCKERFILE=Dockerfile bash diegti.sh
+# Nustatymai (nebūtina): LOC=swedencentral CPU=1 MEM=2Gi MIN=0 SESS=3 DOCKERFILE=Dockerfile bash diegti.sh
+# 5 telefonams vienu metu: CPU=2 MEM=4Gi SESS=5 bash diegti.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."            # server/
 CFG="$HOME/.sim-pulse.env"
@@ -29,6 +30,7 @@ TOKEN=${TOKEN:-$(openssl rand -hex 16)}
 CPU=${CPU:-1}
 MEM=${MEM:-2Gi}
 MIN=${MIN:-0}
+SESS=${SESS:-3}                     # kiek Pulse sesijų (monitorių) vienu metu
 DOCKERFILE=${DOCKERFILE:-Dockerfile}
 printf 'RG=%s\nLOC=%s\nAPP=%s\nENVN=%s\nACR=%s\nTOKEN=%s\n' "$RG" "$LOC" "$APP" "$ENVN" "$ACR" "$TOKEN" > "$CFG"
 
@@ -73,12 +75,12 @@ fi
 if az containerapp show -n "$APP" -g "$RG" -o none 2>/dev/null; then
   az containerapp secret set -n "$APP" -g "$RG" --secrets "simtoken=$TOKEN" -o none
   az containerapp update -n "$APP" -g "$RG" --image "$IMG" --cpu "$CPU" --memory "$MEM" --min-replicas "$MIN" --max-replicas 1 \
-     --set-env-vars "SIM_TOKEN=secretref:simtoken" "MAX_SESSIONS=3" -o none
+     --set-env-vars "SIM_TOKEN=secretref:simtoken" "MAX_SESSIONS=$SESS" -o none
 else
   az containerapp create -n "$APP" -g "$RG" --environment "$ENVN" --image "$IMG" \
      --registry-server "$ACR.azurecr.io" --registry-username "$USR" --registry-password "$PWD_ACR" \
      --target-port 8080 --ingress external --transport auto --cpu "$CPU" --memory "$MEM" \
-     --min-replicas "$MIN" --max-replicas 1 --secrets "simtoken=$TOKEN" --env-vars "SIM_TOKEN=secretref:simtoken" "MAX_SESSIONS=3" -o none
+     --min-replicas "$MIN" --max-replicas 1 --secrets "simtoken=$TOKEN" --env-vars "SIM_TOKEN=secretref:simtoken" "MAX_SESSIONS=$SESS" -o none
 fi
 printf 'RG=%s\nLOC=%s\nAPP=%s\nENVN=%s\nACR=%s\nTOKEN=%s\n' "$RG" "$LOC" "$APP" "$ENVN" "$ACR" "$TOKEN" > "$CFG"
 FQDN=$(az containerapp show -n "$APP" -g "$RG" --query properties.configuration.ingress.fqdn -o tsv)

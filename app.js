@@ -1,6 +1,6 @@
 'use strict';
 // ───────── SIM – programėlės eiga: pradžia, monitorius, instruktoriaus pultas, scenarijai, žurnalas, nustatymai ─────────
-const VER = 'v10.0 · 2026-10-30';
+const VER = 'v11.0 · 2026-10-30';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
 const LSg = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
@@ -162,7 +162,7 @@ const isHostRoute = () => route() === 'monitorius';
 const DUR = [[0, 'Iš karto'], [30, '30 s'], [60, '1 min'], [120, '2 min'], [300, '5 min']];
 const MAC = [['worse', 'Blogėja'], ['better', 'Gerėja'], ['shock', 'Šokas ↑'], ['hypox', 'Hipoksija ↑'], ['stab', 'Stabilizuoti']];
 const MARKS = ['Turniketas', 'Tamponada / tvarstis', 'Dekompresija', 'Kvėpavimo takai', 'Intubacija', 'Krikotiroidotomija', 'Deguonis', 'IV / IO prieiga', 'TXA', 'Kraujas', 'Skysčiai', 'Kalcis', 'Adrenalinas', 'Analgezija', 'Šildymas', 'KPR pradėtas', 'KPR baigtas', 'Evakuacija'];
-const TABS = [['ctl', 'Rodikliai', 'Rodikl.'], ['sc', 'Scenarijus', 'Scen.'], ['act', 'Veiksmai', 'Veiksm.'], ['log', 'Žurnalas', 'Žurn.'], ['pu', 'Simuliacija', 'Simul.'], ['set', 'Nustatymai', 'Nust.'], ['link', 'Ryšys', 'Ryšys']];
+const TABS = [['ctl', 'Rodikliai', 'Rodikl.'], ['sc', 'Scenarijus', 'Scen.'], ['act', 'Įranga', 'Įranga'], ['log', 'Žurnalas', 'Žurn.'], ['pu', 'Simuliacija', 'Simul.'], ['set', 'Nustatymai', 'Nust.'], ['link', 'Ryšys', 'Ryšys']];
 const TICO = {
   pu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/><path d="M6 12h3l1.5-2.5 2 5 1.5-2.5H18"/></svg>',
   ctl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l2.5-6 4 12 2.5-6H22"/></svg>',
@@ -173,6 +173,7 @@ const TICO = {
 };
 const SHR = [['', 'Nekinta'], ['sinus', 'Sinusinis'], ['vf', 'Skilv. virpėjimas'], ['asys', 'Asistolija'], ['pea', 'BEA']];
 const plural = (n, a, b, c) => n % 10 === 1 && n % 100 !== 11 ? a : n % 10 >= 2 && (n % 100 < 10 || n % 100 >= 20) ? b : c;
+let markLog = [];   // paskutinės žymos (grįžtamasis ryšys)
 let draft = {}, dur = LSg('sim-dur', 30), scen = LSg('sim-scen', null), scenList = false, scenQ = '', favs = LSg('sim-fav', []), markTxt = '';
 let UI = Object.assign({ live: 0, sl: 1, tab: 'ctl', alm: 0, favEdit: 0, shJ: 200, shR: '', sync: 0, so: {}, ssrc: '', stema: '' }, LSg('sim-ui', {}));
 const saveUI = () => LSs('sim-ui', UI);
@@ -317,8 +318,14 @@ function plcTxt(s, sc) {
 // ── Veiksmai ──
 function actTab() {
   const s = snap() || {}, pr = s.probe || { ecg: 1, spo2: 1, nibp: 1 }, art = s.art || {}, pc = s.pace || { on: 0, rate: 70, ma: 70 }, nb = s.nibp || {};
-  let h = '<section class="pnl"><h2>Pažymėti veiksmą</h2><div class="chips">' + MARKS.map(m => chip('mark', m, false, m)).join('') + '</div>' +
-    `<div class="paste"><input class="inp" id="markx" placeholder="Kitas veiksmas…" maxlength="80" value="${esc(markTxt)}" autocomplete="off" aria-label="Kitas veiksmas"><button class="btn" data-act="mark-c">Pažymėti</button></div></section>`;
+  const pu = tgt() === 'local' ? (typeof PULSE !== 'undefined' ? PULSE.status() : null) : s.pu, live = pu && pu.sc && ['run', 'pause', 'load', 'conn', 'dead'].indexOf(pu.st) >= 0;
+  let h = '';
+  // simuliacija vyksta – būklę keičiantys veiksmai yra ten, čia tik monitoriaus įranga
+  if (live) h += '<section class="pnl"><h2>Simuliacija vyksta</h2><p class="muted mt0">Procedūros, vaistai ir įvykiai, kurie keičia būklę, – skiltyje „Simuliacija“. Čia – monitoriaus įranga.</p><div class="acts">' +
+    '<button class="btn pri" data-act="go-pu" data-k="proc">Procedūros</button><button class="btn" data-act="go-pu" data-k="med">Vaistai</button><button class="btn" data-act="go-pu" data-k="ev">Įvykiai</button></div></section>';
+  const mk = '<section class="pnl"><h2>Žymos aptarimui</h2><p class="muted mt0">Tik įrašas žurnale su laiku – rodiklių nekeičia.' + (live ? '' : ' Rodiklius keiskite skiltyje „Rodikliai“ arba paleiskite simuliaciją.') + '</p><div class="chips">' + MARKS.map(m => chip('mark', m, markLog.some(x => x.x === m), m)).join('') + '</div>' +
+    `<div class="paste"><input class="inp" id="markx" placeholder="Kita žyma…" maxlength="80" value="${esc(markTxt)}" autocomplete="off" aria-label="Kita žyma"><button class="btn" data-act="mark-c">Pažymėti</button></div>` +
+    (markLog.length ? '<div class="mklog">' + markLog.slice(-3).reverse().map(x => `<div><b>✓</b><span>${esc(x.x)}</span><small>${esc(x.t)} · žurnale</small></div>`).join('') + '</div>' : '') + '</section>';
   h += '<section class="pnl"><h2>AKS matavimas</h2><div class="chips">' + chip('nibp', '1', false, 'Matuoti dabar') + chip('nibp-stat', '1', !!nb.stat, 'STAT 5 min') + [0, 3, 5, 10, 15].map(m => chip('nmode', m, nb.mode === m && !nb.stat, m ? 'Auto ' + m + ' min' : 'Rankinis')).join('') + '</div></section>';
   h += '<section class="pnl"><h2>Jutikliai ir artefaktai</h2><div class="chips">' + [['ecg', 'EKG elektrodai'], ['spo2', 'SpO₂ zondas'], ['nibp', 'AKS manžetė']].map(([k, t]) => chip('probe', k, !!pr[k], (pr[k] ? '✓ ' : '✕ ') + t)).join('') +
     tog('art', 'motion', !!art.motion, 'Judesio artefaktas') + tog('art', 'cpr', !!art.cpr, 'KPR kompresijos') + '</div></section>';
@@ -326,6 +333,7 @@ function actTab() {
     `<div class="prm"><div class="pr"><span class="prl">Dažnis<small>/min</small></span><button class="pb" data-act="pace-r" data-k="-10" aria-label="Dažnis mažiau">−</button><span class="pv">${pc.rate}</span><button class="pb" data-act="pace-r" data-k="10" aria-label="Dažnis daugiau">+</button></div>` +
     `<div class="pr"><span class="prl">Srovė<small>mA</small></span><button class="pb" data-act="pace-m" data-k="-10" aria-label="Srovė mažiau">−</button><span class="pv">${pc.ma}</span><button class="pb" data-act="pace-m" data-k="10" aria-label="Srovė daugiau">+</button></div></div>` +
     `<p class="muted">${pc.on ? (pc.cap ? '✓ Pagavimas – ŠSD lygus stimuliacijos dažniui.' : 'Nėra pagavimo – didinkite srovę (slenkstis 60 mA).') : 'Pagavimas, kai srovė ≥ 60 mA (ne skilvelių virpėjimo metu).'}</p></section>`;
+  h += mk;
   h += '<section class="pnl"><h2>Atkūrimas</h2><p class="muted mt0">Normalūs rodikliai, sinusinis ritmas, jutikliai uždėti, artefaktai ir stimuliacija išjungti.</p><div class="acts"><button class="btn" data-act="reset">Atkurti normą</button></div></section>';
   return h;
 }
@@ -539,7 +547,8 @@ function monChPanel(ch, keep) {
   const C = SIM.cfg(), gk = ch === 'pleth' ? 'pgain' : ch === 'resp' ? 'rgain' : 'gain', f = x => String(x).replace('.', ',');
   const row = (lbl, key, L, cur, u) => `<p>${lbl}</p><div class="mchr">` + L.map(x => `<button class="${+cur === x ? 'on' : ''}" data-act="mon-cfg" data-k="${key}:${x}" data-ch="${ch}">${u === 'x' ? '×' + f(x) : f(x)}</button>`).join('') + `</div>`;
   p.innerHTML = `<div class="mchh"><b>${ch === 'ecg' ? 'EKG (II)' : ch === 'pleth' ? 'Pletizmograma' : 'Kvėpavimas'}</b><button data-act="mon-chx" aria-label="Uždaryti">✕</button></div>` +
-    row('Greitis, mm/s – kreivė ' + (C.speed > 25 ? 'išskleista' : C.speed < 25 ? 'suspausta' : 'įprasta'), 'speed', SIM.SPEEDS, C.speed) + row('Amplitudė', gk, SIM.GAINS, C[gk] || 1, 'x');
+    row('Greitis, mm/s – kreivė ' + (C.speed > 25 ? 'išskleista' : C.speed < 25 ? 'suspausta' : 'įprasta'), 'speed', SIM.SPEEDS, C.speed) + row('Amplitudė', gk, SIM.GAINS, C[gk] || 1, 'x') +
+    `<p>Tikroviškumas (triukšmas visose kreivėse)</p><div class="mchr">` + [[0, 'Idealios'], [1, 'Tikroviškos'], [2, 'Daugiau triukšmo']].map(o => `<button class="${(C.noise == null ? 1 : +C.noise) === o[0] ? 'on' : ''}" data-act="mon-cfg" data-k="noise:${o[0]}" data-ch="${ch}">${o[1]}</button>`).join('') + '</div>';
   clearTimeout(mchT); mchT = setTimeout(() => { const q = $('#mchp'); if (q) q.remove(); }, 8000);
 }
 // instruktoriaus pulte – kreivių vaizdas (monitorius pagal nuotolinę nuotrauką)
@@ -706,8 +715,9 @@ document.addEventListener('click', async e => {
     case 'pace-on': send({ c: 'pace', on: !(s && s.pace && s.pace.on) }); break;
     case 'pace-r': { const p = (s && s.pace) || { rate: 70 }; send({ c: 'pace', rate: p.rate + (+k) }); break; }
     case 'pace-m': { const p = (s && s.pace) || { ma: 70 }; send({ c: 'pace', ma: p.ma + (+k) }); break; }
-    case 'mark': if (send({ c: 'mark', x: k })) toast('Pažymėta: ' + k); if (navigator.vibrate) navigator.vibrate(20); return;
-    case 'mark-c': { const x = (($('#markx') || {}).value || '').trim(); if (!x) { toast('Įrašykite veiksmą'); return; } if (send({ c: 'mark', x })) { toast('Pažymėta: ' + x); markTxt = ''; } break; }
+    case 'mark': if (send({ c: 'mark', x: k })) { toast('Įrašyta į žurnalą: ' + k); markLog.push({ x: k, t: SIM.mmss((s && s.el) || 0) }); markLog = markLog.slice(-8); } if (navigator.vibrate) navigator.vibrate(20); break;
+    case 'mark-c': { const x = (($('#markx') || {}).value || '').trim(); if (!x) { toast('Įrašykite žymą'); return; } if (send({ c: 'mark', x })) { toast('Įrašyta į žurnalą: ' + x); markLog.push({ x, t: SIM.mmss((s && s.el) || 0) }); markLog = markLog.slice(-8); markTxt = ''; } break; }
+    case 'go-pu': { if (typeof PUI !== 'undefined' && PUI.setView) PUI.setView(k); const tb = document.querySelector('[data-act="tab"][data-k="pu"]'); if (tb) tb.click(); return; }
     case 'reset': if (!confirm('Atkurti normalius rodiklius, jutiklius ir artefaktus?')) return; send({ c: 'reset' }); draft = {}; break;
     case 'ses-start': send({ c: 'ses', a: 'start' }); break;
     case 'ses-new': if (!confirm('Pradėti naują sesiją? Žurnalas ir grafikas bus išvalyti.')) return; send({ c: 'ses', a: 'new' }); remoteDump = null; break;

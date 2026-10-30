@@ -17,8 +17,8 @@ const SIM = (() => {
   // ── nustatymai (sinchronizuojami su nuotoliniu instruktoriumi) ──
   // aliarmų ribos: [žema (vid.), aukšta (vid.), žema (aukšto prior.), aukšta (aukšto prior.)]; null – išjungta
   const LIM0 = { hr: [50, 120, 40, 150], spo2: [90, null, 85, null], sys: [90, 180, 70, null], rr: [8, 30, 5, 40], temp: [35, 38.5, 32, 40] };
-  const SPEEDS = [12.5, 25, 50], GAINS = [0.5, 1, 1.5, 2], SCHEMES = ['classic', 'hc'];
-  const CFG0 = () => ({ lim: JSON.parse(JSON.stringify(LIM0)), avol: 70, bvol: 60, speed: 25, gain: 1, pgain: 1, rgain: 1, show: { pleth: 1, resp: 1, rr: 1, temp: 1 }, big: 0, scheme: 'classic', clock: 0, scen: 0, rhy: 0, pat: '', wake: 1 });
+  const SPEEDS = [12.5, 25, 50], GAINS = [0.5, 1, 1.5, 2], NOISES = [0, 1, 2], SCHEMES = ['classic', 'hc'];
+  const CFG0 = () => ({ lim: JSON.parse(JSON.stringify(LIM0)), avol: 70, bvol: 60, speed: 25, gain: 1, pgain: 1, rgain: 1, noise: 1, show: { pleth: 1, resp: 1, rr: 1, temp: 1 }, big: 0, scheme: 'classic', clock: 0, scen: 0, rhy: 0, pat: '', wake: 1 });
   function mergeCfg(o, b) {
     if (!o || typeof o !== 'object') return b;
     if (o.lim === 'def') b.lim = JSON.parse(JSON.stringify(LIM0));
@@ -31,6 +31,7 @@ const SIM = (() => {
     if (GAINS.indexOf(+o.gain) >= 0) b.gain = +o.gain;
     if (GAINS.indexOf(+o.pgain) >= 0) b.pgain = +o.pgain;
     if (GAINS.indexOf(+o.rgain) >= 0) b.rgain = +o.rgain;
+    if (NOISES.indexOf(+o.noise) >= 0) b.noise = +o.noise;
     if (o.show && typeof o.show === 'object') Object.keys(b.show).forEach(k => { if (k in o.show) b.show[k] = o.show[k] ? 1 : 0; });
     ['big', 'clock', 'scen', 'rhy', 'wake'].forEach(k => { if (k in o) b[k] = o[k] ? 1 : 0; });
     if (SCHEMES.indexOf(o.scheme) >= 0) b.scheme = o.scheme;
@@ -196,11 +197,17 @@ const SIM = (() => {
       beats.push(nextBeat);
       let rr = 60 / hr;
       if (S.rhythm === 'af') rr *= 0.6 + Math.random() * 0.8;
+      else if (NZ() && !S.pace.on) rr *= 1 + NZ() * (0.012 * (hsh(nextBeat) * 2 - 1) + (hr < 100 ? 0.02 : 0.008) * rsp(nextBeat));   // ŠSD kintamumas ir kvėpavimo aritmija
       nextBeat += rr;
     }
     while (beats.length > 12) beats.shift();
   }
   const g = (x, m, s) => Math.exp(-((x - m) * (x - m)) / (2 * s * s));
+  // tikroviškumas: 0 – idealios kreivės, 1 – nedidelis triukšmas ir kintamumas, 2 – daugiau
+  const NZ = () => CFG.noise == null ? 1 : +CFG.noise || 0;
+  const hsh = x => { const s = Math.sin(x * 12.9898 + 78.233) * 43758.5453; return s - Math.floor(s); };   // pastovus „atsitiktinis“ dūžiui
+  let rrHz = 0.25;
+  const rsp = t => Math.sin(2 * Math.PI * t * rrHz);   // kvėpavimo fazė (moduliacijoms)
   function ecgBeat(d, rr) {
     if (cap()) return 0.95 * g(d, 0.04, 0.04) - 0.35 * g(d, 0.12, 0.05) - 0.4 * g(d, 0.32, 0.075);
     const r = S.rhythm;
@@ -219,7 +226,7 @@ const SIM = (() => {
   function ecg(t, dt) {
     dt = dt || 0.01;
     if (!S.probe.ecg) return 0.03 * Math.sin(t * 2.1) + (Math.random() - 0.5) * 0.04;
-    const noise = (Math.random() - 0.5) * 0.025 + 0.03 * Math.sin(t * 0.7);
+    const nz = NZ(), noise = (Math.random() - 0.5) * (0.025 + 0.03 * nz) + 0.03 * Math.sin(t * 0.7) + nz * (0.045 * rsp(t + 0.3) + 0.03 * Math.sin(t * 0.31 + 1.7)) + (nz > 1 && Math.sin(t * 0.47) > 0.85 ? (Math.random() - 0.5) * 0.09 : 0);
     const ds = t - S.shk;
     if (ds >= 0 && ds < 1.4) return ds < dt + 0.02 ? 4 : 1.1 * Math.exp(-ds / 0.22) + noise;
     let v = noise;
@@ -230,24 +237,31 @@ const SIM = (() => {
     if (S.rhythm === 'vf') return v + 0.45 * Math.sin(t * 2 * Math.PI * 5.2 + 0.8 * Math.sin(t * 1.3)) * (0.6 + 0.4 * Math.sin(t * 0.9)) + 0.18 * Math.sin(t * 2 * Math.PI * 7.4);
     if (S.rhythm === 'af' && !cap()) v += 0.05 * Math.sin(t * 2 * Math.PI * 6.3) + 0.03 * Math.sin(t * 2 * Math.PI * 8.9);
     if (S.rhythm === 'avb3' && !cap()) { const d = ((t + 0.375) % 0.75) - 0.375; v += 0.13 * g(d, 0, 0.024); }
-    for (let i = 0; i < beats.length; i++) { const d = t - beats[i]; if (d > -0.3 && d < 0.6) v += ecgBeat(d, i ? beats[i] - beats[i - 1] : 60 / Math.max(30, rate())); }
+    const am = 1 + nz * 0.04 * rsp(t);
+    for (let i = 0; i < beats.length; i++) { const d = t - beats[i]; if (d > -0.3 && d < 0.6) v += ecgBeat(d, i ? beats[i] - beats[i - 1] : 60 / Math.max(30, rate())) * am * (1 + nz * 0.05 * (hsh(beats[i]) * 2 - 1)); }
     return v;
   }
   function pleth(t, pf) {
     if (!S.probe.spo2) return 0;
     let v = 0;
-    if (pf > 0) for (let i = 0; i < beats.length; i++) { const d = t - beats[i] - 0.22; if (d > 0 && d < 0.9) v += g(d, 0.11, 0.055) + 0.32 * g(d, 0.3, 0.07); }
+    const nz = NZ();
+    if (pf > 0) for (let i = 0; i < beats.length; i++) { const d = t - beats[i] - 0.22; if (d > 0 && d < 0.9) { const a = 1 + nz * 0.06 * (hsh(beats[i] + 3) * 2 - 1); v += a * (g(d, 0.11, 0.055) + (0.32 + nz * 0.05 * (hsh(beats[i] + 5) - 0.5)) * g(d, 0.3, 0.07)); } }
+    // kvėpavimo sukelti svyravimai – didesni esant hipovolemijai (žemas AKS)
+    if (nz) { const sys = val('sys'), ppv = 0.05 + 0.12 * Math.max(0, Math.min(1, (105 - sys) / 40)); v *= 1 + nz * ppv * rsp(t - 0.4); v += pf > 0 ? nz * (0.035 * rsp(t + 1) + (Math.random() - 0.5) * 0.012) : 0; }
     v *= pf;
     if (S.art.cpr) v += 0.45 * cprW(t - 0.12);
     if (S.art.motion) v += 0.35 * Math.abs(motW(t * 0.8));
     return v;
   }
-  let rph = 0, rT = 0;
+  let rph = 0, rT = 0, rbi = 0;
   function resp(t) {
     const r = val('rr'); const dt = rT ? Math.max(0, Math.min(0.2, t - rT)) : 0; rT = t;
     if (r < 2) return S.art.motion ? 0.15 * Math.abs(motW(t)) : 0;
-    rph = (rph + dt * r / 60) % 1; const ph = rph; // fazė kaupiama – keičiant KD kreivė nešokinėja
-    return (ph < 0.4 ? Math.sin(ph / 0.4 * Math.PI / 2) : Math.cos((ph - 0.4) / 0.6 * Math.PI / 2) ** 2) + (S.art.motion ? 0.15 * motW(t) : 0);
+    const nz = NZ(), j = 1 + nz * 0.07 * (hsh(rbi + 11) * 2 - 1);   // įkvėpimų trukmės ir gylio kintamumas
+    const np = rph + dt * r / 60 * j; if (np >= 1) rbi++; rph = np % 1; const ph = rph; // fazė kaupiama – keičiant KD kreivė nešokinėja
+    const a = 1 + nz * 0.09 * (hsh(rbi + 17) * 2 - 1);
+    return a * (ph < 0.4 ? Math.sin(ph / 0.4 * Math.PI / 2) : Math.cos((ph - 0.4) / 0.6 * Math.PI / 2) ** 2) + (S.art.motion ? 0.15 * motW(t) : 0) +
+      (nz ? nz * (0.022 * Math.sin(2 * Math.PI * t * Math.max(0.5, val('hr')) / 60) + (Math.random() - 0.5) * 0.01) : 0);   // širdies artefaktas impedansinėje kreivėje
   }
 
   // ── garsas (WebAudio) ──
@@ -367,6 +381,7 @@ const SIM = (() => {
     raf = requestAnimationFrame(frame);
     const t = now(), rt = rnow(); const dt = Math.max(0, Math.min(0.1, t - lastT)); lastT = t;
     if (!S.pause && dt > 0) {
+      rrHz = Math.max(0.05, val('rr') / 60);
       schedule(t);
       const c = cur(), pf = perf(c);
       // pulso pyptelėjimas
@@ -467,7 +482,7 @@ const SIM = (() => {
     if (S.nibp.meas) S.nibp.meas -= ms; if (S.nibp.next) S.nibp.next -= ms;
   }
 
-  return { P, DEF, LIM, RH, LIM0, SPEEDS, GAINS, CFG0, apply, setRhythm, setProbe, setArt, setOpt, setLabel, setNibpMode, setPace, nibpStart, nibpStat, reset, shock, snapshot, targets, on, mount, stop, audio, testSound,
+  return { P, DEF, LIM, RH, LIM0, SPEEDS, GAINS, NOISES, CFG0, apply, setRhythm, setProbe, setArt, setOpt, setLabel, setNibpMode, setPace, nibpStart, nibpStat, reset, shock, snapshot, targets, on, mount, stop, audio, testSound,
     muteAlarms, unmute, cur, perf: () => perf(cur()), state: () => S, cfg: () => CFG, setCfg, alarmList, rhName, mmss,
     log, journal, elapsed, sesStart, sesNew, setPause,
     _ecg: ecg, _alarms: () => alarms(cur(), perf(cur())), _ff: ff, _beats: () => beats.slice() };

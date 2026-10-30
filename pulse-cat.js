@@ -226,6 +226,55 @@ const PCAT = (() => {
     ['tam', 'Skeveldra krūtinėje', 'Širdies tamponada', [{ k: 'tam', sev: 40 }]],
     ['none', 'Be sužalojimų', 'Sužalojimus pridėsite vėliau', []]
   ];
+  // ── pagalba iki atvykimo (priešistorė) – pagal teikėjo lygį (MARCH gidas: CLS – kovos gelbėtojas, CMC – kovos medikas) ──
+  // iki MEDEVAC – CLS lygio veiksmai ir vaistai; iki Role 1 – iki CMC lygio
+  const LVLS = { medevac: ['CLS'], role1: ['CLS', 'CMC'] };
+  const LVLN = { CLS: 'kovos gelbėtojas', CMC: 'kovos medikas' };
+  // [kortelės veiksmas, pavadinimas, lygis, numatytasis laikas (min nuo sužeidimo)]
+  const PRE_INJ = {
+    limb: [['tq', 'Turniketas', 'CLS', 2], ['pack', 'Tamponavimas + spaudimas', 'CLS', 3], ['pdress', 'Spaudžiamasis tvarstis', 'CLS', 4]],
+    junc: [['pack', 'Tamponavimas + spaudimas', 'CLS', 3], ['jtq', 'Jungtinis turniketas', 'CMC', 8]],
+    soft: [['pack', 'Tamponavimas + spaudimas', 'CLS', 3], ['pdress', 'Spaudžiamasis tvarstis', 'CLS', 4]],
+    ptx: [['ndc', 'Adatinė dekompresija', 'CLS', 10]],
+    optx: [['occl', 'Krūtinės lipdukas', 'CLS', 3], ['ndc', 'Adatinė dekompresija', 'CLS', 10]],
+    aw: [['pos', 'Galvos atlošimas / žandikaulio stūmimas', 'CLS', 1], ['npa', 'Nosiaryklės vamzdelis (NPA)', 'CLS', 3], ['cric', 'Krikotiroidotomija', 'CMC', 8]]
+  };
+  function preInj(j) { const g = j.k === 'bleed' ? (locBy(j.loc) || [0, 0, 'limb'])[2] : j.k; return PRE_INJ[g] || []; }
+  // bendri: [kodas, pavadinimas, lygis, min, operacijos]
+  const PRE_GEN = [
+    ['hpmk', 'Hipotermijos prevencija', 'CLS', 10, [{ tx: 'hpmk' }]],
+    ['cwmp', 'CWMP: paracetamolis + meloksikamas', 'CLS', 15, [{ drug: 'para', dose: 1300, unit: 'mg', route: 'PO' }, { drug: 'melox', dose: 15, unit: 'mg', route: 'PO' }]],
+    ['abxpo', 'Cefadroksilis 1 g per os', 'CLS', 15, [{ drug: 'cfd', dose: 1, unit: 'g', route: 'PO' }]],
+    ['txa', 'TXA 2 g IV / IO', 'CMC', 20, [{ drug: 'txa', dose: 2, unit: 'g', route: 'IV' }]],
+    ['ket', 'Ketaminas 50 mg IN', 'CMC', 20, [{ drug: 'ket', dose: 50, unit: 'mg', route: 'IN' }]],
+    ['blood', 'Pilnas kraujas 500 ml', 'CMC', 30, [{ fluid: 'Blood', ml: 500, rate: 50 }]],
+    ['ca', 'Kalcio gliukonatas 10 % 30 ml', 'CMC', 32, [{ drug: 'ca', dose: 30, unit: 'ml', route: 'IV' }]],
+    ['cro', 'Ceftriaksonas 2 g IV', 'CMC', 25, [{ drug: 'cro', dose: 2, unit: 'g', route: 'IV' }]]
+  ];
+  // vedlio pasirinkimai → monitoriaus stotelės [{t (s), by, ops}]; inj – su raktais (key), pre – {'uid:kodas': min}
+  function preOps(inj, pre, ff, set) {
+    const L = [], lv = LVLS[set] || LVLS.role1, ffm = Math.floor((+ff || 0) / 60);
+    Object.keys(pre || {}).forEach(key => {
+      const [uid, code] = key.split(':'), m = Math.max(0, Math.min(ffm, Math.round(+pre[key] || 0)));
+      if (uid === 'g') { const G = PRE_GEN.find(x => x[0] === code); if (G && lv.indexOf(G[2]) >= 0) L.push({ t: m * 60, by: G[2].toLowerCase(), ops: G[4].map(o => Object.assign({ n: G[1] }, o)) }); return; }
+      const j = inj.find(x => x.uid === uid); if (!j) return;
+      const A = preInj(j).find(x => x[0] === code); if (!A || lv.indexOf(A[2]) < 0) return;
+      L.push({ t: m * 60, by: A[2].toLowerCase(), ops: [{ card: j.key, a: code, n: A[1] + ' – ' + injName(j).name }] });
+    });
+    return L.sort((a, b) => a.t - b.t);
+  }
+  // ── procedūrų plytelės pagal traumų grupes ──
+  // [grupė, pavadinimas, ikona, veiksmų kodai (kortelių ir bendrų)]
+  const PROC = [
+    ['M', 'Kraujavimas', 'drop', ['tq', 'jtq', 'pack', 'pdress', 'tqre', 'tqconv']],
+    ['A', 'Kvėpavimo takai', 'mouth', ['pos', 'npa', 'suct', 'sga', 'cric', 'ett']],
+    ['R', 'Krūtinė', 'lung', ['occl', 'seal', 'burp', 'ndc', 'fthor', 'tube']],
+    ['B', 'Kvėpavimas', 'wind', ['o2', 'o2off', 'bvm', 'vent']],
+    ['C', 'Širdis', 'heart', ['pcd']],
+    ['H', 'Hipotermija', 'therm', ['hpmk', 'warm']]
+  ];
+  const PSHORT = { tq: 'Turniketas', jtq: 'Jungtinis turniketas', pack: 'Tamponavimas', pdress: 'Spaudž. tvarstis', tqre: 'Turniketas vėl', tqconv: 'Konversija', pos: 'Atlošti / stumti', npa: 'NPA', suct: 'Atsiurbti', sga: 'i-gel', cric: 'Krikotomija', ett: 'Intubacija',
+    occl: 'Krūtinės lipdukas', seal: 'Lipdukas', burp: 'Atpūsti lipduką', ndc: 'Adatinė dekompr.', fthor: 'Pirštinė torakost.', tube: 'Krūtinės drenas', o2: 'Deguonis', o2off: 'O₂ nuimti', bvm: 'BVM', vent: 'DPV', pcd: 'Perikardiocentezė', hpmk: 'HPMK', warm: 'Šildymas' };
   // ≈ Pulse 4.3.1 tokios funkcijos neturi – rodiklių pokytis apytikslis (programėlės sprendimas)
   const APX = {
     'inj:burn': 'Pulse neturi nudegimų modelio – skysčių netekimas modeliuojamas kaip lėtas kraujavimas per odą',
@@ -252,5 +301,5 @@ const PCAT = (() => {
     'route:IO': 'IO modelyje – kaip IV'
   };
   const apx = key => APX[key] || '';
-  return { APX, apx, SETTINGS, PATIENTS, LOCS, SEV, SIDES, INJ, injBy, locBy, cmpOf, injAct, injName, cardActions, STATES, BAD, TX, txFor, O2DEV, FLUIDS, VOLS, RATES, DRUGS, drugsFor, drugBy, EVENTS, MECH };
+  return { LVLS, LVLN, PRE_INJ, PRE_GEN, preInj, preOps, PROC, PSHORT, APX, apx, SETTINGS, PATIENTS, LOCS, SEV, SIDES, INJ, injBy, locBy, cmpOf, injAct, injName, cardActions, STATES, BAD, TX, txFor, O2DEV, FLUIDS, VOLS, RATES, DRUGS, drugsFor, drugBy, EVENTS, MECH };
 })();

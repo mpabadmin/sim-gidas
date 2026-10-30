@@ -251,6 +251,7 @@ const PLOCAL = (() => {
         break;
       }
       case 'speed': if (S) S.speed = clamp(+m.x || 1, 0.25, 20); break;
+      case 'freeze': if (S) { S.frozen = true; S.v0 = vitals(S.E); save(); vit(); } break;   // rankinis režimas: nuo šiol rodikliai nebekinta (keičia instruktorius)
       case 'skip': if (S && S.frozen) { S.E.t += clamp(+m.s || 300, 1, 7200); vit(); save(); }
       else if (S && S.E.alive) { const was = S.E.alive; advance(S.E, clamp(+m.s || 300, 1, 7200)); vit(); if (was && !S.E.alive) emit({ t: 'dead', simt: Math.round(S.E.t) }); save(); } break;
       case 'pause': if (S) S.paused = true; break;
