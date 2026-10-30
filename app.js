@@ -683,7 +683,7 @@ document.addEventListener('click', async e => {
     case 'd-': case 'd+': if (hold && hold.n) { hold = null; return; } hold = null; stepParam(k, a === 'd+' ? 1 : -1); return;
     case 'apply': applyDraft(); return;
     case 'undo': draft = {}; break;
-    case 'px': PUI.onClick(el, o => { const ok = send(o); if (ok && o.op === 'start') toast('Nusiųsta monitoriui – žr. būseną'); puT = 0; setTimeout(() => { if (!inputBusy()) rerenderTab(); }, 300); return ok; }); return;
+    case 'px': PUI.onClick(el, o => { const ok = send(o);  puT = 0; setTimeout(() => { if (!inputBusy()) rerenderTab(); }, 300); return ok; }); return;
     case 'pu-save': { const u = ($('#pu-url') || {}).value || '', t = ($('#pu-tok') || {}).value || ''; PULSE.saveCfg({ url: u.trim(), token: t.trim() }); toast('Išsaugota'); break; }
     case 'pu-test': { const u = ($('#pu-url') || {}).value || '', t = ($('#pu-tok') || {}).value || '', r = $('#pu-res'); PULSE.saveCfg({ url: u.trim(), token: t.trim() }); if (r) r.textContent = 'Tikrinama… (jei serveris miega – iki 3 min.)'; PULSE.test(u.trim(), t.trim(), m => { const x = $('#pu-res'); if (x) x.textContent = m; }); return; }
     case 'mac': { const m = MAC.find(x => x[0] === k); if (!m) return; const o = { c: 'apply', v: macro(k, T()), d: dur, mk: m[1] }; if (k === 'stab') o.r = 'sinus'; if (send(o)) toast(m[1] + (dur ? ' – per ' + DUR.find(x => x[0] === dur)[1] : '')); draft = {}; break; }

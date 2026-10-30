@@ -204,7 +204,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
   let ADV = [];
   function statusHtml(P) {
     const sc = P.sc;
-    ADV = P.st === 'dead' ? [] : PSCEN.advise(P).slice(0, 5);
+    ADV = P.st === 'dead' ? [] : PSCEN.advise(P).slice(0, 6);
     let h = '';
     const cm0 = (P.cm || []).filter(c => c.end == null).sort((a, b) => ((b.lvl === 'crit') - (a.lvl === 'crit')) || (a.t - b.t))[0];
     const cm = cm0 && cmClean(cm0, sc);
@@ -221,7 +221,8 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
     if (sc.ph === 'handover' && sc.set === 'medevac') h += `<div class="pxalert hand"><b>${ic('heli')} Nusileidimas – MIST</b>${btn('xferask', null, ic('tent') + ' Perduoti į Role 1', 'pxalertgo')}</div>`;
     h += `<p class="pxlbl">${ic('bolt')} Dabar svarbiausia · ${sc.set === 'role1' ? 'ETC' : 'MARCH'}</p>`;
     const LL = sc.set === 'role1' ? { M: 'c', R: 'B', H: 'E', P: 'E' } : {};
-    h += ADV.length ? ADV.map((a, i) => `<button class="pxadv ${a.lvl}" data-act="px" data-k="adv" data-x="${i}"><span class="pxL">${E(LL[a.L] || a.L)}</span><span class="pxadvt"><b>${E(a.n)}</b><small>${E(a.why)}</small></span><i>›</i></button>`).join('') : '<p class="muted">Skubių veiksmų pagal rodiklius nėra – stebėkite, vertinkite pakartotinai.</p>';
+    const shownTop = top && top.lvl === 'crit' ? top : null;
+    h += ADV.length ? ADV.map((a, i) => a === shownTop ? '' : `<button class="pxadv ${a.lvl}" data-act="px" data-k="adv" data-x="${i}"><span class="pxL">${E(LL[a.L] || a.L)}</span><span class="pxadvt"><b>${E(a.n)}</b><small>${E(a.why)}</small></span><i>›</i></button>`).join('') : '<p class="muted">Skubių veiksmų pagal rodiklius nėra – stebėkite, vertinkite pakartotinai.</p>';
     h += '<div class="pxquick">' + btn('view', 'proc', ic('band') + ' Procedūros', 'pxb') + btn('view', 'med', ic('syr') + ' Vaistai', 'pxb') + '</div>';
     const done = (sc.log || []).filter(l => l.kind === 'tx' && !l.star && (!sc.r1t0 || sc.set !== 'role1' || l.t >= sc.r1t0)).slice(-6).reverse();
     if (done.length) h += '<p class="pxlbl">' + ic('check') + ' Atlikta</p><div class="pxdone">' + done.map(l => `<span><small>${T(l.t)}</small> ${E(l.n.split(' (')[0])}</span>`).join('') + '</div>';
@@ -242,7 +243,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
     const run = RUN.indexOf(P.st) >= 0, sp = P.speed || 1, sc = P.sc || {}, v = P.v || {}, r1 = sc.set === 'role1';
     const lost = v.lost != null ? v.lost : bleedLoss(P), en = P.manual ? 'manual' : P.local ? 'local' : 'pulse';
     let h = `<div class="pxh${view === 'pt' || P.st === 'off' ? '' : ' stk'}"><div class="pxh1">` +
-      `<span class="pxclkw"><b class="pxclk">${T(P.simt)}</b><small class="pxst2 ${P.st}">${ic(r1 ? 'tent' : 'heli')} ${r1 ? 'Role 1' : sc.ph === 'handover' ? 'Perdavimas' : 'MEDEVAC'} · ${ic(ENGN[en][0])} ${P.st === 'off' && sc.end != null ? 'baigta' : P.st === 'run' ? ENGN[en][1].replace(' ≈', '').replace(' simuliatorius', '') : stTxt[P.st] || P.st}</small></span>` +
+      `<span class="pxclkw"><b class="pxclk">${T(P.simt)}</b><small class="pxst2 ${P.st}">${ic(r1 ? 'tent' : 'heli')} ${r1 ? 'Role 1' : sc.ph === 'handover' ? 'Perdavimas' : 'MEDEVAC'} · ${ic(ENGN[en][0])} ${P.st === 'off' && sc.end != null ? 'baigta' : P.st === 'run' ? { manual: 'Rankinis', local: 'Telefonas', pulse: 'Pulse' }[en] : stTxt[P.st] || P.st}</small></span>` +
       `<button class="pxi" data-act="pu-curves" aria-label="Kreivės (monitorius)">${ic('wave')}</button>` +
       (run || P.st === 'dead' ? `<button class="pxi pxstop" data-act="px" data-k="stopask" aria-label="Baigti scenarijų">${ic('stop')}</button>` : '') + '</div>';
     if (P.v) {
