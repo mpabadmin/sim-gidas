@@ -24,8 +24,8 @@ const PLOCAL = (() => {
   const BLOODY = { Blood: 0.9, PackedRBC: 0.9, Plasma: 0.8 };
   const SUPPORTED = ['hem', 'hem_stop', 'inf', 'inf_stop', 'o2', 'o2_off', 'tpx', 'ndc', 'occl', 'aw', 'intub', 'cric', 'sga', 'bolus', 'drug', 'tx', 'tbi', 'eff', 'burn', 'arrest', 'vf', 'rosc', 'pcd', 'htx', 'tube', 'bronch', 'asthma', 'stress', 'pain', 'temp'];
 
-  function fresh(kg, t0) {
-    return { t: 0, kg, bv0: 70 * kg, lost: 0, inB: 0, inP: 0, inC: 0, hem: {}, inf: {}, ptx: {}, htx: {}, aw: 0, secured: false, vent: false, para: 0,
+  function fresh(kg, t0, sex, age) {
+    return { t: 0, kg, sex: sex === 'F' ? 'F' : 'M', age: age || 25, bv0: (sex === 'F' ? 65 : 70) * kg, lost: 0, inB: 0, inP: 0, inC: 0, hem: {}, inf: {}, ptx: {}, htx: {}, aw: 0, secured: false, vent: false, para: 0,
       tbi: 0, tbiBase: 0, effR: 0, effV: 0, burn: 0, bronch: 0, pain: 0, o2: null, T: t0 || 36.6, hpmk: false, warm: false, drugs: [], ind: 0,
       arrest: null, pT: 0, sT: 0, rT: 0, alive: true, spo2: 97, map: 93, apn: 0 };
   }
@@ -149,6 +149,7 @@ const PLOCAL = (() => {
   function vitals(E, internal) {
     const d = deficit(E);
     let [hr, sys, dia, rr] = atls(d);
+    const ag = Math.max(0, (E.age || 25) - 40); sys += ag * 0.4; dia += ag * 0.2; hr -= ag * 0.15;   // vyresnis – aukštesnis AKS, mažesnė tachikardija
     const sides = Object.values(E.ptx).map(P => P.drained ? 0 : P.idx).sort((a, b) => b - a), p = Math.min(1.2, (sides[0] || 0) + 0.5 * (sides[1] || 0));
     hr += 25 * Math.min(1, p); rr += 12 * Math.min(1, p);
     if (p > 0.6) { const f = Math.min(1, (p - 0.6) / 0.4); sys -= 40 * f; dia -= 25 * f; }
@@ -207,11 +208,12 @@ const PLOCAL = (() => {
   const info = () => ({ t: 'info', engine: ENGINE, version: VERSION, pulse: false, local: true, sessions: S ? 1 : 0, max: 1, states: ['Soldier@0s.json', 'StandardMale@0s.json', 'StandardFemale@0s.json', 'Underweight@0s.json', 'Overweight@0s.json'],
     compounds: ['Blood', 'PackedRBC', 'Plasma', 'Saline', 'LactatedRingers'], substances: Object.keys(SUB), supported: SUPPORTED.reduce((o, k) => (o[k] = true, o), {}), hem_cmp: Object.keys(HEM_MAX) });
   function emit(m) { const s = sock; if (!s) return; setTimeout(() => { if (s.readyState === 1 && s.onmessage) s.onmessage({ data: JSON.stringify(m) }); }, 0); }
-  const vit = extra => { const v = vitals(S.E); S.v = v; emit(Object.assign({ t: 'vit', simt: Math.round(S.E.t * 10) / 10, v, alive: S.E.alive, speed: S.speed }, extra || {})); };
+  const vit = extra => { const v = S.frozen && S.v0 ? S.v0 : vitals(S.E); S.v = v; emit(Object.assign({ t: 'vit', simt: Math.round(S.E.t * 10) / 10, v, alive: S.E.alive, speed: S.speed }, extra || {})); };
   function tick() {
     if (!S || S.stopped) return;
     const now = Date.now(), dw = Math.min(5, (now - lastWall) / 1000); lastWall = now;
-    if (!S.paused && S.E.alive) {
+    if (!S.paused && S.frozen) { S.E.t += dw * S.speed; if (now - lastSend >= 950) { lastSend = now; vit(); } }
+    else if (!S.paused && S.E.alive) {
       const wasAlive = S.E.alive;
       advance(S.E, dw * S.speed);
       if (now - lastSend >= 950) { lastSend = now; vit(); }
@@ -226,10 +228,11 @@ const PLOCAL = (() => {
       case 'hello': emit(info()); break;
       case 'start': {
         const kg = clamp(+m.kg || 80, 30, 200);
-        S = { sid: 'L' + Date.now().toString(36), E: fresh(kg, +m.temp0 || 36.6), speed: clamp(+m.speed || 1, 0.25, 20), paused: false, stopped: false };
+        S = { sid: 'L' + Date.now().toString(36), E: fresh(kg, +m.temp0 || 36.6, m.sex, +m.age), speed: clamp(+m.speed || 1, 0.25, 20), paused: false, stopped: false, frozen: !!m.frozen };
         (m.acts || []).forEach(a => { const r = apply(S.E, a); if (!r[0]) emit({ t: 'ack', id: a.id || 'init', ok: false, msg: r[1], simt: 0 }); });
         const ff = clamp(+m.ff || 0, 0, 7200);
         if (ff >= 1) advance(S.E, ff);
+        if (S.frozen) S.v0 = vitals(S.E);   // rankinis režimas: pradiniai rodikliai iš modelio, toliau keičia instruktorius
         save(); emit({ t: 'started', sid: S.sid, state: m.state || '', simt: Math.round(S.E.t), engine: ENGINE });
         vit(); startLoop();
         if (!S.E.alive) emit({ t: 'dead', simt: Math.round(S.E.t) });
@@ -248,7 +251,8 @@ const PLOCAL = (() => {
         break;
       }
       case 'speed': if (S) S.speed = clamp(+m.x || 1, 0.25, 20); break;
-      case 'skip': if (S && S.E.alive) { const was = S.E.alive; advance(S.E, clamp(+m.s || 300, 1, 7200)); vit(); if (was && !S.E.alive) emit({ t: 'dead', simt: Math.round(S.E.t) }); save(); } break;
+      case 'skip': if (S && S.frozen) { S.E.t += clamp(+m.s || 300, 1, 7200); vit(); save(); }
+      else if (S && S.E.alive) { const was = S.E.alive; advance(S.E, clamp(+m.s || 300, 1, 7200)); vit(); if (was && !S.E.alive) emit({ t: 'dead', simt: Math.round(S.E.t) }); save(); } break;
       case 'pause': if (S) S.paused = true; break;
       case 'run': if (S) { S.paused = false; lastWall = Date.now(); } break;
       case 'stop': if (S) { S.stopped = true; save(); } stopLoop(); emit({ t: 'stopped' }); break;

@@ -18,7 +18,7 @@ const SIM = (() => {
   // aliarmų ribos: [žema (vid.), aukšta (vid.), žema (aukšto prior.), aukšta (aukšto prior.)]; null – išjungta
   const LIM0 = { hr: [50, 120, 40, 150], spo2: [90, null, 85, null], sys: [90, 180, 70, null], rr: [8, 30, 5, 40], temp: [35, 38.5, 32, 40] };
   const SPEEDS = [12.5, 25, 50], GAINS = [0.5, 1, 1.5, 2], SCHEMES = ['classic', 'hc'];
-  const CFG0 = () => ({ lim: JSON.parse(JSON.stringify(LIM0)), avol: 70, bvol: 60, speed: 25, gain: 1, show: { pleth: 1, resp: 1, rr: 1, temp: 1 }, big: 0, scheme: 'classic', clock: 0, scen: 0, rhy: 0, pat: '', wake: 1 });
+  const CFG0 = () => ({ lim: JSON.parse(JSON.stringify(LIM0)), avol: 70, bvol: 60, speed: 25, gain: 1, pgain: 1, rgain: 1, show: { pleth: 1, resp: 1, rr: 1, temp: 1 }, big: 0, scheme: 'classic', clock: 0, scen: 0, rhy: 0, pat: '', wake: 1 });
   function mergeCfg(o, b) {
     if (!o || typeof o !== 'object') return b;
     if (o.lim === 'def') b.lim = JSON.parse(JSON.stringify(LIM0));
@@ -29,6 +29,8 @@ const SIM = (() => {
     ['avol', 'bvol'].forEach(k => { if (k in o && isFinite(o[k])) b[k] = Math.max(0, Math.min(100, Math.round(+o[k]))); });
     if (SPEEDS.indexOf(+o.speed) >= 0) b.speed = +o.speed;
     if (GAINS.indexOf(+o.gain) >= 0) b.gain = +o.gain;
+    if (GAINS.indexOf(+o.pgain) >= 0) b.pgain = +o.pgain;
+    if (GAINS.indexOf(+o.rgain) >= 0) b.rgain = +o.rgain;
     if (o.show && typeof o.show === 'object') Object.keys(b.show).forEach(k => { if (k in o.show) b.show[k] = o.show[k] ? 1 : 0; });
     ['big', 'clock', 'scen', 'rhy', 'wake'].forEach(k => { if (k in o) b[k] = o[k] ? 1 : 0; });
     if (SCHEMES.indexOf(o.scheme) >= 0) b.scheme = o.scheme;
@@ -343,13 +345,18 @@ const SIM = (() => {
     const CH = [['ecg', 'II', K.ecg, 1.25]].concat(sh.pleth ? [['pleth', 'Pleth', K.pleth, 1]] : [], sh.resp ? [['resp', 'Resp', K.resp, 0.8]] : []);
     const BX = [['hr', 'ŠSD', K.ecg, 'k./min'], ['spo2', 'SpO₂', K.pleth, '%'], ['nibp', 'AKS', K.nibp, 'mm Hg']].concat(sh.rr ? [['rr', 'KD', K.resp, 'k./min']] : [], sh.temp ? [['temp', 'T', K.temp, '°C']] : []);
     mroot.innerHTML = `<div class="mon${CFG.big ? ' big' : ''}${CFG.scheme === 'hc' ? ' hc' : ''}" id="mon"><div class="mtop"><span class="mlb" id="mlb"></span><span class="mal" id="mal" data-act="alist" role="status" aria-live="assertive"></span><span class="mtm" id="mtm"></span><span class="mclk" id="mclk"></span></div>` +
-      `<div class="mwav" style="--wr:${CH.map(c => c[3] + 'fr').join(' ')}">${CH.map(([k, l, col]) => `<div class="mch"><span class="mchl" style="color:${col}" id="chl-${k}">${l}</span><canvas data-ch="${k}"></canvas></div>`).join('')}</div>` +
+      `<div class="mwav" style="--wr:${CH.map(c => c[3] + 'fr').join(' ')}">${CH.map(([k, l, col]) => `<div class="mch"><span class="mchl" style="color:${col}" id="chl-${k}" data-act="mon-ch" data-k="${k}" role="button" aria-label="${l}: greitis ir amplitudė">${l}</span><canvas data-ch="${k}"></canvas></div>`).join('')}</div>` +
       `<div class="mnum" id="mnum" style="--n:${BX.length}">${BX.map(([k, l, col, u]) => `<div class="mbx" data-k="${k}"${k === 'nibp' ? ' data-act="mon-nibp"' : ''}><span class="mbl" style="color:${col}">${l}</span><b style="color:${col}"></b><span class="mbu"></span><span class="mbn">${u}</span></div>`).join('')}</div></div>`;
     ch = CH.map(([k, l, col]) => { const cv = mroot.querySelector(`canvas[data-ch="${k}"]`); return { k, col, cv, cx: cv.getContext('2d', { alpha: false }), x: 0, py: null, w: 0, h: 0, dpr: 1, frac: 0 }; });
     boxes = {}; BX.forEach(([k]) => { const el = mroot.querySelector(`.mbx[data-k="${k}"]`); boxes[k] = { el, b: el.querySelector('b'), u: el.querySelector('.mbu') }; });
     chLabel(); lastNum = 0;
   }
-  function chLabel() { const e = document.getElementById('chl-ecg'); if (e) e.textContent = 'II  ×' + String(CFG.gain).replace('.', ',') + '  ' + String(CFG.speed).replace('.', ',') + ' mm/s'; }
+  function chLabel() {
+    const f = x => String(x).replace('.', ','), e = document.getElementById('chl-ecg'), p = document.getElementById('chl-pleth'), r = document.getElementById('chl-resp');
+    if (e) e.textContent = 'II  ×' + f(CFG.gain) + '  ' + f(CFG.speed) + ' mm/s';
+    if (p) p.textContent = 'Pleth' + ((CFG.pgain || 1) !== 1 ? '  ×' + f(CFG.pgain) : '');
+    if (r) r.textContent = 'Resp' + ((CFG.rgain || 1) !== 1 ? '  ×' + f(CFG.rgain) : '');
+  }
   function size() {
     ch.forEach(c => { const r = c.cv.getBoundingClientRect(), d = window.devicePixelRatio || 1; c.dpr = d; c.w = Math.max(10, Math.round(r.width * d)); c.h = Math.max(10, Math.round(r.height * d)); c.cv.width = c.w; c.cv.height = c.h; c.x = 0; c.py = null; c.cx.fillStyle = '#000'; c.cx.fillRect(0, 0, c.w, c.h); });
   }
@@ -385,8 +392,8 @@ const SIM = (() => {
     for (let i = 0; i < n; i++) {
       const ts = t - dt + sdt * (i + 1); let v;
       if (C.k === 'ecg') v = C.h * 0.62 - ecg(ts, sdt) * amp * 0.95 * gain;
-      else if (C.k === 'pleth') v = C.h * 0.85 - pleth(ts, pf) * C.h * 0.62;
-      else v = C.h * 0.82 - resp(ts) * C.h * 0.6;
+      else if (C.k === 'pleth') v = C.h * 0.85 - pleth(ts, pf) * C.h * 0.62 * (CFG.pgain || 1);
+      else v = C.h * 0.82 - resp(ts) * C.h * 0.6 * (CFG.rgain || 1);
       v = Math.max(lw * C.dpr, Math.min(C.h - lw * C.dpr, v));
       if (C.py != null && C.x > 0) { if (!open) { cx.moveTo(C.x - 1, C.py); open = true; } cx.lineTo(C.x, v); }
       C.py = v; C.x += 1;

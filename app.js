@@ -1,6 +1,6 @@
 'use strict';
 // ───────── SIM – programėlės eiga: pradžia, monitorius, instruktoriaus pultas, scenarijai, žurnalas, nustatymai ─────────
-const VER = 'v9.0 · 2026-10-29';
+const VER = 'v10.0 · 2026-10-30';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
 const LSg = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
@@ -134,7 +134,7 @@ function onLinkMsg(host, o) {
   if (o.c === 'pong') { if (o.t) rtt = Math.max(1, Date.now() - o.t); return; }
   if (o.c === 'dump') { remoteDump = o.j; if (UI.tab === 'log' && !inputBusy()) rerenderTab(); return; }
   if (o.c !== 'snap' || !o.s) return;
-  const old = sig(remoteSnap); remoteSnap = o.s; remoteT = Date.now(); mirror();
+  const old = sig(remoteSnap); remoteSnap = o.s; remoteT = Date.now(); mirror(); curvFeed();
   if ((route() === 'instruktorius' || route() === 'nustatymai') && sig(remoteSnap) !== old && !inputBusy()) rerenderPanel();
 }
 RTC.onMsg = o => onLinkMsg(RTC.role() === 'host', o);
@@ -162,7 +162,7 @@ const isHostRoute = () => route() === 'monitorius';
 const DUR = [[0, 'Iš karto'], [30, '30 s'], [60, '1 min'], [120, '2 min'], [300, '5 min']];
 const MAC = [['worse', 'Blogėja'], ['better', 'Gerėja'], ['shock', 'Šokas ↑'], ['hypox', 'Hipoksija ↑'], ['stab', 'Stabilizuoti']];
 const MARKS = ['Turniketas', 'Tamponada / tvarstis', 'Dekompresija', 'Kvėpavimo takai', 'Intubacija', 'Krikotiroidotomija', 'Deguonis', 'IV / IO prieiga', 'TXA', 'Kraujas', 'Skysčiai', 'Kalcis', 'Adrenalinas', 'Analgezija', 'Šildymas', 'KPR pradėtas', 'KPR baigtas', 'Evakuacija'];
-const TABS = [['ctl', 'Rodikliai', 'Rodikl.'], ['sc', 'Scenarijus', 'Scen.'], ['act', 'Veiksmai', 'Veiksm.'], ['log', 'Žurnalas', 'Žurn.'], ['pu', 'Pulse', 'Pulse'], ['set', 'Nustatymai', 'Nust.'], ['link', 'Ryšys', 'Ryšys']];
+const TABS = [['ctl', 'Rodikliai', 'Rodikl.'], ['sc', 'Scenarijus', 'Scen.'], ['act', 'Veiksmai', 'Veiksm.'], ['log', 'Žurnalas', 'Žurn.'], ['pu', 'Simuliacija', 'Simul.'], ['set', 'Nustatymai', 'Nust.'], ['link', 'Ryšys', 'Ryšys']];
 const TICO = {
   pu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/><path d="M6 12h3l1.5-2.5 2 5 1.5-2.5H18"/></svg>',
   ctl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l2.5-6 4 12 2.5-6H22"/></svg>',
@@ -530,6 +530,39 @@ function render() {
   else app.innerHTML = home();
   lastRoute = r;
 }
+// monitoriuje: bakstelėjus kreivės pavadinimą – greitis (mm/s) ir amplitudė (×)
+let mchT = 0;
+function monChPanel(ch, keep) {
+  let p = $('#mchp'); if (p && !keep && p.dataset.ch === ch) { p.remove(); return; }
+  if (!p) { p = document.createElement('div'); p.id = 'mchp'; p.className = 'mchp'; document.body.appendChild(p); }
+  p.dataset.ch = ch;
+  const C = SIM.cfg(), gk = ch === 'pleth' ? 'pgain' : ch === 'resp' ? 'rgain' : 'gain', f = x => String(x).replace('.', ',');
+  const row = (lbl, key, L, cur, u) => `<p>${lbl}</p><div class="mchr">` + L.map(x => `<button class="${+cur === x ? 'on' : ''}" data-act="mon-cfg" data-k="${key}:${x}" data-ch="${ch}">${u === 'x' ? '×' + f(x) : f(x)}</button>`).join('') + `</div>`;
+  p.innerHTML = `<div class="mchh"><b>${ch === 'ecg' ? 'EKG (II)' : ch === 'pleth' ? 'Pletizmograma' : 'Kvėpavimas'}</b><button data-act="mon-chx" aria-label="Uždaryti">✕</button></div>` +
+    row('Greitis, mm/s – kreivė ' + (C.speed > 25 ? 'išskleista' : C.speed < 25 ? 'suspausta' : 'įprasta'), 'speed', SIM.SPEEDS, C.speed) + row('Amplitudė', gk, SIM.GAINS, C[gk] || 1, 'x');
+  clearTimeout(mchT); mchT = setTimeout(() => { const q = $('#mchp'); if (q) q.remove(); }, 8000);
+}
+// instruktoriaus pulte – kreivių vaizdas (monitorius pagal nuotolinę nuotrauką)
+let curvOn = false, curvSaved = null;
+function curvesOpen() {
+  if (tgt() === 'local') { const d = $('#drawer'); if (d) d.classList.remove('on'); return; }   // pultas monitoriaus telefone – tiesiog uždaryti pultą
+  let o = $('#curv'); if (!o) { o = document.createElement('div'); o.id = 'curv'; document.body.appendChild(o); }
+  o.innerHTML = '<div class="curvh"><b>Monitorius</b><span id="curvst"></span><button class="ib" data-act="pu-curvesx" aria-label="Uždaryti">✕</button></div><div id="curvmon"></div>';
+  const st = SIM.state(); curvSaved = { sound: st.sound, beep: st.beep }; SIM.setOpt('sound', 0); SIM.setOpt('beep', 0);
+  curvOn = true; curvFeed(); SIM.mount($('#curvmon'));
+}
+function curvesClose() { curvOn = false; try { SIM.stop(); } catch (e) {} const o = $('#curv'); if (o) o.remove(); if (curvSaved) { SIM.setOpt('sound', curvSaved.sound); SIM.setOpt('beep', curvSaved.beep); curvSaved = null; } }
+function curvFeed() {
+  const s = remoteSnap; if (!curvOn || !s || !s.c) return;
+  try {
+    SIM.apply({ hr: s.c.hr, spo2: s.c.spo2, sys: s.c.sys, dia: s.c.dia, rr: s.c.rr, temp: s.c.temp }, 0.9);
+    if (s.rhythm && SIM.state().rhythm !== s.rhythm) SIM.setRhythm(s.rhythm);
+    ['ecg', 'spo2', 'nibp'].forEach(k => { if (s.probe && !!SIM.state().probe[k] !== !!s.probe[k]) SIM.setProbe(k, !!s.probe[k]); });
+    if (s.art) ['motion', 'cpr'].forEach(k => { if (!!(SIM.state().art || {})[k] !== !!s.art[k]) SIM.setArt(k, !!s.art[k]); });
+    if (s.cfg) { const C = SIM.cfg(), d = {}; ['speed', 'gain', 'pgain', 'rgain'].forEach(k => { if (s.cfg[k] != null && C[k] !== s.cfg[k]) d[k] = s.cfg[k]; }); if (Object.keys(d).length) SIM.setCfg(d); }
+    const e = $('#curvst'); if (e) e.textContent = s.label || '';
+  } catch (x) {}
+}
 function pulseLink() {
   const m = /[?&]pulse=([^&]+)/.exec(location.hash); if (!m) return;
   const t = /[?&]pt=([^&]+)/.exec(location.hash), dec = x => { try { return decodeURIComponent(x).trim(); } catch (e) { return ''; } };
@@ -611,7 +644,7 @@ document.addEventListener('pointerdown', e => {
   }
   const b = t.closest && t.closest('.pb[data-act="d-"], .pb[data-act="d+"]');
   if (b) { const k = b.dataset.k, dir = b.dataset.act === 'd+' ? 1 : -1; hold = { n: 0, t: 0 }; const rep = () => { hold.n++; stepParam(k, dir); hold.t = setTimeout(rep, 110); }; hold.t = setTimeout(rep, 450); }
-  if (t.classList && t.classList.contains('sl')) slDrag = 1;
+  if (t.classList && (t.classList.contains('sl') || t.classList.contains('pxsl'))) slDrag = 1;
   if (t.closest && t.closest('#spkw')) chartPoint(e);
 }, { passive: true });
 document.addEventListener('pointermove', e => {
@@ -636,6 +669,11 @@ document.addEventListener('click', async e => {
     case 'tab': UI.tab = k; saveUI(); scenList = scenList && k === 'sc'; if (route() === 'monitorius') { $('#dtabs').innerHTML = tabsHtml(); $('#dbd').innerHTML = drawerBody(); $('#dbd').scrollTop = 0; qrHost(); afterTab(); } else { render(); const tb = $('.rhead'); if (tb && scrollY > tb.offsetTop) scrollTo(0, tb.offsetTop); } { const on = document.querySelector('.tab.on'); if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } return;
     case 'mmute': { const st = SIM.state(), mu = st.mute && Date.now() > 0 && Date.now() < st.mute; exec(mu ? { c: 'mute', off: 1 } : { c: 'mute' }); pushSnap(); toast(mu ? 'Aliarmų garsas grąžintas' : 'Aliarmai nutildyti 2 min'); const al = $('#alist'); if (al && !al.hidden) al.innerHTML = alistHtml(); if ($('#drawer.on')) rerenderPanel(); return; }
     case 'mon-nibp': exec({ c: 'nibp' }); pushSnap(); toast('AKS matuojamas'); return;
+    case 'mon-ch': monChPanel(k); return;
+    case 'mon-cfg': { const [ck, cv] = k.split(':'); exec({ c: 'cfg', v: { [ck]: +cv } }); pushSnap(); monChPanel(el.dataset.ch, true); return; }
+    case 'mon-chx': { const p = $('#mchp'); if (p) p.remove(); return; }
+    case 'pu-curves': curvesOpen(); return;
+    case 'pu-curvesx': curvesClose(); return;
     case 'alist': { const al = $('#alist'); al.innerHTML = alistHtml(); al.hidden = false; return; }
     case 'alist-x': $('#alist').hidden = true; return;
     case 'mute': send({ c: 'mute' }); toast('Aliarmai nutildyti 2 min'); break;

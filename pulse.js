@@ -37,15 +37,19 @@ const PULSE = (() => {
     return u + (tok ? (u.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(tok) : '');
   }
   const isLocal = () => cfg().eng !== 'pulse';
+  const isManual = () => cfg().eng === 'manual';
+  const curV = () => { try { const c = SIM.cur(); return { hr: c.hr, sys: Math.round(c.sys), dia: Math.round(c.dia), spo2: Math.round(c.spo2), rr: Math.round(c.rr), temp: Math.round(c.temp * 10) / 10 }; } catch (e) { return lastV || {}; } };
   function connect(then) {
     const c = cfg(), u = isLocal() ? 'local' : wsUrl(c);
     if (!u) { setSt('err', 'Pulse serveris nenustatytas (Nustatymai → Pulse serveris)'); return; }
     if (!isLocal() && !String(c.token || '').trim()) { wantRun = false; startFn = null; connect.q = null; setSt('err', 'Pulse serverio žetonas neįvestas – įveskite jį instruktoriaus arba monitoriaus telefone: Nustatymai → Pulse serveris'); return; }
+    // pakeitus variklį (telefonas ↔ Pulse serveris) – senas ryšys uždaromas, kitaip veiksmai keliautų ne į tą variklį
+    if (ws && ws._local !== isLocal()) { const o = ws; ws = null; o.onclose = null; try { o.close(); } catch (e) {} info = null; }
     if (ws && ws.readyState <= 1) { if (then && ws.readyState === 1) then(); else if (then) connect.q = then; return; }
     connect.q = then || connect.q || null;   // pakartotinis bandymas neturi pamesti laukiančios komandos
-    if (st !== 'conn') setSt('conn', isLocal() ? 'Paleidžiamas taisyklių modelis…' : 'Jungiamasi prie serverio… (jei jis miegojo – iki 1–2 min.)');
+    if (st !== 'conn') setSt('conn', isLocal() ? 'Paleidžiama…' : 'Jungiamasi prie serverio… (jei jis miegojo – iki 1–2 min.)');
     let opened = false;
-    try { ws = isLocal() ? PLOCAL.socket() : new WebSocket(u); } catch (e) { setSt('err', 'Netinkamas serverio adresas'); return; }
+    try { ws = isLocal() ? PLOCAL.socket() : new WebSocket(u); ws._local = isLocal(); } catch (e) { setSt('err', 'Netinkamas serverio adresas'); return; }
     ws.onopen = () => { retry = 0; opened = true; tx({ t: 'hello' }); const q = connect.q; connect.q = null; if (q) q(); else if (wantRun) { const sid = cfg().sid; if (sid) tx({ t: 'resume', sid }); else if (startFn) startFn(); } };
     ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (x) { return; } onMsg(m); };
     ws.onclose = ev => {
@@ -72,7 +76,8 @@ const PULSE = (() => {
       case 'gone': saveCfg({ sid: '' }); wantRun = false; startFn = null; Q = []; if (SC && SC.on) { SC.end = simt; SC.lost = 1; } keep(); L('Pulse: sesija serveryje nebeegzistuoja'); setSt('off', 'Ankstesnė sesija serveryje nebeegzistuoja (serveris buvo paleistas iš naujo) – monitorius rodo paskutines Pulse reikšmes. Pradėkite iš naujo.'); break;
       case 'vit': {
         simt = +m.simt || simt; if (m.speed) speed = m.speed; skipLeft = m.skip || 0; alive = m.alive !== false; lastV = m.v || lastV;
-        applyVitals(m.v || {}, alive);
+        if (isManual()) { if (SC && !SC.manApplied) { applyVitals(m.v || {}, true); SC.manApplied = 1; } m = Object.assign({}, m, { v: Object.assign({}, m.v, curV()) }); alive = true; }
+        else applyVitals(m.v || {}, alive);
         if (SC) { if (!SC.vh) SC.vh = []; const lh = SC.vh[SC.vh.length - 1], vv = m.v || {}; if (vv.hr != null && (!lh || simt - lh[0] >= 30)) { SC.vh.push([Math.round(simt), vv.hr, vv.sys, vv.spo2, vv.rr, vv.temp]); if (SC.vh.length > 600) SC.vh.shift(); } }
         if (SC && SC.prep) { if (!m.skip) prepTick(); onChange(); break; }
         if (SC) {
@@ -231,6 +236,7 @@ const PULSE = (() => {
       case 'ecgoff': exec({ c: 'probe', k: 'ecg', on: false }); recE('Atlipo EKG elektrodas', by); break;
       case 'spo2off': exec({ c: 'probe', k: 'spo2', on: false }); recE('Nukrito SpO₂ daviklis', by); break;
       case 'nibpoff': exec({ c: 'probe', k: 'nibp', on: false }); recE('Nuimta AKS manžetė', by); break;
+      case 'probeson': ['ecg', 'spo2', 'nibp'].forEach(k => exec({ c: 'probe', k, on: true })); rec('Davikliai prijungti (EKG, SpO₂, AKS)', by, { code: 'probes', kind: 'tx' }); break;
       case 'painup': { const j = firstBy(x => x.k === 'pain'); if (j) sevStep(j, 1, by); else run({ op: 'inj', j: { k: 'pain', sev: 0.8 }, by }); break; }
       case 'vib': { const on = p.on != null ? !!p.on : (!SIM.state().art || !SIM.state().art.motion); exec({ c: 'art', k: 'motion', on }); recE(on ? 'Vibracija – judesio artefaktai' : 'Vibracija baigėsi', by); break; }
       case 'noise': { const mn = +p.min || 10; exec({ c: 'mute', m: mn }); recE('Triukšmas – aliarmai negirdimi ' + mn + ' min', by); break; }
@@ -246,7 +252,7 @@ const PULSE = (() => {
   let skipQ = 0;
   function skipStep() { if (skipQ <= 0) return; const d = Math.min(30, skipQ); skipQ -= d; skipLeft = skipQ; tx({ t: 'skip', s: d }); }
   // ── scenarijus: priešistorė (prep), planuoti įvykiai, fazės ──
-  const engN = () => isLocal() ? 'Modelis' : 'Pulse';
+  const engN = () => isManual() ? 'Rankinis' : isLocal() ? 'Modelis' : 'Pulse';
   const SCN = () => SC && SC.scen && typeof PSCEN !== 'undefined' ? PSCEN.get(SC.scen.id) : null;
   function closePh() { const P = SC.phs && SC.phs[SC.phs.length - 1]; if (P && P.t1 == null) P.t1 = Math.round(simt); }
   function runOps(ops, dflBy) {
@@ -367,7 +373,7 @@ const PULSE = (() => {
     if (o.url && String(o.token || '').trim()) saveCfg({ url: o.url, token: o.token });   // instruktorius be žetono – naudojami monitoriaus nustatymai
     switch (o.op) {
       case 'start': {
-        if (o.eng) saveCfg({ eng: o.eng === 'pulse' ? 'pulse' : 'local' });
+        if (o.eng) saveCfg({ eng: ['pulse', 'local', 'manual'].indexOf(o.eng) >= 0 ? o.eng : 'local' });
         const S = o.sc || {}, set = o.scen ? 'medevac' : PCAT.SETTINGS[S.set] ? S.set : 'role1';
         wantRun = true; hist = []; alog = []; Q = []; startFn = null; connect.q = null; simt = 0; skipQ = 0; Object.keys(pend).forEach(k => delete pend[k]); saveCfg({ sid: '', deadSid: '' });
         SC = { set, pat: S.pat || {}, mech: S.mech || '', mechN: S.mechN || '', inj: [], inf: [], o2: null, kit: { max: PCAT.SETTINGS[set].blood, used: 0 }, log: [], arrest: '', min: { sys: 999, spo2: 100 }, ff: +o.ff || 0, nonce: o.nonce || '' };
@@ -381,7 +387,7 @@ const PULSE = (() => {
         // švari pradžia: sinusinis ritmas, visi davikliai prijungti, be artefaktų (ankstesnio scenarijaus likučiai)
         try { SIM.setRhythm('sinus'); ['ecg', 'spo2', 'nibp'].forEach(k => SIM.setProbe(k, true)); SIM.setArt('motion', false); SIM.setArt('cpr', false); SIM.unmute(); } catch (e) {}
         L(engN() + ': ' + (SC.scen ? 'scenarijus ' + SC.mechN : PCAT.SETTINGS[set].n + ' · ' + (SC.mechN || 'scenarijus')) + (SC.inj.length ? ' – ' + SC.inj.map(iname).join('; ') : ''));
-        const go = startFn = () => { tx({ t: 'start', state: (SC.pat && SC.pat.state) || '', acts, speed: 1, ff: SC.ff, kg: (SC.pat && SC.pat.kg) || 80, temp0: (SCN() || {}).temp0 || 36.6 }); setSt('load', SC.prep ? 'Ruošiama priešistorė…' : SC.ff ? 'Prasukama iki ' + mmss(SC.ff) + ' nuo sužeidimo…' : 'Ruošiamas modelis…'); };
+        const go = startFn = () => { tx({ t: 'start', state: (SC.pat && SC.pat.state) || '', acts, speed: 1, ff: SC.ff, kg: (SC.pat && SC.pat.kg) || 80, sex: (SC.pat && SC.pat.sex) || 'M', age: (SC.pat && SC.pat.age) || 25, frozen: isManual(), temp0: (SCN() || {}).temp0 || 36.6 }); setSt('load', SC.prep ? 'Ruošiama priešistorė…' : SC.ff ? 'Prasukama iki ' + mmss(SC.ff) + ' nuo sužeidimo…' : 'Ruošiamas modelis…'); };
         if (ws && ws.readyState === 1) go(); else connect(go);
         break;
       }
@@ -408,9 +414,10 @@ const PULSE = (() => {
   // būsena instruktoriui (siunčiama momentinėje nuotraukoje)
   function status() {
     const now = Date.now();
-    return { st, msg, eng: info ? info.engine : (isLocal() ? PLOCAL.ENGINE : ''), ver: info ? info.version : '', pulse: !!(info && info.pulse), local: isLocal(), engSet: cfg().eng, simt: Math.round(simt), speed, skip: skipLeft, ff: ffInfo,
+    const vv = isManual() && SC && SC.on ? Object.assign({}, lastV || {}, curV()) : lastV;
+    return { st, msg, manual: isManual(), eng: isManual() ? 'Rankinis' : info ? info.engine : (isLocal() ? PLOCAL.ENGINE : ''), ver: info ? info.version : '', pulse: !!(info && info.pulse), local: isLocal(), engSet: cfg().eng, simt: Math.round(simt), speed, skip: skipLeft, ff: ffInfo,
       sup: info ? Object.keys(info.supported || {}).filter(k => info.supported[k] === true) : null, comp: info ? info.compounds : null, sub: info ? info.substances : null, hemc: info ? info.hem_cmp || null : null,
-      v: lastV ? { hr: lastV.hr && Math.round(lastV.hr), sys: lastV.sys && Math.round(lastV.sys), dia: lastV.dia && Math.round(lastV.dia), spo2: lastV.spo2 && Math.round(lastV.spo2), rr: lastV.rr && Math.round(lastV.rr), temp: lastV.temp && r1(lastV.temp), bv: lastV.bv && Math.round(lastV.bv), lost: lastV.lost, htx: lastV.htx, co: lastV.co && r1(lastV.co), map: lastV.map && Math.round(lastV.map) } : null,
+      v: vv ? { hr: vv.hr != null && Math.round(vv.hr), sys: vv.sys && Math.round(vv.sys), dia: vv.dia && Math.round(vv.dia), spo2: vv.spo2 && Math.round(vv.spo2), rr: vv.rr && Math.round(vv.rr), temp: vv.temp && r1(vv.temp), bv: vv.bv && Math.round(vv.bv), lost: vv.lost, htx: vv.htx, co: vv.co && r1(vv.co), map: vv.map && Math.round(vv.map) } : null,
       sc: SC, q: Q.map(x => ({ uid: x.uid, n: x.n, by: x.by, left: Math.max(0, Math.ceil((x.at - now) / 1000)) })), cm: typeof PULSE_CM !== 'undefined' ? PULSE_CM.list() : [], h: hist.slice(0, 5), sid: cfg().sid ? 1 : 0, tok: isLocal() || !!String(cfg().token || '').trim(), ptok: !!String(cfg().token || '').trim() };
   }
   const running = () => wantRun && (st === 'run' || st === 'pause' || st === 'load' || st === 'conn');

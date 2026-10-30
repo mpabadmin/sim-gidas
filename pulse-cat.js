@@ -121,54 +121,20 @@ const PCAT = (() => {
   const BAD = ['bleeding', 'rebleed', 'tq_loose', 'active', 'retension'];
   // ── gydymas (MARCH-PAWS) – bendri veiksmai (vietiniai – ant sužalojimo kortelės) ──
   // [kodas, pavadinimas, lapas (o2|fluid|drug:<id>|null), trukmė, tipas (log|o2off|probe:…), aplinkos ('' – abi)]
+  // tik būklę keičiantys bendri veiksmai (vietiniai – sužalojimų kortelėse; vaistai, kraujas ir skysčiai – skiltyje „Vaistai“)
   const TX = [
-    ['M', 'Masyvus kraujavimas', [
-      ['sweep', 'Kraujo paieška (rankomis per galūnes, kirkšnis, pažastis)', null, '1 min', 'log', ''],
-      ['tqchk', 'Turniketų / tamponavimo patikra', null, '1 min', 'log', ''],
-      ['txa', 'TXA 2 g IV/IO', 'drug:txa', '~20 min (≤ 1 ml/min)', '', ''],
-      ['pelvic', 'Dubens diržas', null, '2 min', 'log', '']
-    ]],
     ['A', 'Kvėpavimo takai', [
-      ['recov', 'Šoninė (atsigavimo) padėtis', null, '30 s', 'log', ''],
       ['ett_g', 'Intubacija (RSI)', null, '5–10 min', 'rsi', 'role1']
     ]],
     ['R', 'Kvėpavimas', [
       ['o2', 'Deguonis', 'o2', '1 min', '', ''],
       ['o2off', 'Deguonis nuimtas', null, '', 'o2off', ''],
-      ['bilat', 'Abipusė dekompresija (trauminis sustojimas)', null, '2 min', 'log', ''],
       ['bvm', 'Ventiliacija maišu (BVM)', null, 'nuolat', 'log', ''],
-      ['vent', 'Dirbtinė plaučių ventiliacija (ventiliatorius)', null, '', 'log', 'role1']
+      ['vent', 'Dirbtinė plaučių ventiliacija', null, '', 'log', 'role1']
     ]],
-    ['C', 'Kraujotaka', [
-      ['iv', 'IV kateteris', null, '1–2 min', 'log', ''], ['io', 'IO adata', null, '1 min', 'log', ''],
-      ['fluid', 'Kraujas / skysčiai', 'fluid', '', '', ''],
-      ['ca', 'Kalcio gliukonatas 10 % 30 ml', 'drug:ca', '10 min', '', ''],
-      ['efast', 'e-FAST', null, '3–5 min', 'log', 'role1']
-    ]],
-    ['H', 'Hipotermija / galva', [
+    ['H', 'Šiluma', [
       ['hpmk', 'Hipotermijos prevencija (HPMK)', null, '2–3 min', 'log', ''],
-      ['warm', 'Aktyvus šildymas, šilti skysčiai', null, '5 min', 'log', 'role1'],
-      ['head30', 'Galva pakelta 30°', null, '', 'log', ''],
-      ['hts', 'Hipertoninis NaCl 250 ml', 'drug:hts', '10–15 min', '', '']
-    ]],
-    ['P', 'Skausmas ir vaistai', [
-      ['drug', 'Vaistai…', 'drug', '', '', ''],
-      ['cwmp', 'Kovinės žaizdos vaistų paketas (CWMP)', null, '', 'log', 'medevac']
-    ]],
-    ['A2', 'Antibiotikai', [
-      ['abx', 'Antibiotikas…', 'drug:abx', '', '', '']
-    ]],
-    ['W', 'Žaizdos, įtvarai, kita', [
-      ['wound', 'Žaizdų tvarstymas / patikra', null, '', 'log', ''], ['splint', 'Įtvaras', null, '5 min', 'log', ''], ['eye', 'Akies apsauga (skydelis)', null, '', 'log', ''],
-      ['cath', 'Šlapimo kateteris', null, '5 min', 'log', 'role1'], ['la', 'Vietinė nejautra (prieš torakostomiją / drenas)', null, '2 min', 'log', 'role1'], ['card', 'Nukentėjusiojo kortelė (DD 1380) užpildyta', null, '', 'log', '']
-    ]],
-    ['K', 'Gaivinimas', [
-      ['cpr', 'KPR – krūtinės paspaudimai', null, 'nuolat', 'log', ''], ['defib', 'Defibriliacija', null, '', 'log', '']
-    ]],
-    ['Mon', 'Stebėjimas', [
-      ['avpu', 'AVPU įvertintas ir įrašytas į kortelę', null, '', 'log', ''],
-      ['probes', 'Visi davikliai prijungti (EKG, SpO₂, AKS)', null, '', 'probe:all:1', ''],
-      ['ecgon', 'EKG elektrodai uždėti', null, '', 'probe:ecg:1', ''], ['spo2on', 'SpO₂ daviklis uždėtas', null, '', 'probe:spo2:1', ''], ['nibpon', 'AKS manžetė uždėta', null, '', 'probe:nibp:1', '']
+      ['warm', 'Aktyvus šildymas, šilti skysčiai', null, '5 min', 'log', 'role1']
     ]]
   ];
   const txFor = set => TX.map(([L, n, items]) => [L, n, items.filter(x => !x[5] || x[5] === set)]).filter(g => g[2].length);
@@ -235,6 +201,7 @@ const PCAT = (() => {
     ['ivout', 'Ištraukta IV / IO', 'įranga', ''],
     ['ecgoff', 'Atlipo EKG elektrodas', 'įranga', ''],
     ['spo2off', 'Nukrito SpO₂ daviklis', 'įranga', ''],
+    ['probeson', 'Davikliai prijungti', 'įranga', ''],
     ['nibpoff', 'Nuimta AKS manžetė', 'įranga', ''],
     ['painup', 'Skausmas stiprėja', 'būklė', ''],
     ['newinj', 'Naujas sužalojimas…', 'būklė', ''],
