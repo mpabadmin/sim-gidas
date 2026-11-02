@@ -346,6 +346,37 @@ body:has(#tabc .pxvit) .rhead .tmr{display:none}
 .muted.pxc{background:none;padding:4px 2px;color:var(--tx2);cursor:default;font-size:14px}
 .pxlvl{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:6px 0 10px;padding:10px 12px;border-radius:12px;background:#0b2a4a;border:1px solid #2b5c8f;color:#dfeaf7;font-size:14px}
 .pxlvl .pxic{color:var(--acc)}
+
+/* ── instrukcija „Kaip naudotis“ ── */
+body.gdon{overflow:hidden}
+.gd{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;padding:0}
+.gdc{width:100%;max-width:480px;background:var(--card);color:var(--tx);border-radius:22px 22px 0 0;padding:14px 20px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -6px 30px rgba(0,0,0,.25);max-height:92vh;overflow:auto}
+@media (min-width:600px){.gd{align-items:center}.gdc{border-radius:22px}}
+.gdh{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px}
+.gdd{display:flex;gap:6px}
+.gdd button{width:9px;height:9px;padding:0;border-radius:50%;border:0;background:var(--line);cursor:pointer}
+.gdd button.on{width:24px;border-radius:5px;background:var(--acc)}
+.gdx{background:none;border:0;color:var(--tx2);font:inherit;font-size:15px;padding:10px 4px;cursor:pointer}
+.gdb{padding:8px 0 4px}
+.gdic{width:60px;height:60px;border-radius:16px;background:var(--accbg);display:grid;place-items:center;margin:4px 0 14px}
+.gdi{width:32px;height:32px;fill:none;stroke:var(--acc);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.gdii{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px;margin:0 2px}
+.gdb h2{font-size:22px;line-height:1.2;margin:0 0 8px;color:var(--tx);text-transform:none;letter-spacing:0;font-weight:700}
+.gdb p{font-size:16px;line-height:1.5;margin:0;color:var(--tx)}
+.gdb p b{font-weight:700}
+.gdb ul{margin:10px 0 0;padding-left:20px;font-size:15.5px;line-height:1.45}
+.gdb li{margin:4px 0}
+.gdf{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:18px}
+.gdbk{background:none;border:1px solid var(--line);color:var(--tx);font:inherit;font-weight:600;font-size:16px;padding:12px 18px;border-radius:12px;cursor:pointer}
+.gdgo{background:var(--acc);color:var(--bg);border:0;font:inherit;font-weight:700;font-size:17px;padding:13px 26px;border-radius:12px;cursor:pointer;min-width:130px}
+.gdc button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.gdopt{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+.gdopt button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:12px 14px;border-radius:12px;border:2px solid var(--line);background:none;color:var(--tx);font:inherit;cursor:pointer}
+.gdopt button b{font-size:20px}
+.gdopt button small{font-size:13px;color:var(--tx2)}
+.gdopt button.on{border-color:var(--acc);background:var(--accbg)}
+.ghelp{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid var(--line);color:var(--tx);font:inherit;font-size:14px;font-weight:600;padding:7px 12px;border-radius:999px;cursor:pointer}
+.ghelp svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 </style>
 </head>
 <body>
@@ -363,5 +394,6 @@ body:has(#tabc .pxvit) .rhead .tmr{display:none}
 <script src="pulse.js"></script>
 <script src="pulse-ui.js"></script>
 <script src="app.js"></script>
+<script src="guide.js"></script>
 </body>
 </html>

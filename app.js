@@ -1,6 +1,6 @@
 'use strict';
 // ───────── SIM – programėlės eiga: pradžia, monitorius, instruktoriaus pultas, scenarijai, žurnalas, nustatymai ─────────
-const VER = 'v11.0 · 2026-10-30';
+const VER = 'v11.1 · 2026-11-02';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
 const LSg = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
@@ -440,13 +440,8 @@ function home() {
   return `<div class="hero"><img src="img/logo-balt.png" alt="1040 medkuopa" class="lg"><h1>SIM</h1><p class="muted">Paciento monitoriaus simuliatorius treniruotėms</p></div>` +
     `<div class="tiles"><a class="tile" href="#/monitorius">${ICO.mon}<b>Monitorius</b><small>Šis telefonas – paciento monitorius</small></a>` +
     `<a class="tile" href="#/instruktorius">${ICO.ctrl}<b>Instruktorius</b><small>Valdyti kitą telefoną</small></a>` +
-    `<a class="tile wide" href="#/nustatymai">${ICO.cog}<b>Nustatymai</b><small>Aliarmų ribos, garsas, ekranas</small></a></div>` +
-    `<details class="hlp"><summary>Kaip naudoti</summary><ol>` +
-    `<li><b>Vienas telefonas:</b> Monitorius → <span class="ki">${ICO.gear}</span> (kairėje viršuje) arba ilgai palaikykite ekraną – atsidaro pultas.</li>` +
-    `<li><b>Du telefonai</b> (abiem reikia interneto, bendro Wi-Fi nereikia): monitoriaus pultas → <b>Ryšys</b> → <b>Prijungti instruktorių</b>. Instruktoriaus telefono kamera nuskaitykite QR kodą arba SIM → <b>Instruktorius</b> ir įveskite kodą.</li>` +
-    `<li>Pasirinkite scenarijų ir etapą arba keiskite rodiklius (<b>+/−</b> galima laikyti). <b>Pokytis per</b> – per kiek laiko monitorius pasieks naujas reikšmes. Greitos komandos: Blogėja, Gerėja, Šokas, Hipoksija, Stabilizuoti.</li>` +
-    `<li><b>Veiksmai</b> – pažymėkite atliktus veiksmus (turniketas, dekompresija…), jie su laiku patenka į <b>Žurnalą</b>; ten – tendencijų grafikas ir ataskaita aptarimui.</li>` +
-    `<li>Monitoriuje: palietus AKS langelį – matuojamas AKS, palietus aliarmo juostą – visų aliarmų sąrašas. Garsas įsijungia palietus ekraną.</li></ol></details>` +
+    `<a class="tile wide" href="#/nustatymai">${ICO.cog}<b>Nustatymai</b><small>Aliarmų ribos, garsas, ekranas</small></a>` +
+    `<a class="tile wide" href="#/" data-g="open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z"/><path d="M9.5 9.3a2.6 2.6 0 0 1 5 .9c0 1.7-2.5 2.3-2.5 3.8"/><path d="M12 17h.01"/></svg><b>Kaip naudotis</b><small>Trumpa instrukcija: monitorius, pultas, simuliacija</small></a></div>` +
     `<details class="hlp"><summary>Apie</summary><p>Versija ${VER}. Parengė 1040 medkuopa Mebius. Mokymo priemonė – ne medicinos prietaisas; rodikliai ir kreivės sugeneruoti (Pulse režime – skaičiuojami Kitware Pulse fiziologijos modeliu).</p>` +
     `<p class="muted">Rodomi: EKG (II), ŠSD, SpO₂ su pletizmograma, neinvazinis AKS (sist./diast., vidutinis), kvėpavimo dažnis ir kreivė, temperatūra. Aliarmų ribos – tipinės suaugusiųjų monitoriaus numatytosios (keičiamos nustatymuose); garsiniai signalai primena IEC 60601-1-8 prioritetus. Scenarijai – SIM, ETC gido ir March gido treniruočių scenarijai.</p>` +
     `<p class="muted">Kiti gidai: <a href="https://etc.1040medkuopa.lt" target="_blank" rel="noopener">ETC gidas</a> · <a href="https://march.1040medkuopa.lt" target="_blank" rel="noopener">March gidas</a></p></details>`;
@@ -454,7 +449,8 @@ function home() {
 function settingsPage() {
   const remote = tgt() === 'remote';
   return `<div class="bar"><a class="ib" href="#/" aria-label="Atgal">${ICO.back}</a><h1>Nustatymai</h1>${remote ? cstHtml() : ''}</div>` +
-    `<p class="muted mt0">${remote ? 'Keičiami <b>prijungto monitoriaus</b> nustatymai.' : 'Šio telefono monitoriaus nustatymai. Prijungus instruktorių, juos galima keisti ir nuotoliniu būdu.'}</p>` + setTab();
+    `<p class="muted mt0">${remote ? 'Keičiami <b>prijungto monitoriaus</b> nustatymai.' : 'Šio telefono monitoriaus nustatymai. Prijungus instruktorių, juos galima keisti ir nuotoliniu būdu.'}</p>` +
+    '<p><button class="btn" data-g="open">Kaip naudotis – trumpa instrukcija</button></p>' + setTab();
 }
 function pairHost() {
   // monitoriaus pusė – rodomas pultas
