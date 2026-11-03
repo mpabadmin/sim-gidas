@@ -40,7 +40,12 @@ run_job() {
     st=$(az rest --method get --url "$ARM$ACCTID/jobs/$jid?api-version=$AAPI" --query properties.status -o tsv 2>/dev/null)
     case "$st" in Completed|Failed|Stopped|Suspended) break;; esac; sleep 5
   done
-  az rest --method get --url "$ARM$ACCTID/jobs/$jid/output?api-version=$AAPI" 2>/dev/null | sed 's/^/   /'
+  az rest --method get --url "$ARM$ACCTID/jobs/$jid/output?api-version=$AAPI" 2>/dev/null | python3 -c '
+import sys
+s = sys.stdin.read()
+try: s = s.encode("latin-1").decode("utf-8")   # az rest rodo UTF-8 kaip Latin-1 – atstatoma
+except Exception: pass
+print("\n".join("   " + x for x in s.strip().splitlines() if x.strip()))'
   if [ "$st" != "Completed" ]; then
     bad "Sargo būsena: $st"
     az rest --method get --url "$ARM$ACCTID/jobs/$jid?api-version=$AAPI" --query properties.exception -o tsv 2>/dev/null | sed 's/^/   /'
