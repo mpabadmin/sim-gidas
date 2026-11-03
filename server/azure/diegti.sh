@@ -2,6 +2,7 @@
 # SIM Pulse serverio diegimas į Azure Container Apps. Paleisti Azure Cloud Shell (Bash) – nieko diegti kompiuteryje nereikia:
 #   git clone https://github.com/mpabadmin/sim-gidas && bash sim-gidas/server/azure/diegti.sh
 # Pakartotinis paleidimas atnaujina serverį (nauja versija) ir išsaugo tą patį adresą bei žetoną.
+# Išlaidų riba (100 USD/mėn.) ir laiškai: bash sim-gidas/server/azure/apsauga.sh jusu@pastas.lt
 # Nustatymai (nebūtina): LOC=swedencentral CPU=1 MEM=2Gi MIN=0 SESS=3 DOCKERFILE=Dockerfile bash diegti.sh
 # 5 telefonams vienu metu: CPU=2 MEM=4Gi SESS=5 bash diegti.sh
 set -euo pipefail
@@ -26,7 +27,7 @@ REGIONS="$LOC swedencentral northeurope germanywestcentral polandcentral francec
 APP=${APP:-sim-pulse}
 ENVN=${ENVN:-sim-pulse-env}
 ACR=${ACR:-simpulse$(openssl rand -hex 3)}
-TOKEN=${TOKEN:-$(openssl rand -hex 16)}
+TOKEN=${TOKEN:-$(tr -d ' \n\r' < azure/viesas-zetonas.txt 2>/dev/null || openssl rand -hex 16)}   # numatytasis – viešas žetonas, įrašytas SIM programėlėje
 CPU=${CPU:-1}
 MEM=${MEM:-2Gi}
 MIN=${MIN:-0}

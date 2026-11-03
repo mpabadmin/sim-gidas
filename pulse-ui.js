@@ -829,7 +829,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
   function settingsHtml() {
     const c = PULSE.cfg();
     return `<label class="rl">Serverio adresas<input class="inp" id="pu-url" placeholder="${E(PULSE.DEF_URL)}" value="${E(c.url)}" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url"></label>` +
-      `<label class="rl">Žetonas (token)<input class="inp" id="pu-tok" value="${E(c.token)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>` +
+      `<label class="rl">Žetonas (token)<input class="inp" id="pu-tok" value="${E(c.token)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>` + (c.token === PULSE.DEF_TOKEN ? '<p class="muted">Numatytasis žetonas jau įrašytas – keisti nereikia.</p>' : '') +
       `<div class="acts"><button class="btn" data-act="pu-save">Išsaugoti</button><button class="btn" data-act="pu-test">Tikrinti ryšį</button></div><p class="muted" id="pu-res"></p>` +
       '<p class="muted">Adresas įrašytas iš anksto (Azure serveris). Žetoną užtenka įvesti vieną kartą kiekviename telefone arba atidaryti nuorodą iš diegimo skripto.</p>';
   }

@@ -7,8 +7,9 @@
 const PULSE = (() => {
   const KEY = 'sim-pulse';
   const DEF_URL = 'wss://sim-pulse.greenriver-b16085e7.swedencentral.azurecontainerapps.io/ws';   // numatytasis serveris (Azure); keičiamas nustatymuose
+  const DEF_TOKEN = '2891bf3a9f2bb5e765baad01e86a35a1';   // numatytasis serverio žetonas (viešas; išlaidas riboja serverio sargas – server/azure/apsauga.sh)
   const UNDO_S = 5;                                                                               // kiek sekundžių galima atšaukti veiksmą
-  const cfg = () => { const c = Object.assign({ url: '', token: '', sid: '', state: '', eng: 'local' }, (() => { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } })()); if (!c.url) c.url = DEF_URL; return c; };
+  const cfg = () => { const c = Object.assign({ url: '', token: '', sid: '', state: '', eng: 'local' }, (() => { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } })()); if (!c.url) c.url = DEF_URL; if (!String(c.token || '').trim()) c.token = DEF_TOKEN; return c; };
   const saveCfg = o => { try { localStorage.setItem(KEY, JSON.stringify(Object.assign(cfg(), o))); } catch (e) {} };
   const r1 = x => Math.round(x * 10) / 10;
   const mmss = s => { s = Math.max(0, Math.round(+s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
@@ -113,7 +114,7 @@ const PULSE = (() => {
       case 'dead': { alive = false; const c = cfg(); if (c.deadSid && c.deadSid === c.sid) { setSt('dead', 'Modeliuojamas pacientas mirė – pradėkite iš naujo'); break; } saveCfg({ deadSid: c.sid }); }
         L('Pulse: negrįžtama būklė (mirtis) – ' + mmss(m.simt)); setSt('dead', 'Modeliuojamas pacientas mirė – pradėkite iš naujo'); break;
       case 'stopped': if (st !== 'err') setSt('off'); break;
-      case 'err': if (m.code === 'auth') { wantRun = false; startFn = null; } setSt(wantRun ? st : 'err', m.msg || 'Serverio klaida'); if (/užimtas|Variklio/.test(m.msg || '')) { wantRun = false; startFn = null; setSt('err', m.msg); } break;
+      case 'err': if (m.code === 'auth' && cfg().token !== DEF_TOKEN) { saveCfg({ token: '' }); m.msg = 'Senas žetonas netinka – įrašytas numatytasis, bandykite dar kartą'; } if (m.code === 'auth') { wantRun = false; startFn = null; } setSt(wantRun ? st : 'err', m.msg || 'Serverio klaida'); if (/užimtas|Variklio/.test(m.msg || '')) { wantRun = false; startFn = null; setSt('err', m.msg); } break;
     }
   }
   // Pulse rodikliai → monitorius (1,2 s sklandus perėjimas)
@@ -394,7 +395,7 @@ const PULSE = (() => {
       case 'started': P.sid = m.sid; P.psimt = +m.simt || 0; P.st = 'catch'; ppStep(); break;
       case 'vit': P.psimt = +m.simt || P.psimt; P.lastV = m.v; if (!m.skip && P.st === 'catch' && P.psimt >= P.target - 0.6) ppStep(); else onChange(); break;
       case 'dead': ppSwap(); onMsg(m); break;
-      case 'err': ppFail(m.code === 'auth' || /žeton/i.test(m.msg || '') ? 'neteisingas serverio žetonas – Nustatymai → Pulse serveris' : m.msg || 'serverio klaida'); break;
+      case 'err': if ((m.code === 'auth' || /žeton/i.test(m.msg || '')) && cfg().token !== DEF_TOKEN) saveCfg({ token: '' }); ppFail(m.code === 'auth' || /žeton/i.test(m.msg || '') ? 'neteisingas serverio žetonas – Nustatymai → Pulse serveris' : m.msg || 'serverio klaida'); break;
       case 'gone': ppFail('sesija prarasta'); break;
     }
   }
@@ -456,7 +457,7 @@ const PULSE = (() => {
   // ── komandos (vykdomos monitoriuje) ──
   function cmd(o) {
     const c = cfg();
-    if (o.url && String(o.token || '').trim()) saveCfg({ url: o.url, token: o.token });   // instruktorius be žetono – naudojami monitoriaus nustatymai
+    if (o.url && String(o.token || '').trim() && o.token !== DEF_TOKEN) saveCfg({ url: o.url, token: o.token });   // instruktorius be savo žetono (tik numatytasis) – naudojami monitoriaus nustatymai
     switch (o.op) {
       case 'start': {
         if (o.eng) saveCfg({ eng: ['pulse', 'local', 'manual'].indexOf(o.eng) >= 0 ? o.eng : 'local' });
@@ -578,5 +579,5 @@ const PULSE = (() => {
     s.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (x) { return; } if (done) return; if (m.t === 'info') { done = true; clearTimeout(to); info = m; s.close(); cb('✓ Pasiekiamas: ' + m.engine + ' ' + m.version + (m.pulse ? '' : ' (testinis variklis)') + ' · sesijos ' + m.sessions + '/' + m.max); } else if (m.t === 'err') { done = true; clearTimeout(to); cb('✕ ' + m.msg); } };
     s.onclose = ev => { if (!done) { done = true; clearTimeout(to); cb(ev.code === 4001 ? '✕ Neteisingas žetonas' : '✕ Nepavyko prisijungti'); } };
   }
-  return { cmd, status, running, boot, test, wake, wakeState, wakeStop, saveCfg, cfg, mmss, set onChange(f) { onChange = f; }, DEF_URL, UNDO_S, _wsUrl: wsUrl };
+  return { cmd, status, running, boot, test, wake, wakeState, wakeStop, saveCfg, cfg, mmss, set onChange(f) { onChange = f; }, DEF_URL, DEF_TOKEN, UNDO_S, _wsUrl: wsUrl };
 })();
