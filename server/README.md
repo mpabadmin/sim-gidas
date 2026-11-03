@@ -58,6 +58,8 @@ Be Pulse (sąsajos patikrai, supaprastintas testinis modelis):
 |---|---|
 | `PORT` | prievadas (8080) |
 | `SIM_TOKEN` | žetonas; be jo prisijungti negalima |
+| `SIM_ADMIN_TOKEN` | savitikros (`/selftest`) žetonas; nenurodytas – tinka `SIM_TOKEN` |
+| `ALLOWED_ORIGINS` | leidžiamos svetainės (WebSocket `Origin`), pvz. `https://sim.1040medkuopa.lt`; tuščia – netikrinama |
 | `MAX_SESSIONS` | kiek monitorių vienu metu (3) |
 | `KEEP_DETACHED_S` | kiek sekundžių laikyti sesiją atsijungus monitoriui (900) |
 | `FORCE_MOCK` | `1` – testinis variklis vietoj Pulse |

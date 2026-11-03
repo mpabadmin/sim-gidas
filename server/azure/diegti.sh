@@ -8,6 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."            # server/
 CFG="$HOME/.sim-pulse.env"
+TOKEN_CLI=${TOKEN:-}               # žetonas nurodytas komandinėje eilutėje (kitaip – numatytasis iš azure/zetonas.py)
 LOC_ARG=${LOC:-}
 [ -f "$CFG" ] && . "$CFG"
 # Cloud Shell be saugyklos nieko neišsaugo – atkuriame nustatymus iš jau sukurtų Azure išteklių
@@ -27,7 +28,10 @@ REGIONS="$LOC swedencentral northeurope germanywestcentral polandcentral francec
 APP=${APP:-sim-pulse}
 ENVN=${ENVN:-sim-pulse-env}
 ACR=${ACR:-simpulse$(openssl rand -hex 3)}
-TOKEN=${TOKEN:-$(tr -d ' \n\r' < azure/viesas-zetonas.txt 2>/dev/null || openssl rand -hex 16)}   # numatytasis – viešas žetonas, įrašytas SIM programėlėje
+TOKEN=${TOKEN_CLI:-$(python3 azure/zetonas.py)}   # numatytasis žetonas (įrašytas SIM programėlėje užmaskuotas)
+ADMIN=${ADMIN:-$(az containerapp secret show -n "$APP" -g "$RG" --secret-name simadmin --query value -o tsv 2>/dev/null || true)}
+[ -z "$ADMIN" ] && ADMIN=$(openssl rand -hex 16)   # savitikros (/selftest) žetonas – tik Azure, programėlėje jo nėra
+ORIGINS=${ORIGINS:-https://sim.1040medkuopa.lt}   # jungtis leidžiama tik iš šios svetainės
 CPU=${CPU:-1}
 MEM=${MEM:-2Gi}
 MIN=${MIN:-0}
@@ -74,14 +78,15 @@ if ! az containerapp env show -n "$ENVN" -g "$RG" -o none 2>/dev/null; then
   try_regions "Container Apps aplinka" az containerapp env create -n "$ENVN" -g "$RG"
 fi
 if az containerapp show -n "$APP" -g "$RG" -o none 2>/dev/null; then
-  az containerapp secret set -n "$APP" -g "$RG" --secrets "simtoken=$TOKEN" -o none
+  az containerapp secret set -n "$APP" -g "$RG" --secrets "simtoken=$TOKEN" "simadmin=$ADMIN" -o none
   az containerapp update -n "$APP" -g "$RG" --image "$IMG" --cpu "$CPU" --memory "$MEM" --min-replicas "$MIN" --max-replicas 1 \
-     --set-env-vars "SIM_TOKEN=secretref:simtoken" "MAX_SESSIONS=$SESS" -o none
+     --set-env-vars "SIM_TOKEN=secretref:simtoken" "SIM_ADMIN_TOKEN=secretref:simadmin" "ALLOWED_ORIGINS=$ORIGINS" "MAX_SESSIONS=$SESS" -o none
 else
   az containerapp create -n "$APP" -g "$RG" --environment "$ENVN" --image "$IMG" \
      --registry-server "$ACR.azurecr.io" --registry-username "$USR" --registry-password "$PWD_ACR" \
      --target-port 8080 --ingress external --transport auto --cpu "$CPU" --memory "$MEM" \
-     --min-replicas "$MIN" --max-replicas 1 --secrets "simtoken=$TOKEN" --env-vars "SIM_TOKEN=secretref:simtoken" "MAX_SESSIONS=$SESS" -o none
+     --min-replicas "$MIN" --max-replicas 1 --secrets "simtoken=$TOKEN" "simadmin=$ADMIN" \
+     --env-vars "SIM_TOKEN=secretref:simtoken" "SIM_ADMIN_TOKEN=secretref:simadmin" "ALLOWED_ORIGINS=$ORIGINS" "MAX_SESSIONS=$SESS" -o none
 fi
 printf 'RG=%s\nLOC=%s\nAPP=%s\nENVN=%s\nACR=%s\nTOKEN=%s\n' "$RG" "$LOC" "$APP" "$ENVN" "$ACR" "$TOKEN" > "$CFG"
 FQDN=$(az containerapp show -n "$APP" -g "$RG" --query properties.configuration.ingress.fqdn -o tsv)
@@ -93,7 +98,7 @@ for i in $(seq 1 40); do
 done
 echo "Būsena: $H"
 echo "Savitikra (gali užtrukti ~1–2 min.):"
-curl -s --max-time 600 "https://$FQDN/selftest?token=$TOKEN" | python3 -c '
+curl -s --max-time 600 "https://$FQDN/selftest?token=$ADMIN" | python3 -c '
 import json,sys
 try:
   r=json.load(sys.stdin)
@@ -105,14 +110,14 @@ if r.get("error"): print("  Pastaba:", r["error"])
 print("  Pradiniai rodikliai:", r.get("baseline"))
 for k,v in (r.get("actions") or {}).items(): print("  ", "✓" if v.get("ok") else "✗", k, v.get("msg","")[:120])
 '
-LINK="https://sim.1040medkuopa.lt/#/nustatymai?pulse=wss://$FQDN/ws&pt=$TOKEN"
+LINK="https://sim.1040medkuopa.lt/#/nustatymai?pulse=wss://$FQDN/ws"
 cat <<TXT
 
 ════════════════════════════════════════════════════════════════════
  Pulse serveris paruoštas
  Adresas:   wss://$FQDN/ws
- Žetonas:   $TOKEN
- SIM nustatymams atidarykite telefone (monitoriaus telefone) šią nuorodą:
+ Žetonas:   įrašytas SIM programėlėje (vesti nereikia); jungtis leidžiama tik iš $ORIGINS
+ Jei SIM naudoja kitą serverio adresą – atidarykite telefone šią nuorodą:
    $LINK
  Kaina: kai niekas nesijungia, serveris išsijungia pats (MIN=$MIN); mokama tik už veikimo laiką
  ir registrą (~5 €/mėn.). Visiškai pašalinti:  az group delete -n $RG --yes

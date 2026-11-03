@@ -25,6 +25,9 @@ import engine_mock  # noqa: E402
 
 PORT = int(os.environ.get('PORT', '8080'))
 TOKEN = os.environ.get('SIM_TOKEN', '')
+ADMIN_TOKEN = os.environ.get('SIM_ADMIN_TOKEN', '')   # /selftest (diegti.sh, tikrinti.sh); nėra – tinka SIM_TOKEN
+# Leidžiamos svetainės (WebSocket „Origin“), pvz. https://sim.1040medkuopa.lt; tuščia – netikrinama (vietiniai bandymai)
+ORIGINS = [x.strip().rstrip('/').lower() for x in os.environ.get('ALLOWED_ORIGINS', '').split(',') if x.strip()]
 MAX_SESSIONS = int(os.environ.get('MAX_SESSIONS', '4'))
 KEEP_S = int(os.environ.get('KEEP_DETACHED_S', '900'))
 STEP = 1.0  # modeliuojamas žingsnis, s (Pulse viduje – 0,02 s)
@@ -250,6 +253,10 @@ def reaper():
 async def handle_ws(ws):
     if ws.path.rstrip('/') not in ('/ws', ''):
         return
+    if ORIGINS and str(ws.headers.get('origin', '')).rstrip('/').lower() not in ORIGINS:
+        await ws.send({'t': 'err', 'msg': 'Jungtis galima tik iš SIM programėlės (sim.1040medkuopa.lt)', 'code': 'origin'})
+        await ws.close(4003)
+        return
     if TOKEN and not secrets.compare_digest(str(ws.query.get('token', '')).encode(), TOKEN.encode()):
         await ws.send({'t': 'err', 'msg': 'Neteisingas žetonas (token)', 'code': 'auth'})
         await ws.close(4001)
@@ -428,7 +435,8 @@ async def handle_http(path, query):
     if path == '/info':
         return j({k: v for k, v in INFO.items() if k != 'bin'})
     if path == '/selftest':
-        if TOKEN and not secrets.compare_digest(str(query.get('token', '')).encode(), TOKEN.encode()):
+        need = ADMIN_TOKEN or TOKEN
+        if need and not secrets.compare_digest(str(query.get('token', '')).encode(), need.encode()):
             return j({'error': 'token'}, '403 Forbidden')
         return j(await asyncio.get_running_loop().run_in_executor(None, selftest))
     return j({'error': 'not found'}, '404 Not Found')

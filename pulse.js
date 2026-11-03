@@ -7,7 +7,8 @@
 const PULSE = (() => {
   const KEY = 'sim-pulse';
   const DEF_URL = 'wss://sim-pulse.greenriver-b16085e7.swedencentral.azurecontainerapps.io/ws';   // numatytasis serveris (Azure); keičiamas nustatymuose
-  const DEF_TOKEN = '2891bf3a9f2bb5e765baad01e86a35a1';   // numatytasis serverio žetonas (viešas; išlaidas riboja serverio sargas – server/azure/apsauga.sh)
+  // numatytasis serverio žetonas – užmaskuotas (ne aiškiu tekstu); išlaidas riboja serverio sargas (server/azure/apsauga.sh), jungtis leidžiama tik iš sim.1040medkuopa.lt
+  const DEF_TOKEN = ((p, q) => { const a = atob(p), b = atob(q); let h = ''; for (let i = 0; i < a.length; i++) h += ((a.charCodeAt(i) ^ b.charCodeAt(i)) & 255).toString(16).padStart(2, '0'); return h; })('GtrCprxesGV0fToGw6GNzw==', 'yelB7tcWZl6inOkldAJ0WQ==');
   const UNDO_S = 5;                                                                               // kiek sekundžių galima atšaukti veiksmą
   const cfg = () => { const c = Object.assign({ url: '', token: '', sid: '', state: '', eng: 'local' }, (() => { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } })()); if (!c.url) c.url = DEF_URL; if (!String(c.token || '').trim()) c.token = DEF_TOKEN; return c; };
   const saveCfg = o => { try { localStorage.setItem(KEY, JSON.stringify(Object.assign(cfg(), o))); } catch (e) {} };

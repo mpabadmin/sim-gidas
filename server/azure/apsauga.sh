@@ -9,7 +9,7 @@
 # Nustatymai (nebūtina): LIMIT=100 RG=sim-pulse-rg APP=sim-pulse bash apsauga.sh jusu@pastas.lt
 #
 # Kas sukuriama (sąnaudos – beveik nulinės, telpa į nemokamas kvotas):
-#   1) Serveriui nustatomas viešas žetonas iš viesas-zetonas.txt (jis įrašytas SIM programėlėje – nieko vesti nereikia).
+#   1) Serveriui nustatomas numatytasis žetonas (zetonas.py; SIM programėlėje įrašytas užmaskuotas – nieko vesti nereikia).
 #   2) Automation paskyra „sim-pulse-sargas“ su runbook „SimPulseSargas“ (sargas.ps1), kuris kas valandą skaičiuoja
 #      mėnesio sąmatą pagal serverio veikimo laiką ir, pasiekus ribą, serverį SUSTABDO iki kito mėnesio
 #      (SIM tada veikia telefono modeliu). Kito mėnesio pradžioje serveris paleidžiamas automatiškai.
@@ -59,7 +59,7 @@ az resource show --ids "$APPID" -o none 2>/dev/null || { bad "Programos $APP gru
 LOC=$(az resource show --ids "$APPID" --query location -o tsv | tr 'A-Z' 'a-z' | tr -d ' ')
 
 say "1/6 Numatytasis žetonas (įrašytas SIM programėlėje)"
-TOKEN=$(tr -d ' \n\r' < "$DIR/viesas-zetonas.txt")
+TOKEN=$(python3 "$DIR/zetonas.py")
 az extension add --name containerapp --upgrade -y --only-show-errors >/dev/null 2>&1
 if az containerapp secret set -n "$APP" -g "$RG" --secrets "simtoken=$TOKEN" -o none --only-show-errors &&
    az containerapp update -n "$APP" -g "$RG" --set-env-vars "SIM_TOKEN=secretref:simtoken" "SIM_TOKEN_V=$(date +%Y%m%d%H%M)" -o none --only-show-errors; then

@@ -17,11 +17,13 @@ fi
 FQDN=$(az containerapp show -n "$APP" -g "$RG" --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null)
 if [ -z "$FQDN" ]; then bad "Programa $APP dar nesukurta (žingsnis 5/6 nebaigtas) – paleiskite diegti.sh dar kartą"; exit 1; fi
 TOKEN=$(az containerapp secret show -n "$APP" -g "$RG" --secret-name simtoken --query value -o tsv 2>/dev/null)
+ADMIN=$(az containerapp secret show -n "$APP" -g "$RG" --secret-name simadmin --query value -o tsv 2>/dev/null)
+[ -z "$ADMIN" ] && ADMIN=$TOKEN
 say "Serveris https://$FQDN (jei miegojo – pabudimas iki 1–2 min.)"
 for i in $(seq 1 18); do H=$(curl -s --max-time 20 "https://$FQDN/health"); echo "$H" | grep -q '"ok"' && break; sleep 5; done
 echo "Būsena: ${H:-neatsako}"
 echo "Savitikra:"
-curl -s --max-time 600 "https://$FQDN/selftest?token=$TOKEN" | python3 -c '
+curl -s --max-time 600 "https://$FQDN/selftest?token=$ADMIN" | python3 -c '
 import json,sys
 try: r=json.load(sys.stdin)
 except Exception: print("  savitikra nepavyko"); sys.exit()
