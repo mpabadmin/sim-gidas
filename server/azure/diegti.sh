@@ -16,7 +16,7 @@ if [ ! -f "$CFG" ] && az group show -n "${RG:-sim-pulse-rg}" -o none 2>/dev/null
   ACR=${ACR:-$(az acr list -g "${RG:-sim-pulse-rg}" --query '[0].name' -o tsv 2>/dev/null || true)}
   TOKEN=${TOKEN:-$(az containerapp secret show -n "${APP:-sim-pulse}" -g "${RG:-sim-pulse-rg}" --secret-name simtoken --query value -o tsv 2>/dev/null || true)}
   [ -n "$ACR" ] && echo "Rastas ankstesnis registras: $ACR"
-  [ -n "$TOKEN" ] && echo "Rastas ankstesnis žetonas (adresas ir žetonas nesikeis)"
+  [ -n "$TOKEN" ] && echo "Rastas veikiantis serveris (adresas nesikeis; žetonas – numatytasis, įrašytas SIM programėlėje)"
 fi
 [ -z "${ACR:-}" ] && unset ACR
 [ -z "${TOKEN:-}" ] && unset TOKEN
@@ -81,6 +81,7 @@ if az containerapp show -n "$APP" -g "$RG" -o none 2>/dev/null; then
   az containerapp secret set -n "$APP" -g "$RG" --secrets "simtoken=$TOKEN" "simadmin=$ADMIN" -o none
   az containerapp update -n "$APP" -g "$RG" --image "$IMG" --cpu "$CPU" --memory "$MEM" --min-replicas "$MIN" --max-replicas 1 \
      --set-env-vars "SIM_TOKEN=secretref:simtoken" "SIM_ADMIN_TOKEN=secretref:simadmin" "ALLOWED_ORIGINS=$ORIGINS" "MAX_SESSIONS=$SESS" -o none
+  echo "   ✓ nauja serverio versija paleista – nauji žetonai įsigalioja (įspėjimą apie „restart“ galima ignoruoti)"
 else
   az containerapp create -n "$APP" -g "$RG" --environment "$ENVN" --image "$IMG" \
      --registry-server "$ACR.azurecr.io" --registry-username "$USR" --registry-password "$PWD_ACR" \
