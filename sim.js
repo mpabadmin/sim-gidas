@@ -294,7 +294,7 @@ const SIM = (() => {
     const chk = (k, v, nm) => { const L = L0[k]; if (v == null || !L) return; if (L[2] != null && v < L[2]) out.push([2, nm + ' ' + fmt(k, v) + ' ↓']); else if (L[3] != null && v > L[3]) out.push([2, nm + ' ' + fmt(k, v) + ' ↑']); else if (L[0] != null && v < L[0]) out.push([1, nm + ' ' + fmt(k, v) + ' ↓']); else if (L[1] != null && v > L[1]) out.push([1, nm + ' ' + fmt(k, v) + ' ↑']); };
     // ŠSD ribos tikrinamos ir BEA metu (elektrinis dažnis); SkV, asistolija, SkT – savi aliarmai
     if (S.probe.ecg && (cap() || ['vf', 'asys', 'vt'].indexOf(S.rhythm) < 0)) chk('hr', hrShown(c), 'ŠSD');
-    if (!S.probe.spo2) out.push([1, 'SpO₂ zondas nuimtas']);
+    if (!S.probe.spo2) out.push([1, 'SpO₂ jutiklis nuimtas']);
     else if (pf <= 0) out.push([1, 'SpO₂ – nėra pulso signalo']);
     else { if (pf < 0.15) out.push([1, 'SpO₂ – silpnas signalas']); chk('spo2', c.spo2, 'SpO₂'); }
     if (S.nibp.last && S.nibp.last.ok && Date.now() - S.nibp.last.t < 20 * 60000) chk('sys', S.nibp.last.sys, 'AKS sist.');
@@ -446,7 +446,7 @@ const SIM = (() => {
     const hrw = !S.probe.ecg ? 0 : cap() ? limPri('hr', h) : S.rhythm === 'asys' || S.rhythm === 'vf' || S.rhythm === 'vt' ? 2 : limPri('hr', h);
     const hsub = cap() ? 'Stimuliacija ' + S.pace.ma + ' mA' : S.pace.on ? 'Stim. – nėra pagavimo' : CFG.rhy ? rhName() : '';
     setBox('hr', hr, hsub, hrw);
-    setBox('spo2', sp, S.probe.spo2 && pf > 0 ? bar(pf) : S.probe.spo2 ? '' : 'Zondas nuimtas', sp === '--' ? 1 : limPri('spo2', c.spo2));
+    setBox('spo2', sp, S.probe.spo2 && pf > 0 ? bar(pf) : S.probe.spo2 ? '' : 'Jutiklis nuimtas', sp === '--' ? 1 : limPri('spo2', c.spo2));
     setBox('nibp', bp, bsub, bw);
     setBox('rr', String(c.rr), '', limPri('rr', c.rr));
     setBox('temp', fmt('temp', c.temp), '', limPri('temp', c.temp));

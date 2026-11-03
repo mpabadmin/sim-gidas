@@ -1,6 +1,6 @@
 'use strict';
 // ───────── SIM – programėlės eiga: pradžia, monitorius, instruktoriaus pultas, scenarijai, žurnalas, nustatymai ─────────
-const VER = 'v11.3 · 2026-11-03';
+const VER = 'v11.4 · 2026-11-03';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
 const LSg = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
@@ -40,7 +40,7 @@ function stageCmd(sc, i, d, useD) {
 // ───────── monitoriaus pusė: komandų vykdymas, žurnalas, scenarijaus eiga ─────────
 const LB = { hr: ['ŠSD', 'k./min', 5, 0, 220, 1], spo2: ['SpO₂', '%', 1, 50, 100, 1], sys: ['AKS sist.', 'mm Hg', 5, 0, 240, 1], dia: ['AKS diast.', 'mm Hg', 5, 0, 160, 1], rr: ['KD', 'k./min', 2, 0, 50, 1], temp: ['T', '°C', 0.1, 30, 42, 0.1] };
 const f1 = (k, v) => k === 'temp' ? (+v).toFixed(1).replace('.', ',') : String(Math.round(v));
-const PRB = { ecg: ['EKG elektrodai prijungti', 'EKG elektrodai atjungti'], spo2: ['SpO₂ zondas uždėtas', 'SpO₂ zondas nuimtas'], nibp: ['AKS manžetė uždėta', 'AKS manžetė nuimta'] };
+const PRB = { ecg: ['EKG elektrodai prijungti', 'EKG elektrodai atjungti'], spo2: ['SpO₂ jutiklis uždėtas', 'SpO₂ jutiklis nuimtas'], nibp: ['AKS manžetė uždėta', 'AKS manžetė nuimta'] };
 const OPTN = { sound: 'Garsas', beep: 'Pulso pyptelėjimas', alarms: 'Aliarmai' };
 let PLAY = LSg('sim-play', null), PREF = Object.assign({ auto: 0, useD: 1 }, LSg('sim-playpref6', {}));
 function setPlay(p) { PLAY = p; LSs('sim-play', p); }
@@ -49,6 +49,9 @@ function exec(o) {
   if (!o || typeof o !== 'object' || typeof o.c !== 'string') return;
   const T0 = SIM.targets(), st = SIM.state(), r0 = st.rhythm, L = SIM.log, per = o.d ? ' (per ' + durTxt(o.d) + ')' : '';
   const okR = r => SIM.RH.some(x => x[0] === r);
+  // simuliacija (telefono modelis ar Pulse) vyksta – rodiklius ir ritmą valdo modelis: rankinis pakeitimas būtų perrašytas per kelias sekundes
+  if ((o.c === 'apply' || o.c === 'rh') && mdlRun()) { L('sys', 'Rodikliai nepakeisti – valdo modelis (keiskite per Simuliaciją / Įvykius)'); return; }
+  if (o.c === 'shock' && mdlRun()) o = Object.assign({}, o, { r: null, v: null });   // iškrova žymima, ritmą po jos nustato modelis
   switch (o.c) {
     case 'apply': {
       SIM.sesStart();
@@ -93,6 +96,7 @@ function exec(o) {
     case 'pulse': if (o.op === 'start' && PLAY) setPlay(null); PULSE.cmd(o); break;
   }
 }
+function mdlRun() { if (typeof PULSE === 'undefined' || !PULSE.running()) return false; const P = PULSE.status(); return !!(P.sc && !P.manual); }
 // kitas automatinis etapas: st.nx (jei nurodytas) arba i + 1
 function nextIdx(sc, i) { const st = sc && sc.st[i]; if (!st) return -1; const n = st.nx != null && isFinite(st.nx) ? +st.nx : i + 1; return n >= 0 && n < sc.st.length && n !== i ? n : -1; }
 function playLeft() {
@@ -143,10 +147,14 @@ const isHost = () => RELAY.role() === 'host' || RTC.role() === 'host';
 const linkOn = () => RTC.open() || RELAY.open();
 const ctrlOn = () => linkOn() && !isHost();
 const rsend = o => !!((RTC.open() && RTC.role() === 'ctrl' && RTC.send(o)) || (RELAY.role() === 'ctrl' && RELAY.send(o)));
-RTC.onState = s => { rtcState = s; if (s === 'on') toast(RTC.role() === 'host' ? 'Instruktorius prijungtas' : 'Prijungta prie monitoriaus'); if (s === 'lost' || s === 'off') { if (RTC.role()) toast('Ryšys nutrūko'); } refresh(); };
+let tabPu = 0;   // instruktoriui prisijungus pirmą kartą – Simuliacija (vėliau ryšiui trūkinėjant skirtukas nekeičiamas)
+const toPu = () => { if (tabPu) return; tabPu = 1; UI.tab = 'pu'; saveUI(); };
+RTC.onState = s => { rtcState = s; if (s === 'on' && RTC.role() === 'ctrl') toPu(); if (s === 'on') toast(RTC.role() === 'host' ? 'Instruktorius prijungtas' : 'Prijungta prie monitoriaus'); if (s === 'lost' || s === 'off') { if (RTC.role()) toast('Ryšys nutrūko'); } refresh(); };
 RELAY.onState = s => {
   const prev = relState; relState = s;
   if (s === 'on' && prev !== 'on') toast(RELAY.role() === 'host' ? 'Instruktorius prijungtas' : 'Prijungta prie monitoriaus');
+  if (s === 'on' && prev !== 'on' && RELAY.role() === 'ctrl') toPu();   // instruktoriui pirmiausia – Simuliacija
+  pairCard();
   if (prev === 'on' && s !== 'on' && RELAY.role()) toast(RELAY.role() === 'host' ? 'Instruktorius neprisijungęs' : 'Ryšys su monitoriumi nutrūko – jungiamasi iš naujo');
   refresh();
 };
@@ -162,7 +170,7 @@ const isHostRoute = () => route() === 'monitorius';
 const DUR = [[0, 'Iš karto'], [30, '30 s'], [60, '1 min'], [120, '2 min'], [300, '5 min']];
 const MAC = [['worse', 'Blogėja'], ['better', 'Gerėja'], ['shock', 'Šokas ↑'], ['hypox', 'Hipoksija ↑'], ['stab', 'Stabilizuoti']];
 const MARKS = ['Turniketas', 'Tamponada / tvarstis', 'Dekompresija', 'Kvėpavimo takai', 'Intubacija', 'Krikotiroidotomija', 'Deguonis', 'IV / IO prieiga', 'TXA', 'Kraujas', 'Skysčiai', 'Kalcis', 'Adrenalinas', 'Analgezija', 'Šildymas', 'KPR pradėtas', 'KPR baigtas', 'Evakuacija'];
-const TABS = [['ctl', 'Rodikliai', 'Rodikl.'], ['sc', 'Scenarijus', 'Scen.'], ['act', 'Įranga', 'Įranga'], ['log', 'Žurnalas', 'Žurn.'], ['pu', 'Simuliacija', 'Simul.'], ['set', 'Nustatymai', 'Nust.'], ['link', 'Ryšys', 'Ryšys']];
+const TABS = [['pu', 'Simuliacija', 'Simul.'], ['ctl', 'Rodikliai', 'Rodikl.'], ['sc', 'Scenarijus', 'Scen.'], ['act', 'Įranga', 'Įranga'], ['log', 'Žurnalas', 'Žurn.'], ['set', 'Nustatymai', 'Nust.'], ['link', 'Ryšys', 'Ryšys']];
 const TICO = {
   pu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/><path d="M6 12h3l1.5-2.5 2 5 1.5-2.5H18"/></svg>',
   ctl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l2.5-6 4 12 2.5-6H22"/></svg>',
@@ -175,7 +183,7 @@ const SHR = [['', 'Nekinta'], ['sinus', 'Sinusinis'], ['vf', 'Skilv. virpėjimas
 const plural = (n, a, b, c) => n % 10 === 1 && n % 100 !== 11 ? a : n % 10 >= 2 && (n % 100 < 10 || n % 100 >= 20) ? b : c;
 let markLog = [];   // paskutinės žymos (grįžtamasis ryšys)
 let draft = {}, dur = LSg('sim-dur', 30), scen = LSg('sim-scen', null), scenList = false, scenQ = '', favs = LSg('sim-fav', []), markTxt = '';
-let UI = Object.assign({ live: 0, sl: 1, tab: 'ctl', alm: 0, favEdit: 0, shJ: 200, shR: '', sync: 0, so: {}, ssrc: '', stema: '' }, LSg('sim-ui', {}));
+let UI = Object.assign({ live: 0, sl: 1, tab: 'pu', alm: 0, favEdit: 0, shJ: 200, shR: '', sync: 0, so: {}, ssrc: '', stema: '' }, LSg('sim-ui', {}));
 const saveUI = () => LSs('sim-ui', UI);
 // kur siunčiamos komandos: monitoriuje ir neprisijungus nustatymuose – vietoje, kitaip – nuotoliniam monitoriui
 const tgt = () => route() === 'monitorius' ? 'local' : route() === 'nustatymai' && !ctrlOn() ? 'local' : 'remote';
@@ -217,9 +225,9 @@ function chip(act, k, on, t, extra) { return `<button class="chip${on ? ' on' : 
 const tog = (act, k, on, t) => chip(act, k, on, (on ? '✓ ' : '') + t);
 const tabs = () => TABS.filter(t => t[0] !== 'link' || tgt() === 'local' && route() === 'monitorius');
 function tabsHtml() {
-  if (!tabs().some(t => t[0] === UI.tab)) UI.tab = 'ctl';
+  if (!tabs().some(t => t[0] === UI.tab)) UI.tab = 'pu';
   const L = tabs();
-  return `<nav class="tabs n${L.length}" role="tablist">` + L.map(([k, t, sh]) => `<button class="tab${UI.tab === k ? ' on' : ''}" data-act="tab" data-k="${k}" role="tab" aria-selected="${UI.tab === k}" aria-label="${t}">${TICO[k] || ICO.cog}<span class="tl">${t}</span><span class="ts">${sh}</span></button>`).join('') + '</nav>';
+  return `<nav class="tabs n${L.length}" role="tablist">` + L.map(([k, t, sh]) => `<button class="tab${UI.tab === k ? ' on' : ''}" data-act="tab" data-k="${k}" role="tab" aria-selected="${UI.tab === k}" aria-label="${t}" title="${t}">${TICO[k] || ICO.cog}<span class="tl">${t}</span><span class="ts">${sh}</span></button>`).join('') + '</nav>';
 }
 function stripHtml(compact) {
   const s = snap() || {};
@@ -237,24 +245,29 @@ function tabBody() {
 const durChips = () => '<div class="chips">' + DUR.map(([d, t]) => chip('dur', d, dur === d, t)).join('') + '</div>';
 
 // ── Rodikliai ──
-function prRow(k, Tv) {
-  const [l, u, , mn, mx, stp] = LB[k], v = k in draft ? draft[k] : Tv[k];
+function prRow(k, Tv, dis) {
+  const [l, u, , mn, mx, stp] = LB[k], v = k in draft ? draft[k] : Tv[k], d = dis ? ' disabled' : '';
   return `<div class="pr${k in draft ? ' ch' : ''}" data-k="${k}"><span class="prl">${l}<small>${u}</small></span>` +
-    `<button class="pb" data-act="d-" data-k="${k}" aria-label="${l} mažiau">−</button><input class="inp pv" data-k="${k}" inputmode="decimal" value="${f1(k, v)}" aria-label="${l}"><button class="pb" data-act="d+" data-k="${k}" aria-label="${l} daugiau">+</button>` +
-    (UI.sl ? `<input type="range" class="sl" data-k="${k}" min="${mn}" max="${mx}" step="${stp}" value="${v}" aria-label="${l} slankiklis">` : '') + '</div>';
+    `<button class="pb" data-act="d-" data-k="${k}" aria-label="${l} mažiau"${d}>−</button><input class="inp pv" data-k="${k}" inputmode="decimal" value="${f1(k, v)}" aria-label="${l}"${d}><button class="pb" data-act="d+" data-k="${k}" aria-label="${l} daugiau"${d}>+</button>` +
+    (UI.sl ? `<input type="range" class="sl" data-k="${k}" min="${mn}" max="${mx}" step="${stp}" value="${v}" aria-label="${l} slankiklis"${d}>` : '') + '</div>';
 }
+// ar vyksta simuliacija, kurios rodiklius valdo modelis (telefono modelis ar Pulse; ne rankinis režimas)
+function mdlOn(s) { const pu = tgt() === 'local' ? PULSE.status() : s && s.pu; return !!(pu && pu.sc && !pu.manual && ['run', 'pause', 'load', 'conn'].indexOf(pu.st) >= 0); }
+const mdlNote = t => `<section class="pnl lockn"><h2>Valdo modelis</h2><p class="muted mt0">${t}</p><div class="acts"><button class="btn pri" data-act="go-pu" data-k="pt">Simuliacija</button><button class="btn" data-act="go-pu" data-k="ev">Įvykiai</button></div></section>`;
 function ctlTab() {
-  const s = snap(), Tv = T(), n = Object.keys(draft).length, rh = s ? s.rhythm : 'sinus';
-  let h = '<section class="pnl"><h2>Greitos komandos</h2><div class="mac">' + MAC.map(([k, t]) => `<button class="btn mb" data-act="mac" data-k="${k}">${t}</button>`).join('') + '</div>';
+  const s = snap(), Tv = T(), lock = mdlOn(s), n = lock ? 0 : Object.keys(draft).length, rh = s ? s.rhythm : 'sinus', dis = lock ? ' disabled' : '';
+  if (lock) draft = {};
+  let h = lock ? mdlNote('Valdo modelis – keiskite per Simuliaciją / Įvykius. Rankiniai rodikliai ir ritmas modeliui veikiant neveiktų (per kelias sekundes būtų perrašyti), todėl čia išjungti. Iškrova žymima žurnale ir monitoriuje, o ritmą po jos nustato modelis (ROSC – Įvykiuose).') : '';
+  h += '<section class="pnl"><h2>Greitos komandos</h2><div class="mac">' + MAC.map(([k, t]) => `<button class="btn mb" data-act="mac" data-k="${k}"${dis}>${t}</button>`).join('') + '</div>';
   h += '<h2>Pokytis per</h2>' + durChips();
-  h += `<h2>Rodikliai${UI.live ? ' <span class="tag">keičiama iš karto</span>' : ''}</h2><div class="prm${UI.sl ? ' wsl' : ''}">` + SIM.P.map(k => prRow(k, Tv)).join('') + '</div>';
+  h += `<h2>Rodikliai${UI.live && !lock ? ' <span class="tag">keičiama iš karto</span>' : ''}</h2><div class="prm${UI.sl ? ' wsl' : ''}">` + SIM.P.map(k => prRow(k, Tv, lock)).join('') + '</div>';
   if (!UI.live) h += `<div class="acts"><button class="btn pri" data-act="apply"${n ? '' : ' disabled'}>Taikyti${n ? ' (' + n + ')' : ''}</button><button class="btn" data-act="undo"${n ? '' : ' disabled'}>Atšaukti</button></div>`;
   h += '</section>';
-  h += '<section class="pnl"><h2>Ritmas</h2><div class="chips">' + SIM.RH.map(([k, t]) => chip('rh', k, rh === k, t)).join('') + '</div>';
+  h += '<section class="pnl"><h2>Ritmas</h2><div class="chips">' + SIM.RH.map(([k, t]) => chip('rh', k, rh === k, t, dis)).join('') + '</div>';
   h += '<h2>Defibriliacija / kardioversija</h2><div class="chips">' + [50, 100, 120, 150, 200, 360].map(j => chip('shj', j, UI.shJ === j, j + ' J')).join('') + tog('sync', 1, !!UI.sync, 'Sinchronizuota') + '</div>' +
-    '<p class="lbl">Ritmas po iškrovos</p><div class="chips">' + SHR.map(([k, t]) => chip('shr', k, UI.shR === k, t)).join('') + '</div>' +
+    (lock ? '' : '<p class="lbl">Ritmas po iškrovos</p><div class="chips">' + SHR.map(([k, t]) => chip('shr', k, UI.shR === k, t)).join('') + '</div>') +
     `<div class="acts"><button class="btn shk" data-act="shock">${ICO.bolt}${UI.sync ? 'Kardioversija' : 'Iškrova'} ${UI.shJ} J</button></div>` + (UI.sync ? '<p class="muted">Sinchronizuota iškrova – SkT, SVT, PV (su pulsu). Skilvelių virpėjimo metu neįvyksta.</p>' : '') + '</section>';
-  h += '<section class="pnl"><h2>Mėgstami</h2>' + (favs.length ? '<div class="chips">' + favs.map((f, i) => `<span class="fav">${chip('fav-go', i, false, esc(f.n))}${UI.favEdit ? `<button class="fx" data-act="fav-del" data-k="${i}" aria-label="Ištrinti ${esc(f.n)}">${ICO.x}</button>` : ''}</span>`).join('') + '</div>' : '<p class="muted mt0">Įsiminkite dabartines reikšmes ir ritmą – vėliau pritaikysite vienu paspaudimu.</p>') +
+  h += '<section class="pnl"><h2>Mėgstami</h2>' + (favs.length ? '<div class="chips">' + favs.map((f, i) => `<span class="fav">${chip('fav-go', i, false, esc(f.n), dis)}${UI.favEdit ? `<button class="fx" data-act="fav-del" data-k="${i}" aria-label="Ištrinti ${esc(f.n)}">${ICO.x}</button>` : ''}</span>`).join('') + '</div>' : '<p class="muted mt0">Įsiminkite dabartines reikšmes ir ritmą – vėliau pritaikysite vienu paspaudimu.</p>') +
     `<div class="acts"><button class="btn" data-act="fav-add">＋ Įsiminti</button>${favs.length ? `<button class="btn" data-act="fav-edit">${UI.favEdit ? 'Baigti' : 'Tvarkyti'}</button>` : ''}</div></section>`;
   return h;
 }
@@ -273,6 +286,7 @@ function macro(k, t) {
 // ── Scenarijus ──
 function scTab() {
   const s = snap(), sc = curScen(s), idx = curIdx(sc, s), pl = (s && s.pl) || {};
+  if (mdlOn(s)) return mdlNote('Vyksta simuliacija – rodiklius valdo modelis. Kitą scenarijų pradėkite baigę dabartinį (Simuliacija → ■ Baigti scenarijų).');
   let h = '<section class="pnl"><h2>Scenarijus</h2>';
   if (scenList) {
     const q = scenQ.trim().toLowerCase(), A = allScen().filter(x => !UI.ssrc || x.src === UI.ssrc);
@@ -327,7 +341,7 @@ function actTab() {
     `<div class="paste"><input class="inp" id="markx" placeholder="Kita žyma…" maxlength="80" value="${esc(markTxt)}" autocomplete="off" aria-label="Kita žyma"><button class="btn" data-act="mark-c">Pažymėti</button></div>` +
     (markLog.length ? '<div class="mklog">' + markLog.slice(-3).reverse().map(x => `<div><b>✓</b><span>${esc(x.x)}</span><small>${esc(x.t)} · žurnale</small></div>`).join('') + '</div>' : '') + '</section>';
   h += '<section class="pnl"><h2>AKS matavimas</h2><div class="chips">' + chip('nibp', '1', false, 'Matuoti dabar') + chip('nibp-stat', '1', !!nb.stat, 'STAT 5 min') + [0, 3, 5, 10, 15].map(m => chip('nmode', m, nb.mode === m && !nb.stat, m ? 'Auto ' + m + ' min' : 'Rankinis')).join('') + '</div></section>';
-  h += '<section class="pnl"><h2>Jutikliai ir artefaktai</h2><div class="chips">' + [['ecg', 'EKG elektrodai'], ['spo2', 'SpO₂ zondas'], ['nibp', 'AKS manžetė']].map(([k, t]) => chip('probe', k, !!pr[k], (pr[k] ? '✓ ' : '✕ ') + t)).join('') +
+  h += '<section class="pnl"><h2>Jutikliai ir artefaktai</h2><div class="chips">' + [['ecg', 'EKG elektrodai'], ['spo2', 'SpO₂ jutiklis'], ['nibp', 'AKS manžetė']].map(([k, t]) => chip('probe', k, !!pr[k], (pr[k] ? '✓ ' : '✕ ') + t)).join('') +
     tog('art', 'motion', !!art.motion, 'Judesio artefaktas') + tog('art', 'cpr', !!art.cpr, 'KPR kompresijos') + '</div></section>';
   h += `<section class="pnl"><h2>Stimuliacija (pacing)</h2><div class="chips">${tog('pace-on', 1, !!pc.on, pc.on ? 'Įjungta' : 'Įjungti')}</div>` +
     `<div class="prm"><div class="pr"><span class="prl">Dažnis<small>/min</small></span><button class="pb" data-act="pace-r" data-k="-10" aria-label="Dažnis mažiau">−</button><span class="pv">${pc.rate}</span><button class="pb" data-act="pace-r" data-k="10" aria-label="Dažnis daugiau">+</button></div>` +
@@ -444,13 +458,19 @@ function home() {
     `<a class="tile wide" href="#/" data-g="open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z"/><path d="M9.5 9.3a2.6 2.6 0 0 1 5 .9c0 1.7-2.5 2.3-2.5 3.8"/><path d="M12 17h.01"/></svg><b>Kaip naudotis</b><small>Trumpa instrukcija: monitorius, pultas, simuliacija</small></a></div>` +
     `<details class="hlp"><summary>Apie</summary><p>Versija ${VER}. Parengė 1040 medkuopa Mebius. Mokymo priemonė – ne medicinos prietaisas; rodikliai ir kreivės sugeneruoti (Pulse režime – skaičiuojami Kitware Pulse fiziologijos modeliu).</p>` +
     `<p class="muted">Rodomi: EKG (II), ŠSD, SpO₂ su pletizmograma, neinvazinis AKS (sist./diast., vidutinis), kvėpavimo dažnis ir kreivė, temperatūra. Aliarmų ribos – tipinės suaugusiųjų monitoriaus numatytosios (keičiamos nustatymuose); garsiniai signalai primena IEC 60601-1-8 prioritetus. Scenarijai – SIM, ETC gido ir March gido treniruočių scenarijai.</p>` +
-    `<p class="muted">Kiti gidai: <a href="https://etc.1040medkuopa.lt" target="_blank" rel="noopener">ETC gidas</a> · <a href="https://march.1040medkuopa.lt" target="_blank" rel="noopener">March gidas</a></p></details>`;
+    otherApps() + '</details><p class="credit">Parengė 1040 medkuopa Mebius</p>';
+}
+// kitos 1040 medkuopos programėlės (Apie ir Nustatymai)
+function otherApps() {
+  const a = (u, t, d) => `<a class="row oapp" href="${u}" target="_blank" rel="noopener"><span>${t}<small>${d}</small></span><i aria-hidden="true">↗</i></a>`;
+  return '<div class="oapps"><p class="lbl">Kitos programėlės</p>' + a('https://etc.1040medkuopa.lt', 'ETC gidas', 'Ligoninės traumos komandai') + a('https://march.1040medkuopa.lt', 'March gidas', 'MARCH-PAWS – pagalba lauke ir evakuacijoje') +
+    a('https://pcc.1040medkuopa.lt', 'PCC gidas', 'Ilgalaikė sužeistojo priežiūra lauke') + a('https://apps.1040medkuopa.lt', 'Visos programėlės', 'apps.1040medkuopa.lt – aprašymai ir įdiegimas') + '</div>';
 }
 function settingsPage() {
   const remote = tgt() === 'remote';
   return `<div class="bar"><a class="ib" href="#/" aria-label="Atgal">${ICO.back}</a><h1>Nustatymai</h1>${remote ? cstHtml() : ''}</div>` +
     `<p class="muted mt0">${remote ? 'Keičiami <b>prijungto monitoriaus</b> nustatymai.' : 'Šio telefono monitoriaus nustatymai. Prijungus instruktorių, juos galima keisti ir nuotoliniu būdu.'}</p>` +
-    '<p><button class="btn" data-g="open">Kaip naudotis – trumpa instrukcija</button></p>' + setTab();
+    '<p><button class="btn" data-g="open">Kaip naudotis – trumpa instrukcija</button></p>' + setTab() + `<section class="pnl">${otherApps()}<p class="credit">Versija ${VER} · Parengė 1040 medkuopa Mebius</p></section>`;
 }
 function pairHost() {
   // monitoriaus pusė – rodomas pultas
@@ -491,7 +511,7 @@ function instructor() {
       `<details class="hlp"><summary>Be kameros – kopijuoti kodą</summary><textarea class="inp code" readonly>${esc(ctrlCode)}</textarea><button class="btn" data-act="copy" data-k="${esc(ctrlCode)}">Kopijuoti</button></details>` +
       '<p class="muted">Jungiamasi…</p><button class="btn" data-act="rtc-close">Pradėti iš naujo</button>';
   } else {
-    h += '<p class="mt0">Monitoriuje: pultas → <b>Ryšys</b> → <b>Prijungti instruktorių</b>. Nuskaitykite jo QR kodą telefono kamera arba įveskite kodą:</p>' +
+    h += '<p class="mt0">Atidarykite <b>Monitorių</b> kitame telefone – jo ekrane iš karto matysite QR kodą ir kodą (vėliau – pultas → <b>Ryšys</b>). Nuskaitykite QR kodą telefono kamera arba įveskite kodą:</p>' +
       '<div class="paste"><input class="inp roomin" id="room" placeholder="ABC-123" maxlength="7" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Monitoriaus kodas"><button class="btn pri" data-act="rel-join">Jungtis</button></div>' +
       '<p class="muted">Reikia interneto abiem telefonams; bendro Wi-Fi nereikia.</p>' +
       '<details class="hlp"><summary>Be interneto (tas pats Wi-Fi) – bandomasis</summary><p class="muted">Monitoriuje: pultas → Ryšys → Be interneto → Jungti be interneto. Tada nuskaitykite jo kodą:</p>' + scanBox('cs') + '</details>';
@@ -503,6 +523,19 @@ function monitor() {
     `<div class="drawer" id="drawer"><div class="dhd"><div id="dtabs" class="dtabs"></div><button class="ib" data-act="drawer" aria-label="Uždaryti">${ICO.x}</button></div><div class="dbd" id="dbd"></div></div>` +
     `<div class="alist" id="alist" data-act="alist-x" hidden></div>` +
     `<div class="tapsound" id="tapsound" data-act="sound-on">Palieskite – įjungti garsą</div>`;
+}
+// monitoriaus pirmas ekranas: kol instruktorius neprijungtas – iš karto QR ir kodas (anksčiau: pultas → Ryšys → Prijungti instruktorių)
+function pairCard() {
+  const el = $('#tapsound'); if (!el) return;
+  const show = RELAY.role() === 'host' && relState !== 'on' && !RTC.role();
+  el.classList.toggle('pairc', show);
+  if (!show) { if (el.dataset.p) { el.textContent = 'Palieskite – įjungti garsą'; delete el.dataset.p; } return; }
+  const code = RELAY.room(); if (el.dataset.p === code + relState) return;
+  el.dataset.p = code + relState;
+  el.innerHTML = `<div class="qr" id="qrp"></div><div class="pct"><b>Instruktoriaus prijungimas</b><div class="room">${fmtRoom(code)}</div>` +
+    `<p>Instruktoriaus telefonu nuskaitykite QR kodą arba atidarykite SIM → <b>Instruktorius</b> ir įveskite kodą.${relState === 'conn' ? ' <i>Jungiamasi prie interneto…</i>' : ''}</p>` +
+    '<small>Palieskite – įjungti garsą (ir tęsti be instruktoriaus). Kodas lieka pulte → Ryšys.</small></div>';
+  drawQr('qrp', joinUrl(code));
 }
 function alistHtml() {
   const A = SIM.alarmList(), s = SIM.state(), mu = s.mute && Date.now() < s.mute;
@@ -525,7 +558,7 @@ function render() {
   if (r !== lastRoute) { if (lastRoute === 'monitorius') { SIM.stop(); if (RELAY.role() === 'host') { RELAY.stop(true); relState = 'off'; } if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); if (wl) { try { wl.release(); } catch (e) {} wl = null; } } RTC.scanStop(); }
   document.body.classList.toggle('monmode', r === 'monitorius');
   if (r === 'monitorius') {
-    if (lastRoute !== 'monitorius') { app.innerHTML = monitor(); SIM.mount($('#monroot')); wake(); const hr = LSg('sim-room-host', ''); if (hr && !RELAY.role() && RELAY.valid(hr)) RELAY.host(hr); PULSE.boot(); }
+    if (lastRoute !== 'monitorius') { app.innerHTML = monitor(); SIM.mount($('#monroot')); wake(); const hr = LSg('sim-room-host', ''); if (hr && !RELAY.role() && RELAY.valid(hr)) RELAY.host(hr); else if (!RELAY.role() && !RTC.role()) LSs('sim-room-host', RELAY.host()); pairCard(); PULSE.boot(); }
     if ($('#drawer.on')) { $('#dtabs').innerHTML = tabsHtml(); $('#dbd').innerHTML = drawerBody(); }
     qrHost();
   } else if (r === 'instruktorius') {
@@ -648,7 +681,7 @@ document.addEventListener('pointerdown', e => {
     lp = { x: e.clientX, y: e.clientY, t: setTimeout(() => { lp = null; lpFired = Date.now(); openDrawer(); if (navigator.vibrate) navigator.vibrate(30); }, 650) };
   }
   const b = t.closest && t.closest('.pb[data-act="d-"], .pb[data-act="d+"]');
-  if (b) { const k = b.dataset.k, dir = b.dataset.act === 'd+' ? 1 : -1; hold = { n: 0, t: 0 }; const rep = () => { hold.n++; stepParam(k, dir); hold.t = setTimeout(rep, 110); }; hold.t = setTimeout(rep, 450); }
+  if (b && !b.disabled) { const k = b.dataset.k, dir = b.dataset.act === 'd+' ? 1 : -1; hold = { n: 0, t: 0 }; const rep = () => { hold.n++; stepParam(k, dir); hold.t = setTimeout(rep, 110); }; hold.t = setTimeout(rep, 450); }
   if (t.classList && (t.classList.contains('sl') || t.classList.contains('pxsl'))) slDrag = 1;
   if (t.closest && t.closest('#spkw')) chartPoint(e);
 }, { passive: true });
@@ -697,7 +730,7 @@ document.addEventListener('click', async e => {
     case 'sync': UI.sync = UI.sync ? 0 : 1; saveUI(); break;
     case 'shr': UI.shR = k; saveUI(); break;
     case 'shock': {
-      const o = { c: 'shock', j: UI.shJ, r: UI.shR || null }, t = T();
+      const o = { c: 'shock', j: UI.shJ, r: mdlOn(s) ? null : UI.shR || null }, t = T();
       if (UI.sync) { o.sync = 1; if (s && ['vf', 'asys', 'pea'].indexOf(s.rhythm) >= 0) { toast('Sinchronizuota iškrova neįvyksta – nėra R bangų'); return; } if (UI.shR === 'sinus' && t.hr > 120) o.v = { hr: 96 }; }
       else if (UI.shR === 'sinus' && (t.hr < 40 || t.sys < 60)) o.v = { hr: 104, spo2: Math.max(92, t.spo2), sys: 96, dia: 60, rr: Math.max(12, t.rr) };
       if (send(o)) { toast((UI.sync ? 'Kardioversija ' : 'Iškrova ') + UI.shJ + ' J'); if (navigator.vibrate) navigator.vibrate(80); } break;
@@ -759,7 +792,7 @@ document.addEventListener('click', async e => {
     case 'ui': UI[k] = UI[k] ? 0 : 1; saveUI(); break;
     case 'rel-host': RTC.close(); hostCode = ''; LSs('sim-room-host', RELAY.host()); break;
     case 'rel-join': { const c = RELAY.norm(($('#room') || {}).value); if (!RELAY.valid(c)) { toast('Kodas – 6 raidės ar skaitmenys'); return; } RTC.close(); ctrlCode = ''; RELAY.join(c); LSs('sim-room-ctrl', c); render(); return; }
-    case 'rel-stop': if (linkOn() && !confirm('Atjungti nuotolinį ryšį?')) return; RELAY.stop(); LSs(isHostRoute() ? 'sim-room-host' : 'sim-room-ctrl', ''); if (route() === 'instruktorius') { remoteSnap = null; remoteDump = null; render(); return; } break;
+    case 'rel-stop': if (linkOn() && !confirm('Atjungti nuotolinį ryšį?')) return; RELAY.stop(); tabPu = 0; LSs(isHostRoute() ? 'sim-room-host' : 'sim-room-ctrl', ''); if (route() === 'instruktorius') { remoteSnap = null; remoteDump = null; render(); return; } break;
     case 'rtc-host': RELAY.stop(); LSs('sim-room-host', ''); try { el.disabled = true; el.textContent = 'Ruošiama…'; hostCode = await RTC.host(); } catch (x) { toast('Nepavyko: ' + (x.message || x)); } break;
     case 'rtc-close': if (linkOn() && !confirm('Atjungti nuotolinį ryšį?')) return; RTC.close(); hostCode = ''; ctrlCode = ''; render(); return;
     case 'copy': toast(await copyText(k) ? 'Nukopijuota' : 'Nepavyko nukopijuoti – pažymėkite tekstą'); return;

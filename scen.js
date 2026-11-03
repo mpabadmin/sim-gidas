@@ -90,11 +90,11 @@ window.SIMS = [
     st: [
       { n: 'Dalinė obstrukcija', v: { hr: 124, spo2: 90, sys: 136, dia: 84, rr: 30, temp: 36.5, r: 'sinus' }, p: 'Burbuliavimas, kraujas ir dantys burnoje. Laukiama: atsiurbimas, sėdima / „pusiau gulima“ padėtis, nosiaryklės vamzdelis.', d: 0, auto: 60 },
       { n: 'Visiška obstrukcija', v: { hr: 138, spo2: 80, sys: 148, dia: 90, rr: 36, temp: 36.5, r: 'sinus' }, p: 'Impedansinis KD rodo pastangas, nors oro srauto nėra. Kambario oru desaturacija per 45–60 s (Benumof); su preoksigenacija būtų ~8 min sveikam / ~5 min sergančiam.', d: 45, auto: 45 },
-      { n: 'Hipoksinė bradikardija', v: { hr: 46, spo2: 58, sys: 84, dia: 50, rr: 4, temp: 36.4, r: 'sinus' }, p: 'Stačioji kreivės dalis: nuo 90 % iki ~70 % – akimirksniu. Krikotirotomija nedelsiant.', d: 45, auto: 45 },
+      { n: 'Hipoksinė bradikardija', v: { hr: 46, spo2: 58, sys: 84, dia: 50, rr: 4, temp: 36.4, r: 'sinus' }, p: 'Stačioji kreivės dalis: nuo 90 % iki ~70 % – akimirksniu. Krikotiroidotomija nedelsiant.', d: 45, auto: 45 },
       { n: 'BEA', v: { hr: 30, spo2: 45, sys: 0, dia: 0, rr: 0, temp: 36.4, r: 'pea' }, p: 'Hipoksinis sustojimas. Kvėpavimo takai + ventiliacija – svarbiau nei paspaudimai.', d: 30 },
-      { n: 'Po krikotirotomijos', v: { hr: 116, spo2: 93, sys: 128, dia: 80, rr: 16, temp: 36.4, r: 'sinus' }, p: 'Ventiliacija per vamzdelį. SpO₂ kyla su 30–60 s vėlavimu (pulsoksimetro latencija).', d: 60 }
+      { n: 'Po krikotiroidotomijos', v: { hr: 116, spo2: 93, sys: 128, dia: 80, rr: 16, temp: 36.4, r: 'sinus' }, p: 'Ventiliacija per vamzdelį. SpO₂ kyla su 30–60 s vėlavimu (pulsoksimetro latencija).', d: 60 }
     ],
-    ev: [{ n: 'Krikotirotomija / kvėpavimo takai atverti', st: 4 }] },
+    ev: [{ n: 'Krikotiroidotomija / kvėpavimo takai atverti', st: 4 }] },
 
   { id: 'bls', pav: 'Sprogimo plaučiai (blast lung)', tema: 'B', sal: 'CDC „Explosions and Blast Injuries“ (2003–2009); TCCC', url: 'https://webarchive.library.unt.edu/web/20090114232933/http://www.bt.cdc.gov/masscasualties/pdf/explosions-blast-injuries.pdf',
     aprasas: 'Karys 5 m nuo IED sprogimo uždaroje patalpoje, išorinių sužalojimų mažai. Iškart – vagalinė triada (apnėja, bradikardija, hipotenzija), vėliau progresuojanti hipoksija.',
@@ -146,7 +146,7 @@ window.SIMS = [
       { n: 'Po 15 min', v: { hr: 118, spo2: 95, sys: 132, dia: 84, rr: 24, temp: 36.4, r: 'sinus' }, p: 'Skausmas, tachikardija, AKS dar normalus. Apdegę antakiai, suodžiai – planuoti ankstyvą intubaciją. SpO₂ gali būti klaidingai normali apsinuodijus CO (pulsoksimetras neskiria karboksihemoglobino).', d: 0, auto: 180 },
       { n: 'Po 1–2 val.', v: { hr: 128, spo2: 92, sys: 118, dia: 76, rr: 28, temp: 35.9, r: 'sinus' }, p: 'Užkimimas stiprėja. Laukiama: RL 40 × 10 = 400 ml/val. („dešimties taisyklė“, 40–80 kg), šildymas.', d: 180, auto: 180 },
       { n: 'Po 4–6 val. be skysčių', v: { hr: 142, spo2: 86, sys: 88, dia: 58, rr: 34, temp: 35.3, r: 'sinus' }, p: 'Nudegimų šokas: diurezė <30 ml/val., stridoras. ⏱ Suspausta.', d: 180, auto: 180 },
-      { n: 'Kvėpavimo takų obstrukcija', v: { hr: 150, spo2: 74, sys: 80, dia: 52, rr: 40, temp: 35.0, r: 'sinus' }, p: 'Edema – intubacija nebeįmanoma: krikotirotomija.', d: 120 },
+      { n: 'Kvėpavimo takų obstrukcija', v: { hr: 150, spo2: 74, sys: 80, dia: 52, rr: 40, temp: 35.0, r: 'sinus' }, p: 'Edema – intubacija nebeįmanoma: krikotiroidotomija.', d: 120 },
       { n: 'Intubuotas + skysčiai', v: { hr: 112, spo2: 96, sys: 118, dia: 70, rr: 16, temp: 36.0, r: 'sinus' }, p: 'Titruoti RL iki diurezės 30–50 ml/val., VAS >65; max 250 ml/kg per 24 val. (JTS).', d: 180 }
     ],
     ev: [{ n: 'Ankstyva intubacija + RL pagal „dešimties taisyklę“', st: 4 }] },

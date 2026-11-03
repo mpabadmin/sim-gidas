@@ -19,7 +19,7 @@ const PCAT = (() => {
     ['RightLeg|j', 'Dešinė kirkšnis', 'junc'], ['LeftLeg|j', 'Kairė kirkšnis', 'junc'],
     ['RightArm|j', 'Dešinė pažastis', 'junc'], ['LeftArm|j', 'Kairė pažastis', 'junc'],
     ['Spleen', 'Blužnis', 'torso'], ['Liver', 'Kepenys', 'torso'], ['SmallIntestine', 'Plonoji žarna', 'torso'], ['LargeIntestine', 'Storoji žarna', 'torso'],
-    ['Splanchnic', 'Pilvo organai (kiti)', 'torso'], ['RightKidney', 'Dešinis inkstas', 'torso'], ['LeftKidney', 'Kairis inkstas', 'torso'],
+    ['Splanchnic', 'Pilvo organai (kiti)', 'torso'], ['RightKidney', 'Dešinysis inkstas', 'torso'], ['LeftKidney', 'Kairysis inkstas', 'torso'],
     ['Aorta', 'Aorta', 'torso'], ['VenaCava', 'Tuščioji vena', 'torso'], ['Muscle', 'Minkštieji audiniai', 'soft'], ['Skin', 'Oda (daug žaizdų)', 'soft']
   ];
   const SEV = [['l', 'Lengvas', 0.2], ['m', 'Vidutinis', 0.45], ['s', 'Sunkus', 0.7], ['x', 'Masyvus', 1.0]];
@@ -200,8 +200,8 @@ const PCAT = (() => {
     ['o2off', 'Nukrito deguonies kaukė', 'įranga', ''],
     ['ivout', 'Ištraukta IV / IO', 'įranga', ''],
     ['ecgoff', 'Atlipo EKG elektrodas', 'įranga', ''],
-    ['spo2off', 'Nukrito SpO₂ daviklis', 'įranga', ''],
-    ['probeson', 'Davikliai prijungti', 'įranga', ''],
+    ['spo2off', 'Nukrito SpO₂ jutiklis', 'įranga', ''],
+    ['probeson', 'Jutikliai prijungti', 'įranga', ''],
     ['nibpoff', 'Nuimta AKS manžetė', 'įranga', ''],
     ['painup', 'Skausmas stiprėja', 'būklė', ''],
     ['newinj', 'Naujas sužalojimas…', 'būklė', ''],
@@ -273,8 +273,8 @@ const PCAT = (() => {
     ['C', 'Širdis', 'heart', ['pcd']],
     ['H', 'Hipotermija', 'therm', ['hpmk', 'warm']]
   ];
-  const PSHORT = { tq: 'Turniketas', jtq: 'Jungtinis turniketas', pack: 'Tamponavimas', pdress: 'Spaudž. tvarstis', tqre: 'Turniketas vėl', tqconv: 'Konversija', pos: 'Atlošti / stumti', npa: 'NPA', suct: 'Atsiurbti', sga: 'i-gel', cric: 'Krikotomija', ett: 'Intubacija',
-    occl: 'Krūtinės lipdukas', seal: 'Lipdukas', burp: 'Atpūsti lipduką', ndc: 'Adatinė dekompr.', fthor: 'Pirštinė torakost.', tube: 'Krūtinės drenas', o2: 'Deguonis', o2off: 'O₂ nuimti', bvm: 'BVM', vent: 'DPV', pcd: 'Perikardiocentezė', hpmk: 'HPMK', warm: 'Šildymas' };
+  const PSHORT = { tq: 'Turniketas', jtq: 'Jungtinis turniketas', pack: 'Tamponavimas', pdress: 'Spaudž. tvarstis', tqre: 'Turniketas vėl', tqconv: 'Konversija', pos: 'Atlošti / stumti', npa: 'NPA', suct: 'Atsiurbti', sga: 'i-gel', cric: 'Krikotir.', ett: 'Intubacija',
+    occl: 'Krūtinės lipdukas', seal: 'Lipdukas', burp: 'Atpūsti lipduką', ndc: 'Adatinė dekompr.', fthor: 'Pirštinė torakost.', tube: 'Krūtinės drenas', o2: 'Deguonis', o2off: 'O₂ nuimti', bvm: 'BVM', vent: 'DPV (ventiliacija)', pcd: 'Perikardiocentezė', hpmk: 'HPMK', warm: 'Šildymas' };
   // ≈ Pulse 4.3.1 tokios funkcijos neturi – rodiklių pokytis apytikslis (programėlės sprendimas)
   const APX = {
     'inj:burn': 'Pulse neturi nudegimų modelio – skysčių netekimas modeliuojamas kaip lėtas kraujavimas per odą',

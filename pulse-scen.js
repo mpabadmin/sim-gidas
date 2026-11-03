@@ -137,7 +137,7 @@ const PSCEN = (() => {
     const caN = count(sc, l => l.code === 'drug' && l.id === 'ca');
     const caNeed = bu >= 1 && (caN === 0 || (r1 && Math.floor(bu / 4) > caN - 1));
     if (caNeed) add('C', 'Kalcio gliukonatas 10 % 30 ml', caN === 0 ? 'po 1-ojo kraujo vieneto – dar neskirtas' : 'kas 4 vienetus', 9, { k: 'drug', id: 'ca' });
-    if (r1 && sc.reprobe != null && !logs(sc).some(l => l.t >= sc.reprobe && /^(ecgon|spo2on|nibpon|probes)$/.test(l.code || ''))) add('M', 'Prijungti monitoriaus daviklius', 'monitorius rodo „– – –“, kol komanda neprijungs EKG, SpO₂, AKS', 9, { k: 'ev', x: 'probeson' });
+    if (r1 && sc.reprobe != null && !logs(sc).some(l => l.t >= sc.reprobe && /^(ecgon|spo2on|nibpon|probes)$/.test(l.code || ''))) add('M', 'Prijungti monitoriaus jutiklius', 'monitorius rodo „– – –“, kol komanda neprijungs EKG, SpO₂, AKS', 9, { k: 'ev', x: 'probeson' });
     // R
     const chest = sc.inj.some(j => ['ptx', 'optx', 'htx'].indexOf(j.k) >= 0 && j.state !== 'drained');
     if (!sc.o2 && spo2 != null && (spo2 < (r1 ? 94 : 90) || shock || chest || (hr != null && sys != null && hr / Math.max(1, sys) >= 1.3))) add('R', 'Deguonis', 'SpO₂ ' + spo2 + (shock ? ' · šokas' : '') + (chest ? ' · krūtinės trauma' : ''), spo2 < 90 ? 14 : 7, { k: 'tx', x: 'o2' });

@@ -1,11 +1,11 @@
 'use strict';
-// ───────── Taisyklių modelis (be Pulse) – vietinis variklis telefone ─────────
+// ───────── Telefono modelis (taisyklių, be Pulse) – vietinis variklis telefone ─────────
 // Kalba tuo pačiu protokolu kaip Pulse serveris (server/pulse_server.py): hello → info, start → started, act → ack,
 // kas ~1 s – vit; speed, skip, pause/run, stop, resume. Todėl monitoriaus logika (pulse.js) ta pati abiem varikliams.
 // Fiziologija supaprastinta, mokomoji (≈ visas variklis): netektas kraujas → ATLS šoko klasės; pneumotorakso įtampos
 // indeksas; hemotoraksas; deguonis; temperatūra; vaistai; sustojimas ir HOTT. Skaičiai – TCCC / ETC / ATLS mokomosios reikšmės.
 const PLOCAL = (() => {
-  const ENGINE = 'Taisyklių modelis', VERSION = 'r1 · 2026-10';
+  const ENGINE = 'Telefono modelis', VERSION = 'r1 · 2026-10';
   const KEY = 'sim-plocal';
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   const lerp = (x, P) => { if (x <= P[0][0]) return P[0][1]; for (let i = 1; i < P.length; i++) if (x <= P[i][0]) { const a = P[i - 1], b = P[i]; return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]); } return P[P.length - 1][1]; };
@@ -232,8 +232,14 @@ const PLOCAL = (() => {
         (m.acts || []).forEach(a => { const r = apply(S.E, a); if (!r[0]) emit({ t: 'ack', id: a.id || 'init', ok: false, msg: r[1], simt: 0 }); });
         const ff = clamp(+m.ff || 0, 0, 7200);
         if (ff >= 1) advance(S.E, ff);
+        // tęsinys po Pulse ryšio nutrūkimo: veiksmai pakartojami jų laiku, tada prasukama iki dabar
+        if (Array.isArray(m.replay)) {
+          m.replay.forEach(r => { const d = (+r.t || 0) - S.E.t; if (d > 0.05) advance(S.E, d); if (S.E.alive && r && r.a) apply(S.E, r.a); });
+          const d = clamp(+m.to || 0, 0, 86400) - S.E.t; if (d > 0.05) advance(S.E, d);
+          S.paused = !!m.paused;
+        }
         if (S.frozen) S.v0 = vitals(S.E);   // rankinis režimas: pradiniai rodikliai iš modelio, toliau keičia instruktorius
-        save(); emit({ t: 'started', sid: S.sid, state: m.state || '', simt: Math.round(S.E.t), engine: ENGINE });
+        save(); emit(Object.assign({ t: 'started', sid: S.sid, state: m.state || '', simt: Math.round(S.E.t), engine: ENGINE }, m.cont ? { resumed: true, cont: 1, paused: S.paused, speed: S.speed } : {}));
         vit(); startLoop();
         if (!S.E.alive) emit({ t: 'dead', simt: Math.round(S.E.t) });
         break;
@@ -270,6 +276,8 @@ const PLOCAL = (() => {
     return s;
   }
   // testams: tiesioginis variklis
-  return { socket, ENGINE, VERSION, _fresh: fresh, _apply: apply, _advance: advance, _vitals: vitals, _deficit: deficit };
+  // ar vaistas keičia telefono modelio rodiklius (kiti – tik žurnale)
+  const fx = id => !!DRUG[id] || id === 'esket';
+  return { socket, ENGINE, VERSION, fx, _fresh: fresh, _apply: apply, _advance: advance, _vitals: vitals, _deficit: deficit };
 })();
 if (typeof module !== 'undefined') module.exports = PLOCAL;
