@@ -43,7 +43,7 @@ const GUIDE = (() => {
   }
   const go = d => { i = Math.max(0, Math.min(STEPS.length - 1, i + d)); draw(); };
   document.addEventListener('click', e => {
-    const b = e.target.closest && e.target.closest('[data-g]'); if (!b) { if (el && e.target === el) close(); return; }
+    const b = e.target.closest && e.target.closest('[data-g]:not([data-act])'); if (!b) { if (el && e.target === el) close(); return; }
     e.preventDefault(); e.stopPropagation();
     const g = b.dataset.g;
     if (g === 'open') return open();
