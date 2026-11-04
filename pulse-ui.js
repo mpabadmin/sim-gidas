@@ -380,7 +380,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
   function recvHtml(P) {
     const sc = P.sc, v = P.v || {}, R = PSCEN.takeover(P);
     let h = '<div class="pxrecv"><b>Kas pasikeitė</b><dl>' +
-      `<dt>Gidas</dt><dd>MARCH → ETC (procedūros, vaistai, dozės)</dd><dt>AKS tikslas</dt><dd>sAKS 80–90 (GST – ≥ 110)${v.sys != null ? ' · dabar ' + v.sys + (v.sys > 90 ? ' – virš tikslo' : v.sys < 80 ? ' – žemiau tikslo' : ' – tiksle') : ''}</dd>` +
+      `<dt>Gidas</dt><dd>MARCH → ETC (procedūros, vaistai, dozės)</dd><dt>AKS tikslas</dt><dd>sAKS ≈ 100 (90–110), kai gaivinama krauju; be kraujo 80–90 (JTS); GST – ≥ 110${v.sys != null ? ' · dabar ' + v.sys + (v.sys > 110 ? ' – virš tikslo' : v.sys < 90 ? ' – žemiau tikslo' : ' – tiksle') : ''}</dd>` +
       `<dt>Priemonės</dt><dd>kraujo bankas ${sc.kit ? sc.kit.max : 6} vnt., pirštinė torakostomija, drenas, RSI, e-FAST, šildymas</dd><dt>Laikmačiai</dt><dd>TXA – geriausia per 90 min; kalcis po 1-ojo ir kas 4 vnt.; vertinimas kas 15 min</dd></dl></div>`;
     h += '<p class="pxlbl">Perimta iš MEDEVAC – patikrinkite</p>' + R.map(r => `<div class="pxtk ${r[0]}"><b>${r[0] === 'ok' ? '✓' : r[0] === 'bad' ? '✕' : '!'}</b><span>${E(r[1])}<small>${E(r[2])}</small></span></div>`).join('');
     if (sc.team2) h += '<p class="muted">Komanda pasikeitė – Role 1 vertinimas skaičiuojamas atskirai.</p>';
@@ -395,7 +395,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
     (sc.phs || []).forEach(p => {
       const a = Math.max(t0, p.t0), b = p.t1 != null ? Math.min(t1, p.t1) : t1; if (b <= a) return;
       if (p.ph === 'medevac') g += `<line x1="${X(a)}" y1="${Y(100)}" x2="${X(b)}" y2="${Y(100)}" stroke="#FAC775" stroke-dasharray="4 4" stroke-width="1.5"/><text x="${X(a) + 3}" y="20" fill="#FAC775" font-size="10">MEDEVAC</text>`;
-      if (p.ph === 'role1') g += `<rect x="${X(a)}" y="${Y(90)}" width="${X(b) - X(a)}" height="${Y(80) - Y(90)}" fill="#0C447C" opacity=".6"/><text x="${X(b) - 3}" y="20" fill="#9DC1E6" font-size="10" text-anchor="end">Role 1</text>`;
+      if (p.ph === 'role1') g += `<rect x="${X(a)}" y="${Y(110)}" width="${X(b) - X(a)}" height="${Y(90) - Y(110)}" fill="#0C447C" opacity=".6"/><text x="${X(b) - 3}" y="20" fill="#9DC1E6" font-size="10" text-anchor="end">Role 1</text>`;
     });
     const pts = H.map(x => X(x[0]).toFixed(1) + ',' + Y(x[2]).toFixed(1)).join(' ');
     const lo = H.reduce((m, x) => x[2] < m[2] ? x : m, H[0]);
@@ -507,7 +507,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
     const sc = P.sc;
     const cv = curveSvg(sc);
     const hasM = (sc.phs || []).some(x => x.ph === 'medevac'), hasR = (sc.phs || []).some(x => x.ph === 'role1');
-    let h = (cv ? '<section class="pnl"><h2>Sistolinis AKS per visą scenarijų</h2>' + cv + '<p class="muted">' + [hasM ? 'geltona brūkšninė – MEDEVAC tikslas ~100' : '', hasR ? 'mėlyna juosta – Role 1 tikslas 80–90' : '', 'raudona – &lt; 70'].filter(Boolean).join('; ') + '.</p></section>' : '') + evalHtml(P) + handSum(sc) + '<section class="pnl"><h2>Pagrindiniai laikai <small class="tag pxtag">nuo komandos atvykimo</small></h2><div class="pxm">' + metrics(P).map(m => `<div><span>${E(m[0])}</span>${m[1]}<small>${E(m[2])}</small></div>`).join('') + '</div></section>';
+    let h = (cv ? '<section class="pnl"><h2>Sistolinis AKS per visą scenarijų</h2>' + cv + '<p class="muted">' + [hasM ? 'geltona brūkšninė – MEDEVAC tikslas ~100' : '', hasR ? 'mėlyna juosta – Role 1 tikslas 90–110 (gaivinama krauju)' : '', 'raudona – &lt; 70'].filter(Boolean).join('; ') + '.</p></section>' : '') + evalHtml(P) + handSum(sc) + '<section class="pnl"><h2>Pagrindiniai laikai <small class="tag pxtag">nuo komandos atvykimo</small></h2><div class="pxm">' + metrics(P).map(m => `<div><span>${E(m[0])}</span>${m[1]}<small>${E(m[2])}</small></div>`).join('') + '</div></section>';
     const txt = mist(P);
     h += `<section class="pnl"><h2>Perdavimas – etalonas aptarimui</h2><pre class="pxpre">${E(txt)}</pre>${btn('copy', null, 'Kopijuoti ataskaitą', 'pxb wide')}</section>`;
     const items = sc.log.map(l => ({ t: l.t, n: l.n, c: l.star ? 'star' : l.by === 'team' ? 'team' : 'ins' })).concat((P.cm || []).map(c => ({ t: c.t, n: '⚠ ' + c.title, c: 'cm' }))).sort((a, b) => a.t - b.t);

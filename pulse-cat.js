@@ -149,9 +149,9 @@ const PCAT = (() => {
     medevac: [
       D('ket', 'Ketaminas', 'Ketamine', 'Analgezija', [['IV', [25], 'mg'], ['IO', [25], 'mg'], ['IM', [100], 'mg'], ['IN', [50], 'mg']], 'IV/IO – lėtai per 1 min; kartoti kas 30 min pagal poreikį (MARCH)', [['IV', 0.2, 'analgezija 0,2 mg/kg'], ['IV', 0.3, 'analgezija 0,3 mg/kg']]),
       D('esket', 'Esketaminas', 'Ketamine', 'Analgezija', [['IN', [14, 28], 'mg']], 'modelyje – kaip ketaminas'),
-      D('fen', 'Fentanilis', 'Fentanyl', 'Analgezija', [['IV', [50], 'mcg'], ['IO', [50], 'mcg'], ['IN', [100], 'mcg'], ['OTFC', [800], 'mcg']], 'ne TCCC 2026 – tik pagal vieneto SOP; OTFC modelyje ≈ 100 mcg IM', [['IV', 0.0005, '0,5 mcg/kg'], ['IV', 0.001, '1 mcg/kg']]),
-      D('mor', 'Morfinas', 'Morphine', 'Analgezija', [['IV', [2.5], 'mg'], ['IM', [5, 10, 20], 'mg']], 'ne TCCC 2026 – tik pagal SOP; IV ne dažniau kas 10 min'),
-      D('nal', 'Naloksonas', 'Naloxone', 'Analgezija', [['IV', [0.4], 'mg'], ['IO', [0.4], 'mg'], ['IM', [0.4], 'mg'], ['IN', [0.4], 'mg']], 'kartoti kas 2–3 min'),
+      D('fen', 'Fentanilis', 'Fentanyl', 'Analgezija', [['IV', [50], 'mcg'], ['IO', [50], 'mcg'], ['IN', [100], 'mcg']], 'ne TCCC 2026 – tik pagal vieneto SOP; kartoti kas 30 min pagal poreikį (MARCH)', [['IV', 0.0005, '0,5 mcg/kg'], ['IV', 0.001, '1 mcg/kg']]),
+      D('mor', 'Morfinas', 'Morphine', 'Analgezija', [['IV', [2.5, 5, 10], 'mg'], ['IM', [5, 10, 20], 'mg']], 'ne TCCC 2026 – tik pagal SOP; IV 2,5–15 mg lėtai titruojant, IM 10 mg (5–20) kas 4 val. (MARCH, PCS)'),
+      D('nal', 'Naloksonas', 'Naloxone', 'Analgezija', [['IV', [40], 'mcg'], ['IO', [40], 'mcg'], ['IM', [0.4], 'mg'], ['IN', [1.8], 'mg']], 'IV / IO po 40 mcg kas 2–3 min, kol KD > 10; IM 0,4 mg; IN Nyxoid 1,8 mg; iš viso ≤ 10 mg (JTS PFC)'),
       D('txa', 'TXA (traneksamo rūgštis)', null, 'Kraujavimas', [['IV', [2], 'g'], ['IO', [2], 'g']], 'vienkartinė dozė; po 3 val. neskirti'),
       D('ca', 'Kalcio gliukonatas 10 %', null, 'Kraujavimas', [['IV', [30], 'ml'], ['IO', [30], 'ml']], 'po pirmo kraujo produkto vieneto'),
       D('hts', 'Hipertoninis NaCl 3 %', null, 'Galva', [['IV', [250], 'ml'], ['IO', [250], 'ml']], 'tik smegenų išvaržos požymiai; kartoti po 20 min (maks. 2)'),
@@ -164,12 +164,12 @@ const PCAT = (() => {
       D('cfx', 'Cefaleksinas', null, 'Antibiotikai', [['PO', [500], 'mg']], 'alternatyva cefadroksiliui')
     ],
     role1: [
-      D('ket', 'Ketaminas', 'Ketamine', 'Analgezija / anestezija', [['IV', [25], 'mg'], ['IO', [25], 'mg'], ['IM', [100, 300], 'mg'], ['IN', [50], 'mg']], 'analgezija 0,2–0,5 mg/kg, kartoti kas 30 min; sedacijai / indukcijai šoke dozę mažinti 50 % (ETC)', [['IV', 0.2, 'analgezija 0,2 mg/kg'], ['IV', 0.3, 'analgezija 0,3 mg/kg'], ['IV', 0.5, 'analgezija maks. 0,5 mg/kg'], ['IV', 1, 'sedacija 1 mg/kg'], ['IV', 2, 'sedacija / indukcija 2 mg/kg']]),
-      D('fen', 'Fentanilis', 'Fentanyl', 'Analgezija / anestezija', [['IV', [50, 100], 'mcg'], ['IO', [50, 100], 'mcg'], ['IN', [100], 'mcg']], 'medicinos personalui', [['IV', 0.001, '1 mcg/kg']]),
+      D('ket', 'Ketaminas', 'Ketamine', 'Analgezija / anestezija', [['IV', [25], 'mg'], ['IO', [25], 'mg'], ['IM', [100, 300], 'mg'], ['IN', [50], 'mg']], 'analgezija 0,2–0,3 mg/kg (TCCC 2026), kartoti kas 30 min; sedacijai / indukcijai šoke dozę mažinti 50 %. Kiti šaltiniai: ETC 5.0 – iki 0,5 mg/kg', [['IV', 0.2, 'analgezija 0,2 mg/kg'], ['IV', 0.3, 'analgezija 0,3 mg/kg'], ['IV', 1, 'sedacija 1 mg/kg'], ['IV', 2, 'sedacija / indukcija 2 mg/kg']]),
+      D('fen', 'Fentanilis', 'Fentanyl', 'Analgezija / anestezija', [['IV', [50], 'mcg'], ['IO', [50], 'mcg'], ['IN', [100], 'mcg']], 'medicinos personalui; kartoti kas 30 min pagal poreikį (ETC)', [['IV', 0.001, '1 mcg/kg']]),
       D('mor', 'Morfinas', 'Morphine', 'Analgezija / anestezija', [['IV', [2, 3], 'mg'], ['IO', [2, 3], 'mg'], ['IM', [10], 'mg']], 'nutraukti, kai KD < 10 k./min', [['IV', 0.1, '0,1 mg/kg']]),
-      D('nal', 'Naloksonas', 'Naloxone', 'Analgezija / anestezija', [['IV', [0.1, 0.2], 'mg'], ['IM', [0.4, 2], 'mg'], ['IN', [1.8], 'mg']], 'ETC – maks. 2 mg'),
+      D('nal', 'Naloksonas', 'Naloxone', 'Analgezija / anestezija', [['IV', [40], 'mcg'], ['IO', [40], 'mcg'], ['IM', [0.4], 'mg'], ['IN', [1.8], 'mg']], 'IV / IO po 40 mcg kas 2–3 min, kol KD > 10; IM 0,4 mg; IN Nyxoid 1,8 mg; iš viso ≤ 10 mg (JTS PFC)'),
       D('mid', 'Midazolamas', 'Midazolam', 'Analgezija / anestezija', [['IV', [0.5, 2], 'mg'], ['IO', [0.5, 2], 'mg']], 'emergencijos reakcijai, traukuliams', [['IM', 0.1, '0,1 mg/kg IM']]),
-      D('roc', 'Rokuroniumas', null, 'Analgezija / anestezija', [], 'RSI – modelyje tik žurnale: Pulse ventiliatorius neprijungtas, paralyžiaus neskaičiuojame (ventiliuokite garsiai)', [['IV', 0.6, 'intubacijai 0,6 mg/kg'], ['IV', 1, 'RSI 1 mg/kg']], 1),
+      D('roc', 'Rokuroniumas', null, 'Analgezija / anestezija', [], 'RSI – telefono modelyje paralyžius po ~60 s, trunka ~45 min (be ventiliacijos – apnėja); Pulse modelyje tik žurnale – ventiliatorius neprijungtas (ventiliuokite garsiai)', [['IV', 0.6, 'intubacijai 0,6 mg/kg'], ['IV', 1, 'RSI 1 mg/kg']], 1),
       D('adr', 'Adrenalinas', 'Epinephrine', 'Gaivinimas', [['IV', [1], 'mg'], ['IO', [1], 'mg']], 'sustojus širdžiai – ETC gaivinimo algoritmas (ALS)'),
       D('txa', 'TXA (traneksamo rūgštis)', null, 'Kraujavimas', [['IV', [2], 'g'], ['IO', [2], 'g']], 'geriausia per 90 min nuo sužeidimo'),
       D('ca', 'Kalcio gliukonatas 10 %', null, 'Kraujavimas', [['IV', [30], 'ml'], ['IO', [30], 'ml']], 'kartoti kas 4 kraujo vienetus'),
@@ -296,7 +296,6 @@ const PCAT = (() => {
     'act:burp': 'Modelyje – tik žurnale',
     'fl:LactatedRingers': 'Pulse neturi Ringerio tirpalo – lašinamas kaip NaCl 0,9 %',
     'drug:esket': 'Pulse neturi esketamino – modeliuojama kaip ketaminas',
-    'route:OTFC': 'Pulse neturi transmukozinio vartojimo – ≈ 100 mcg į raumenį',
     'route:IN': 'Pulse neturi intranazalinio vartojimo – modeliuojama kaip į raumenį',
     'route:IO': 'IO modelyje – kaip IV'
   };

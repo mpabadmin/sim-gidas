@@ -5,7 +5,7 @@
 // Fiziologija supaprastinta, mokomoji (≈ visas variklis): netektas kraujas → ATLS šoko klasės; pneumotorakso įtampos
 // indeksas; hemotoraksas; deguonis; temperatūra; vaistai; sustojimas ir HOTT. Skaičiai – TCCC / ETC / ATLS mokomosios reikšmės.
 const PLOCAL = (() => {
-  const ENGINE = 'Telefono modelis', VERSION = 'r1 · 2026-10';
+  const ENGINE = 'Telefono modelis', VERSION = 'r2 · 2026-11';
   const KEY = 'sim-plocal';
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   const lerp = (x, P) => { if (x <= P[0][0]) return P[0][1]; for (let i = 1; i < P.length; i++) if (x <= P[i][0]) { const a = P[i - 1], b = P[i]; return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]); } return P[P.length - 1][1]; };
@@ -17,8 +17,14 @@ const PLOCAL = (() => {
   // ATLS: deficito dalis → [ŠSD, sAKS, dAKS, KD]
   const ATLS = [[0, 80, 124, 80, 14], [0.15, 96, 122, 86, 18], [0.30, 115, 108, 82, 24], [0.40, 132, 86, 60, 30], [0.50, 145, 64, 42, 36], [0.56, 60, 45, 25, 10]];
   const atls = d => { d = Math.max(0, d); for (let i = 1; i < ATLS.length; i++) if (d <= ATLS[i][0]) { const a = ATLS[i - 1], b = ATLS[i], t = (d - a[0]) / (b[0] - a[0]); return [1, 2, 3, 4].map(k => a[k] + (b[k] - a[k]) * t); } return ATLS[ATLS.length - 1].slice(1); };
-  // vaistai: [pusinės eliminacijos laikas min, „vieneto“ dozė mg]
-  const DRUG = { ket: [15, 25], fen: [45, 0.05], mor: [90, 5], nal: [45, 0.4], mid: [60, 2], adr: [3, 1], roc: [45, 50], hts: [120, 1], man: [120, 1] };
+  // vaistai: [veikimo trukmės konstanta min (eksponentinis mažėjimas), „vieneto“ dozė mg]
+  // naloksonas veikia trumpiau nei opioidai (30 min prieš 45 / 90) – galimas pakartotinis slopinimas
+  const DRUG = { ket: [15, 25], fen: [45, 0.05], mor: [90, 5], nal: [30, 0.4], mid: [60, 2], adr: [3, 1], roc: [45, 50], hts: [120, 1], man: [120, 1] };
+  // veikimo pradžia pagal vartojimo būdą: laikas (min), per kurį pasiekiama pusė poveikio (Hill n = 3: ~10 % – po pusės šio laiko, ~90 % – po dvigubo).
+  // Fentanilis IV / IO 2–3 min (pikas ≈ 5), IN ≈ 10; morfinas IV 5–10 (pikas 15–20), IM 15–30; ketaminas IV ≈ 1, IM ≈ 5, IN ≈ 10; naloksonas IV 1–2, IM / IN 3–5.
+  const ONSET = { fen: { IV: 2.5, IN: 8, IM: 8, OTFC: 10 }, mor: { IV: 7, IM: 20 }, ket: { IV: 0.7, IM: 4, IN: 8 }, nal: { IV: 1, IM: 4, IN: 4 }, mid: { IV: 2, IM: 8, IN: 6 }, adr: { IV: 0.3, IM: 3 } };
+  const onsetOf = (id, r) => { const O = ONSET[id]; if (!O) return 0; r = r === 'IO' ? 'IV' : r; return O[r] != null ? O[r] : O.IV != null ? O.IV : 0; };
+  const ramp = (id, r, min) => { const h = onsetOf(id, r); if (!(h > 0)) return 1; if (min <= 0) return 0; const q = Math.pow(min / h, 3); return q / (1 + q); };
   const SUB = { Ketamine: 'ket', Fentanyl: 'fen', Morphine: 'mor', Naloxone: 'nal', Midazolam: 'mid', Epinephrine: 'adr' };
   const O2B = { NasalCannula: f => Math.min(4, 0.75 * f), SimpleMask: f => Math.min(7, 3 + 0.35 * f), NonRebreatherMask: f => Math.min(8.5, 4 + 0.3 * f) };
   const BLOODY = { Blood: 0.9, PackedRBC: 0.9, Plasma: 0.8 };
@@ -78,13 +84,13 @@ const PLOCAL = (() => {
       case 'bronch': case 'asthma': E.bronch = clamp(+a.sev || 0, 0, 1); return [true, ''];
       case 'pain': case 'stress': E.pain = clamp(+a.sev || 0, 0, 1); return [true, ''];
       case 'temp': E.T = clamp(+a.v || 36.6, 28, 40); return [true, ''];
-      case 'bolus': { const id = SUB[a.sub]; if (!id) return [false, 'nežinomas vaistas']; E.drugs.push([id, E.t, +a.mg || 0]); return [true, '']; }
+      case 'bolus': { const id = SUB[a.sub]; if (!id) return [false, 'nežinomas vaistas']; E.drugs.push([id, E.t, +a.mg || 0, a.route || '']); return [true, '']; }
       case 'drug': {
         const id = a.id, mg = +a.mg || 0;
-        if (DRUG[id]) E.drugs.push([id, E.t, mg]);
-        if (id === 'esket') E.drugs.push(['ket', E.t, mg * 2]);
+        if (DRUG[id]) E.drugs.push([id, E.t, mg, a.route || '']);
+        if (id === 'esket') E.drugs.push(['ket', E.t, mg * 2, a.route || 'IN']);
         if (id === 'ket' && mg / E.kg >= 0.4) { E.ind = E.t; E.indK = Math.min(2, mg / E.kg); }   // sedacijos / indukcijos dozė (0,5–2 mg/kg)
-        if (id === 'roc') E.para = E.t + 45 * 60;                         // paralyžius ~45 min
+        if (id === 'roc') { E.para0 = E.t + 60; E.para = E.t + 45 * 60; }   // paralyžius po ~60 s, trunka ~45 min (be ventiliacijos – apnėja)
         if (id === 'hts' || id === 'man') E.tbi = Math.max(0, E.tbi - 0.25);
         return [true, ''];
       }
@@ -107,7 +113,8 @@ const PLOCAL = (() => {
   }
 
   // ── vienas žingsnis (dt s) ──
-  const dEff = (E, id) => { const D = DRUG[id]; if (!D) return 0; let s = 0; E.drugs.forEach(x => { if (x[0] === id && E.t >= x[1]) s += (x[2] / D[1]) * Math.exp(-(E.t - x[1]) / 60 / D[0]); }); return s; };
+  // vaisto poveikis „vienetais“: dozė × veikimo pradžios kreivė (pagal būdą) × mažėjimas
+  const dEff = (E, id) => { const D = DRUG[id]; if (!D) return 0; let s = 0; E.drugs.forEach(x => { if (x[0] === id && E.t >= x[1]) { const mn = (E.t - x[1]) / 60; s += (x[2] / D[1]) * ramp(id, x[3], mn) * Math.exp(-mn / D[0]); } }); return s; };
   function deficit(E) { return Math.max(0, E.lost - 0.9 * E.inB - 0.8 * E.inP - 0.25 * E.inC) / E.bv0; }
   function step(E, dt) {
     if (!E.alive) return;
@@ -129,9 +136,20 @@ const PLOCAL = (() => {
     if (E.tbiBase > 0 && (E.spo2 < 90 || E.map < 65)) E.tbi = Math.min(1, E.tbi + 0.01 * m);
     const V = vitals(E, true);
     E.map = V.map;
-    // SpO₂ artėja prie tikslo
-    const tau = V._apnea ? 70 : 20;
-    E.spo2 += (V._spo2t - E.spo2) * Math.min(1, dt / tau);
+    // deguonies atsargos (preoksigenacija): kaupiasi kvėpuojant su O₂ (pilnai – per ~3 min su kauke su rezervuaru), oru išsivalo per ~1,5 min
+    if (V._apnea) { /* apnėjos metu atsargos nekinta */ }
+    else if (V._o2b > 0 && V.rr > 0) E.o2T = Math.min(300, (E.o2T || 0) + dt * Math.min(1, V._o2b / 6));
+    else E.o2T = Math.max(0, (E.o2T || 0) - 2 * dt);
+    if (V._apnea) {
+      // apnėja: plokščia dalis (oru ≈ 60 s; po O₂ – iki 3–5 min pagal preoksigenaciją; šoke / kraujuojant – trumpiau), tada sigmoidinis kritimas
+      if (!E.apT) { E.apT = dt; E.ap0 = E.spo2; const sh = clamp(1 - 1.2 * deficit(E), 0.4, 1); E.apTp = (60 + 240 * Math.min(1, (E.o2T || 0) / 180)) * sh * clamp((E.spo2 - 80) / 16, 0.15, 1); E.apK = 90 * clamp(1 - deficit(E), 0.6, 1); }
+      else E.apT += dt;
+      const u = Math.max(0, E.apT - E.apTp);
+      E.spo2 = 40 + (E.ap0 - 40) * Math.exp(-Math.pow(u / E.apK, 2));
+    } else {
+      E.apT = 0;
+      E.spo2 += (V._spo2t - E.spo2) * Math.min(1, dt / 20);   // SpO₂ artėja prie tikslo
+    }
     // sustojimas
     const p = V._p;
     E.pT = p >= 0.99 ? E.pT + dt : 0;
@@ -156,25 +174,29 @@ const PLOCAL = (() => {
     if (E.effV > 100) { const f = Math.min(1, (E.effV - 100) / 200); hr += 35 * f; sys -= 50 * f; dia -= 15 * f; }
     const htxV = Object.values(E.htx).reduce((s, H) => s + (H.drained ? 0 : H.vol), 0);
     if (htxV > 1000) sys -= Math.min(20, 10 * (htxV - 1000) / 1000);
-    const ket = dEff(E, 'ket'), opi = Math.max(0, dEff(E, 'fen') + dEff(E, 'mor') - 2 * dEff(E, 'nal')), mid = dEff(E, 'mid'), epi = dEff(E, 'adr');
+    // naloksonas – konkurencinis antagonistas: 40 mcg ≈ pusė opioido poveikio, 0,4 mg ≈ 90 % (veikia trumpiau nei opioidas)
+    const ket = dEff(E, 'ket'), nal = dEff(E, 'nal'), opi = (dEff(E, 'fen') + dEff(E, 'mor')) * (1 - nal / (nal + 0.1)), mid = dEff(E, 'mid'), epi = dEff(E, 'adr');
+    // kvėpavimo slopinimas: standartinė dozė (fentanilis 50–100 mcg, morfinas 5–10 mg) sveikam 80 kg – KD −2…−4;
+    // ryškus – didelės / kartotinės dozės arba sinergija (midazolamas, GST, hipovolemija), skaičiuojama mcg/kg
+    const xo = opi * (80 / E.kg) * (1 + 0.15 * mid) * (1 + 0.8 * E.tbi) * (1 + 3 * Math.min(0.4, d)), rdep = 14 * xo / (xo + 6.6);
     const anal = Math.min(1, ket + 0.8 * opi);
     hr += 12 * E.pain * (1 - anal); sys += 10 * E.pain * (1 - anal); rr += 4 * E.pain * (1 - anal);
     rr += 12 * E.bronch;
     if (E.ind && E.t - E.ind < 600 && d > 0.25) { const f = Math.exp(-(E.t - E.ind) / 300) * (E.indK || 1); sys -= 20 * f; dia -= 12 * f; }   // indukcija šoke – hipotenzija
     else { hr += 8 * Math.min(1.5, ket); sys += 8 * Math.min(1.5, ket); }
     hr += 35 * epi; sys += 35 * epi;
-    rr -= 5 * opi + 2 * mid; sys -= (5 + 10 * d) * opi + 6 * mid;
+    rr -= rdep + 0.8 * mid; sys -= (5 + 10 * d) * opi + 6 * mid;
     const aw = E.secured ? 0 : E.aw;
     if (aw > 0) { rr += 10 * aw; hr += 20 * aw; }
     if (E.tbi > 0.6 && sys > 90) { const f = (E.tbi - 0.6) / 0.4; hr -= 40 * f; sys += 45 * f; rr = Math.max(6, rr - 8 * f); }
-    const para = E.para && E.t < E.para;
+    const para = E.para && E.t >= (E.para0 || 0) && E.t < E.para;
     let apnea = false;
     if (para || rr < 4) { if (E.vent || E.secured) rr = 14; else { rr = 0; apnea = true; } }
     rr = Math.max(0, rr);
     // SpO₂ tikslas
     let o2b = E.o2 && O2B[E.o2.dev] ? O2B[E.o2.dev](E.o2.flow) : 0;
     if (E.vent && E.secured) o2b = Math.max(o2b, 4);
-    let st = 98 - 20 * Math.min(1, p) - Math.min(20, htxV / 100) - 50 * aw - 25 * E.bronch - (opi > 1.5 ? 8 * (opi - 1.5) : 0) - (d > 0.4 ? 3 + 10 * (d - 0.4) : 0) - (rr > 0 && rr < 8 ? (8 - rr) * 4 : 0) + o2b * (1 - 0.4 * Math.min(1, p));
+    let st = 98 - 20 * Math.min(1, p) - Math.min(20, htxV / 100) - 50 * aw - 25 * E.bronch - (d > 0.4 ? 3 + 10 * (d - 0.4) : 0) - (rr > 0 && rr < 8 ? (8 - rr) * 4 : 0) + o2b * (1 - 0.4 * Math.min(1, p));
     if (apnea) st = 40;
     st = clamp(st, 30, 100);
     const st0 = st;
@@ -196,7 +218,7 @@ const PLOCAL = (() => {
     out.htx = {}; Object.keys(E.htx).forEach(s => { out.htx[s] = { vol: Math.round(E.htx[s].vol), out: Math.round(E.htx[s].out), drained: !!E.htx[s].drained }; });
     out.ptx = {}; Object.keys(E.ptx).forEach(s => { out.ptx[s] = Math.round(E.ptx[s].idx * 100) / 100; });
     out.co = Math.round(Math.max(0.5, 5.2 * (1 - d * 1.4) - Math.min(1, p) * 1.5) * 10) / 10;
-    if (internal) { out._spo2t = st; out._spo2ok = st0; out._p = p; out._apnea = apnea; }
+    if (internal) { out._spo2t = st; out._spo2ok = st0; out._p = p; out._apnea = apnea; out._o2b = o2b; }
     return out;
   }
   const advance = (E, s) => { const n = Math.max(1, Math.round(s)); for (let i = 0; i < n && E.alive; i++) step(E, s / n); return E.alive; };

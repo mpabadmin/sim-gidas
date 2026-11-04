@@ -130,10 +130,10 @@ const PSCEN = (() => {
     // C
     if (bleeding && !gave('txa') && t < 10800) add('C', 'TXA 2 g IV / IO lėtai', (r1 ? 'geriausia per 90 min' : 'ne vėliau 3 val.') + ' – liko ' + Math.max(0, Math.round(((r1 && t < 5400 ? 5400 : 10800) - t) / 60)) + ' min', 10 + (shock ? 4 : 0), { k: 'drug', id: 'txa' });
     const bu = count(sc, l => l.code === 'fluid' && /Blood|PackedRBC|Plasma/.test(l.cmp || '')), left = sc.kit ? Math.max(0, sc.kit.max - Math.ceil(sc.kit.used)) : 0, running = (sc.inf || []).some(f => /Blood|PackedRBC|Plasma/.test(f.cmp) && t - f.t0 < f.tot);
-    const tgtLow = r1 ? 80 : 100;
-    const needBlood = sys != null && (r1 ? sys < 80 : (sys < 100 || (hr != null && hr / Math.max(1, sys) >= 1.3)));
-    if (needBlood && !running && left > 0) add('C', 'Kraujas 1 vnt.', (sys >= tgtLow ? 'ŠSD ' + hr + ' > sAKS ' + sys + ' (šoko indeksas)' : 'sAKS ' + sys) + ' – tikslas ' + (r1 ? '80–90 (ETC)' : 'radialinis pulsas, sąmonė ar sAKS 100 (MARCH)') + ' · liko ' + left + ' vnt.', sys < 70 ? 22 : 12, { k: 'fluid' }, sys < 70 ? 'crit' : 'warn');
-    if (r1 && sys != null && sys > 95 && running) add('C', 'Stabdyti kraują – virš tikslo', 'sAKS ' + sys + ' > 90 (ETC tikslas 80–90)', 9, { k: 'view', x: 'med' });
+    const tgtLow = r1 ? 90 : 100;   // Role 1 (gaivinama krauju) 90–110; MEDEVAC ~100
+    const needBlood = sys != null && (r1 ? sys < 90 : (sys < 100 || (hr != null && hr / Math.max(1, sys) >= 1.3)));
+    if (needBlood && !running && left > 0) add('C', 'Kraujas 1 vnt.', (sys >= tgtLow ? 'ŠSD ' + hr + ' > sAKS ' + sys + ' (šoko indeksas)' : 'sAKS ' + sys) + ' – tikslas ' + (r1 ? '≈ 100 (90–110), kai gaivinama krauju (JTS); GST ≥ 110' : 'radialinis pulsas, sąmonė ar sAKS 100 (TCCC 2026); GST > 100') + ' · liko ' + left + ' vnt.', sys < 70 ? 22 : 12, { k: 'fluid' }, sys < 70 ? 'crit' : 'warn');
+    if (r1 && sys != null && sys > 110 && running) add('C', 'Stabdyti kraują – virš tikslo', 'sAKS ' + sys + ' > 110 (JTS tikslas 90–110, kai gaivinama krauju)', 9, { k: 'view', x: 'med' });
     const caN = count(sc, l => l.code === 'drug' && l.id === 'ca');
     const caNeed = bu >= 1 && (caN === 0 || (r1 && Math.floor(bu / 4) > caN - 1));
     if (caNeed) add('C', 'Kalcio gliukonatas 10 % 30 ml', caN === 0 ? 'po 1-ojo kraujo vieneto – dar neskirtas' : 'kas 4 vienetus', 9, { k: 'drug', id: 'ca' });
