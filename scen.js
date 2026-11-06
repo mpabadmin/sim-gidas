@@ -190,7 +190,7 @@ window.SIMS = [
     st: [
       { n: 'Prispaustas', v: { hr: 104, spo2: 96, sys: 122, dia: 78, rr: 22, temp: 35.8, r: 'sinus' }, p: 'Prieš išlaisvinimą: IV/IO, 2 l kristaloidų bolusas, paruošti Ca gliukonatą.', d: 0 },
       { n: 'Išlaisvintas – reperfuzija', v: { hr: 120, spo2: 95, sys: 92, dia: 58, rr: 24, temp: 35.8, r: 'sinus' }, p: 'Skystis „išteka“ į galūnę, K⁺ patenka į kraujotaką.', d: 30, auto: 60 },
-      { n: 'Hiperkalemija – bradikardija', v: { hr: 44, spo2: 94, sys: 78, dia: 46, rr: 22, temp: 35.8, r: 'hyk' }, p: 'Monitoriuje: bradikardija, P bangų nebėra, platūs QRS, aukšti smailūs T (hiperkalemija, JTS). Laukiama: Ca gliukonatas 10 % 10 ml per 2–3 min, insulinas + gliukozė, salbutamolis.', d: 45, auto: 60 },
+      { n: 'Hiperkalemija – bradikardija', v: { hr: 44, spo2: 94, sys: 78, dia: 46, rr: 22, temp: 35.8, r: 'hyk' }, p: 'Monitoriuje: bradikardija, P bangų nebėra, platūs QRS, aukšti smailūs T (hiperkalemija, JTS). Laukiama: 30 ml 10 % kalcio gliukonato (arba 10 ml 10 % kalcio chlorido) IV / IO per 5–10 min, kartoti po 5–10 min, jei EKG pokyčiai išlieka (ERC 2025), insulinas + gliukozė, salbutamolis.', d: 45, auto: 60 },
       { n: 'Skilvelinė tachikardija', v: { hr: 170, spo2: 90, sys: 70, dia: 40, rr: 24, temp: 35.8, r: 'vt' }, p: 'Plačių kompleksų tachikardija.', d: 20, auto: 45 },
       { n: 'VF', v: { hr: 0, spo2: 80, sys: 0, dia: 0, rr: 0, temp: 35.8, r: 'vf' }, p: 'Defibriliacija + Ca IV + hiperkalemijos gydymas.', d: 15 },
       { n: 'Po Ca + insulino/gliukozės', v: { hr: 92, spo2: 96, sys: 108, dia: 66, rr: 20, temp: 35.9, r: 'sinus' }, p: 'Ca veikia iš karto, 30–60 min; insulinas – po ~20 min, 4–6 val. Gali tekti kartoti. Diurezė 100–200 ml/val.', d: 60 }
