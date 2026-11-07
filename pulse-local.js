@@ -151,7 +151,9 @@ const PLOCAL = (() => {
     if (E.warm) { if (E.T < 37) E.T = Math.min(37, E.T + 1.5 / 60 * m); }
     else {
       let cool = E.amb != null ? clamp(0.05 * (E.T - E.amb), 0, 3) * (1 + E.burn) : Math.min(1, (0.5 + 0.5 * Math.min(1, deficit(E) / 0.3)) * (1 + E.burn));
-      if (E.hpmk) cool *= 0.25;
+      // HPMK: nuostoliai ~4 kartus mažesni ir kūno šiluma juos kompensuoja – temperatūra artėja prie pusiausvyros (~36,2 °C;
+      // giliame šoke žemesnės – šilumos gamyba mažėja), žemiau jos lėtai atšyla (Ready-Heat). Kitaip ilgas scenarijus nukrenta iki < 32 °C.
+      if (E.hpmk) { const teq = 36.2 - 2.5 * Math.min(1, deficit(E) / 0.4); cool = E.T > teq ? cool * 0.25 * Math.min(1, (E.T - teq) / 0.6) : -0.3 * Math.min(1, (teq - E.T) / 0.6); }
       E.T -= cool / 60 * m;
     }
     E.T = clamp(E.T, 28, 40);
