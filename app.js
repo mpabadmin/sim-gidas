@@ -1,6 +1,6 @@
 'use strict';
 // ───────── SIM – programėlės eiga: pradžia, monitorius, instruktoriaus pultas, scenarijai, žurnalas, nustatymai ─────────
-const VER = 'v11.9 · 2026-11-07';
+const VER = 'v11.10 · 2026-11-07';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
 const LSg = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
@@ -40,7 +40,7 @@ function stageCmd(sc, i, d, useD) {
 // ───────── monitoriaus pusė: komandų vykdymas, žurnalas, scenarijaus eiga ─────────
 const LB = { hr: ['ŠSD', 'k./min', 5, 0, 220, 1], spo2: ['SpO₂', '%', 1, 50, 100, 1], sys: ['AKS sist.', 'mm Hg', 5, 0, 240, 1], dia: ['AKS diast.', 'mm Hg', 5, 0, 160, 1], rr: ['KD', 'k./min', 2, 0, 50, 1], temp: ['T', '°C', 0.1, 30, 42, 0.1] };
 const f1 = (k, v) => k === 'temp' ? (+v).toFixed(1).replace('.', ',') : String(Math.round(v));
-const PRB = { ecg: ['EKG elektrodai prijungti', 'EKG elektrodai atjungti'], spo2: ['SpO₂ jutiklis uždėtas', 'SpO₂ jutiklis nuimtas'], nibp: ['AKS manžetė uždėta', 'AKS manžetė nuimta'] };
+const PRB = { ecg: ['EKG elektrodai prijungti', 'EKG elektrodai atjungti'], spo2: ['SpO₂ jutiklis uždėtas', 'SpO₂ jutiklis nuimtas'], nibp: ['AKS manžetė uždėta', 'AKS manžetė nuimta'], temp: ['Termometras prijungtas', 'Termometras atjungtas'] };
 const OPTN = { sound: 'Garsas', beep: 'Pulso pyptelėjimas', alarms: 'Aliarmai' };
 let PLAY = LSg('sim-play', null), PREF = Object.assign({ auto: 0, useD: 1 }, LSg('sim-playpref6', {}));
 function setPlay(p) { PLAY = p; LSs('sim-play', p); }
@@ -69,7 +69,7 @@ function exec(o) {
       break;
     }
     case 'rh': if (okR(o.r) && o.r !== r0) { SIM.sesStart(); SIM.setRhythm(o.r); L('rh', 'Ritmas: ' + SIM.rhName(o.r)); } break;
-    case 'probe': if (PRB[o.k]) { SIM.setProbe(o.k, o.on); L('set', PRB[o.k][o.on ? 0 : 1]); } break;
+    case 'probe': if (PRB[o.k]) { SIM.setProbe(o.k, o.on, o.wait); if (!o.wait) L('set', PRB[o.k][o.on ? 0 : 1]); } break;
     case 'art': if (o.k === 'cpr' || o.k === 'motion') { SIM.setArt(o.k, o.on); L('set', (o.k === 'cpr' ? 'KPR kompresijų artefaktas' : 'Judesio artefaktas') + (o.on ? ' įjungtas' : ' išjungtas')); } break;
     case 'opt': if (OPTN[o.k]) { SIM.setOpt(o.k, o.v); L('cfg', OPTN[o.k] + ': ' + (o.v ? 'įj.' : 'išj.')); } break;
     case 'nibp': if (o.stat) { SIM.nibpStat(); L('set', 'AKS STAT (5 min)'); } else { SIM.nibpStart(); L('set', 'AKS matavimas'); } break;
@@ -246,7 +246,7 @@ function mirrorHtml() {
   if (s.pace && s.pace.on) ex.push('stim. ' + s.pace.rate + '/' + s.pace.ma + ' mA' + (s.pace.cap ? '' : ' – nėra pagavimo'));
   if (s.art && (s.art.cpr || s.art.motion)) ex.push('artefaktas');
   return `<div class="mir">${cell('ŠSD', hrOf(s), 'k./min')}${cell('SpO₂', s.probe.spo2 && s.pf > 0 ? c.spo2 : '--', '%')}` +
-    `${cell('AKS', s.nibp.meas ? '…' : L && L.ok ? L.sys + '/' + L.dia : '---', L && L.ok ? 'išm. ' + new Date(L.t).toTimeString().slice(0, 5) : 'mm Hg')}${cell('KD', c.rr, 'k./min')}${cell('T', f1('temp', c.temp), '°C')}</div>` +
+    `${cell('AKS', s.nibp.meas ? '…' : L && L.ok ? L.sys + '/' + L.dia : '---', L && L.ok ? 'išm. ' + new Date(L.t).toTimeString().slice(0, 5) : 'mm Hg')}${cell('KD', s.probe.ecg ? c.rr : '--', 'k./min')}${cell('T', s.probe.temp !== 0 ? f1('temp', c.temp) : '--', '°C')}</div>` +
     `<div class="mirs">${esc(SIM.rhName(s.rhythm))}${ex.length ? ' · ' + ex.join(' · ') : ''}</div>` +
     (s.a && s.a.length ? `<div class="mira p${s.pri}">${s.a.map(esc).join(' · ')}</div>` : '') +
     (s.au === 0 && s.sound ? '<div class="mira p1 wrap">⚠ Monitoriaus garsas neįjungtas – palieskite monitoriaus ekraną</div>' : '');
@@ -380,7 +380,7 @@ function plcTxt(s, sc) {
 
 // ── Veiksmai ──
 function actTab() {
-  const s = snap() || {}, pr = s.probe || { ecg: 1, spo2: 1, nibp: 1 }, art = s.art || {}, pc = s.pace || { on: 0, rate: 70, ma: 70 }, nb = s.nibp || {};
+  const s = snap() || {}, pr = s.probe || { ecg: 1, spo2: 1, nibp: 1, temp: 1 }, art = s.art || {}, pc = s.pace || { on: 0, rate: 70, ma: 70 }, nb = s.nibp || {};
   const pu = tgt() === 'local' ? (typeof PULSE !== 'undefined' ? PULSE.status() : null) : s.pu, live = pu && pu.sc && ['run', 'pause', 'load', 'conn', 'dead'].indexOf(pu.st) >= 0;
   let h = '';
   // simuliacija vyksta – būklę keičiantys veiksmai yra ten, čia tik monitoriaus įranga
@@ -390,7 +390,7 @@ function actTab() {
     `<div class="paste"><input class="inp" id="markx" placeholder="Kita žyma…" maxlength="80" value="${esc(markTxt)}" autocomplete="off" aria-label="Kita žyma"><button class="btn" data-act="mark-c">Pažymėti</button></div>` +
     (markLog.length ? '<div class="mklog">' + markLog.slice(-3).reverse().map(x => `<div><b>✓</b><span>${esc(x.x)}</span><small>${esc(x.t)} · žurnale</small></div>`).join('') + '</div>' : '') + '</section>';
   h += '<section class="pnl"><h2>AKS matavimas</h2><div class="chips">' + chip('nibp', '1', false, 'Matuoti dabar') + chip('nibp-stat', '1', !!nb.stat, 'STAT 5 min') + [0, 3, 5, 10, 15].map(m => chip('nmode', m, nb.mode === m && !nb.stat, m ? 'Auto ' + m + ' min' : 'Rankinis')).join('') + '</div></section>';
-  h += '<section class="pnl"><h2>Jutikliai ir artefaktai</h2><div class="chips">' + [['ecg', 'EKG elektrodai'], ['spo2', 'SpO₂ jutiklis'], ['nibp', 'AKS manžetė']].map(([k, t]) => chip('probe', k, !!pr[k], (pr[k] ? '✓ ' : '✕ ') + t)).join('') +
+  h += '<section class="pnl"><h2>Jutikliai ir artefaktai</h2><div class="chips">' + [['ecg', 'EKG elektrodai'], ['spo2', 'SpO₂ jutiklis'], ['nibp', 'AKS manžetė'], ['temp', 'Termometras']].map(([k, t]) => chip('probe', k, pr[k] !== 0, (pr[k] !== 0 ? '✓ ' : '✕ ') + t)).join('') +
     tog('art', 'motion', !!art.motion, 'Judesio artefaktas') + tog('art', 'cpr', !!art.cpr, 'KPR kompresijos') + '</div></section>';
   h += `<section class="pnl"><h2>Stimuliacija (pacing)</h2><div class="chips">${tog('pace-on', 1, !!pc.on, pc.on ? 'Įjungta' : 'Įjungti')}</div>` +
     `<div class="prm"><div class="pr"><span class="prl">Dažnis<small>/min</small></span><button class="pb" data-act="pace-r" data-k="-10" aria-label="Dažnis mažiau">−</button><span class="pv">${pc.rate}</span><button class="pb" data-act="pace-r" data-k="10" aria-label="Dažnis daugiau">+</button></div>` +
@@ -648,7 +648,7 @@ function curvFeed() {
   try {
     SIM.apply({ hr: s.c.hr, spo2: s.c.spo2, sys: s.c.sys, dia: s.c.dia, rr: s.c.rr, temp: s.c.temp }, 0.9);
     if (s.rhythm && SIM.state().rhythm !== s.rhythm) SIM.setRhythm(s.rhythm);
-    ['ecg', 'spo2', 'nibp'].forEach(k => { if (s.probe && !!SIM.state().probe[k] !== !!s.probe[k]) SIM.setProbe(k, !!s.probe[k]); });
+    ['ecg', 'spo2', 'nibp', 'temp'].forEach(k => { if (s.probe && s.probe[k] != null && !!SIM.state().probe[k] !== !!s.probe[k]) SIM.setProbe(k, !!s.probe[k], !!(s.pw && s.pw[k])); });
     if (s.art) ['motion', 'cpr'].forEach(k => { if (!!(SIM.state().art || {})[k] !== !!s.art[k]) SIM.setArt(k, !!s.art[k]); });
     if (s.cfg) { const C = SIM.cfg(), d = {}; ['speed', 'gain', 'pgain', 'rgain'].forEach(k => { if (s.cfg[k] != null && C[k] !== s.cfg[k]) d[k] = s.cfg[k]; }); if (Object.keys(d).length) SIM.setCfg(d); }
     const e = $('#curvst'); if (e) e.textContent = s.label || '';
@@ -813,7 +813,7 @@ document.addEventListener('click', async e => {
       else if (UI.shR === 'sinus' && (t.hr < 40 || t.sys < 60)) o.v = { hr: 104, spo2: Math.max(92, t.spo2), sys: 96, dia: 60, rr: Math.max(12, t.rr) };
       if (send(o)) { toast((UI.sync ? 'Kardioversija ' : 'Iškrova ') + UI.shJ + ' J'); if (navigator.vibrate) navigator.vibrate(80); } break;
     }
-    case 'probe': send({ c: 'probe', k, on: !(s && s.probe[k]) }); break;
+    case 'probe': send({ c: 'probe', k, on: !(s && s.probe[k] !== 0) }); break;
     case 'art': send({ c: 'art', k, on: !(s && s.art && s.art[k]) }); break;
     case 'nibp': send({ c: 'nibp' }); toast('AKS matuojamas'); break;
     case 'nibp-stat': send({ c: 'nibp', stat: 1 }); toast('AKS STAT – 5 min kartotinai'); break;

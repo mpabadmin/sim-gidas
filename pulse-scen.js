@@ -26,6 +26,8 @@ const PSCEN = (() => {
   const fluidT = (sc, from) => first(sc, l => l.code === 'fluid' && /Saline|LactatedRingers/.test(l.cmp || ''), from);
   const caT = (sc, from) => first(sc, l => l.code === 'drug' && /^(ca|cacl)$/.test(l.id || ''), from);
   const awT = (sc, A, from) => cardT(sc, 'aw', A, from);
+  // EKG, SpO₂ ir AKS manžetė prijungti (laikas, kai prijungtas paskutinis iš jų)
+  const probesAll = (sc, from) => { let m = null; for (const k of ['ecg', 'spo2', 'nibp']) { const t = first(sc, l => l.code === k + 'on' || l.code === 'probes', from); if (t == null) return null; m = Math.max(m || 0, t); } return m; };
   // pirmas rodiklių įrašas nuo t0, atitinkantis sąlygą (vh: [t, ŠSD, sAKS, SpO₂])
   const vhAt = (sc, t0, f) => { const h = (sc.vh || []).find(x => x[0] >= t0 && f(x)); return h ? h[0] : null; };
   // sAKS tikslas fazėje: ne daugiau kaip 30 % įrašų žemiau ribos
@@ -52,7 +54,8 @@ const PSCEN = (() => {
     mPain: { ph: 'medevac', id: 'pain', n: 'Analgezija (ketaminas / esketaminas – MARCH)', c: 'P', done: sc => anT(sc) },
     mAbx: (n) => ({ ph: 'medevac', id: 'abx0', n: n || 'Antibiotikas (atvira žaizda)', c: 'P', done: sc => abxT(sc) }),
     mMist: { ph: 'medevac', id: 'mist', n: 'MIST perdavimas 4 / 4 (turnikete – pirmasis laikas)', c: 'S', done: mistOk },
-    rProbes: { ph: 'role1', id: 'probes', n: 'Jutikliai prijungti', c: 'S', when: sc => sc.reprobe != null, win: 90, done: (sc, p0) => first(sc, l => /^(ecgon|spo2on|nibpon|probes)$/.test(l.code || ''), p0) },
+    mProbes: { ph: 'medevac', id: 'mprobes', n: 'Monitorius prijungtas (EKG, SpO₂, AKS manžetė)', c: 'S', when: sc => !!sc.sens0 && !(sc.scen && sc.scen.mode === 'role1'), win: 300, done: (sc, p0) => probesAll(sc, p0 - 1) },
+    rProbes: { ph: 'role1', id: 'probes', n: 'Jutikliai prijungti (EKG, SpO₂, AKS manžetė)', c: 'S', when: sc => sc.reprobe != null, win: 120, done: (sc, p0) => probesAll(sc, p0) },
     rTxa: { ph: 'role1', id: 'txa1', n: 'TXA nekartota', c: 'S', done: sc => count(sc, l => l.code === 'drug' && l.id === 'txa') > 1 ? false : 'ok' },
     rBlood: lo => ({ ph: 'role1', id: 'blood1', n: 'Kraujas iki tikslo (sAKS ≈ 100; GST – ≥ 110)', c: 'S', when: sc => vhAt(sc, sc.r1t0 || 0, x => x[2] < (lo || 90) || (x[1] && x[2] && x[1] / x[2] >= 1.3)) != null, from: sc => vhAt(sc, sc.r1t0 || 0, x => x[2] < (lo || 90) || (x[1] && x[2] && x[1] / x[2] >= 1.3)), win: 600, done: (sc, p0) => bloodT(sc, p0) }),
     rCa: { ph: 'role1', id: 'ca1', n: 'Kalcis po 1-ojo kraujo vieneto (jei neskirtas MEDEVAC)', c: 'S', when: sc => bloodT(sc) != null, from: sc => bloodT(sc), win: 1500, done: sc => { const b = bloodT(sc); return b == null ? null : caT(sc, b); } },
@@ -99,7 +102,7 @@ const PSCEN = (() => {
       { ph: 'medevac', id: 'tq', n: 'Turniketo patikra → užveržtas (arba antras virš jo)', c: 'K', win: 180, done: sc => cardT(sc, 'thigh', ['tqre', 'tq'], 1400) },
       { ph: 'medevac', id: 'sweep', n: 'Kraujo paieška → kairio dilbio žaizda sustabdyta', c: 'K', win: 300, done: sc => (by(sc, 'arm') || {}).ctl },
       { ph: 'medevac', id: 'tqmove', n: 'Turniketas patikrintas po pakrovimo – vėl užveržtas', c: 'K', when: sc => evAt(sc, 'tqmove') != null, from: sc => evAt(sc, 'tqmove'), win: 180, done: sc => cardT(sc, 'thigh', ['tqre', 'tq'], evAt(sc, 'tqmove')) },
-      X.mTxa(), X.mBlood(), X.mCa, X.mHpmk(), X.mPain, X.mAbx(), X.mMist,
+      X.mTxa(), X.mBlood(), X.mCa, X.mHpmk(), X.mPain, X.mAbx(), X.mProbes, X.mMist,
       X.rProbes,
       { ph: 'role1', id: 'tqok', n: 'Turniketas užveržtas, kraujavimas sustabdytas', c: 'K', win: 120, done: (sc, p0) => { const j = by(sc, 'thigh'); return j && (j.state === 'tq' || j.state === 'pdress') ? (cardT(sc, 'thigh', ['tqre', 'tq'], p0) || 'ok') : null; } },
       { ph: 'role1', id: 'arm1', n: 'Kairio dilbio žaizda sustabdyta', c: 'K', win: 300, done: sc => (by(sc, 'arm') || {}).ctl },
@@ -145,7 +148,7 @@ const PSCEN = (() => {
       X.mO2('S', 'Deguonis (krūtinės trauma)'),
       { ph: 'medevac', id: 'ndc', n: 'Adatinė dekompresija dešinėje (SpO₂ < 90 % + krūtinės žaizda)', c: 'K', from: sc => vhAt(sc, 1320, x => x[3] != null && x[3] < 90), win: 300, done: sc => cardT(sc, 'ptx', ['ndc', 'fthor']) },
       { ph: 'medevac', id: 'redo', n: 'Pakartotinė NDC (nauja adata)', c: 'S', when: sc => evAt(sc, 'kink') != null, from: sc => evAt(sc, 'kink'), win: 180, done: sc => evAt(sc, 'kink') != null ? cardT(sc, 'ptx', ['ndc'], evAt(sc, 'kink')) : null },
-      X.mTxa('S', 'TXA 2 g (penetruojanti liemens žaizda – TCCC)'), X.mHpmk(), X.mPain, X.mAbx('Antibiotikas (atvira žaizda; alergija penicilinui – patikrinkite)'), X.mMist,
+      X.mTxa('S', 'TXA 2 g (penetruojanti liemens žaizda – TCCC)'), X.mHpmk(), X.mPain, X.mAbx('Antibiotikas (atvira žaizda; alergija penicilinui – patikrinkite)'), X.mProbes, X.mMist,
       X.rProbes,
       { ph: 'role1', id: 'fthor', n: 'Pirštinė torakostomija dešinėje', c: 'K', win: 300, done: (sc, p0) => cardT(sc, 'ptx', ['fthor', 'tube'], p0) },
       { ph: 'role1', id: 'la', n: 'Vietinė nejautra (lidokainas) prieš torakostomiją', c: 'S', when: sc => cardT(sc, 'ptx', ['fthor', 'tube'], sc.r1t0 || 0) != null, done: sc => { const f = cardT(sc, 'ptx', ['fthor', 'tube'], sc.r1t0 || 0), l = drugT(sc, 'lido', sc.r1t0 || 0); return l != null && l <= f ? l : false; }, bad: 'be nejautros' },
@@ -192,7 +195,7 @@ const PSCEN = (() => {
       { ph: 'medevac', id: 'airway', n: 'Krikotiroidotomija, kai stridoras / SpO₂ krenta (TCCC)', c: 'K', when: sc => evAt(sc, 'edema1') != null, from: sc => evAt(sc, 'edema1'), win: 300, done: sc => awT(sc, ['cric']) },
       { ph: 'medevac', id: 'nonpa', n: 'NPA / i-gel nenaudota (inhaliacinė trauma – TCCC)', c: 'S', bad: 'naudota', done: sc => awT(sc, ['npa', 'sga']) != null ? false : 'ok' },
       { ph: 'medevac', id: 'fluids', n: 'Skysčiai: 40 % × 10 = 400 ml/val. RL (TCCC, > 20 %)', c: 'S', win: 900, done: sc => fluidT(sc) },
-      X.mHpmk(600), X.mPain, X.mMist,
+      X.mHpmk(600), X.mPain, X.mProbes, X.mMist,
       X.rProbes,
       { ph: 'role1', id: 'rsi', n: 'Kvėpavimo takai užtikrinti (RSI) prieš visišką obstrukciją', c: 'K', when: sc => { const t = awT(sc, ['cric', 'ett']); return t == null || t >= (sc.r1t0 || 0); }, win: 900, done: (sc, p0) => awT(sc, ['ett', 'cric'], p0) },
       { ph: 'role1', id: 'fluids1', n: 'Skysčiai pagal 10 taisyklę (jei nepradėti MEDEVAC)', c: 'S', when: sc => { const f = fluidT(sc); return f == null || f >= (sc.r1t0 || 0); }, win: 600, done: (sc, p0) => fluidT(sc, p0) },
@@ -241,7 +244,7 @@ const PSCEN = (() => {
       { ph: 'medevac', id: 'suct', n: 'Atsiurbimas po vėmimo', c: 'K', when: sc => evAt(sc, 'vomit') != null, from: sc => evAt(sc, 'vomit'), win: 120, done: sc => evAt(sc, 'vomit') != null ? awT(sc, ['suct', 'sga', 'cric'], evAt(sc, 'vomit')) : null },
       { ph: 'medevac', id: 'hts', n: 'HTS 3 % / 5 % 250 ml (smegenų išvaržos požymiai – TCCC)', c: 'K', when: sc => evAt(sc, 'herni') != null, from: sc => evAt(sc, 'herni'), win: 600, done: sc => drugT(sc, 'hts', evAt(sc, 'herni') || 0) },
       { ph: 'medevac', id: 'bp', n: 'sAKS > 100 arba normalus radialinis pulsas (TCCC GST)', c: 'S', bad: 'sAKS < 100', done: sc => { const P = ph(sc, 'medevac'); return P ? sysOk(sc, P.t0, P.t1, 100) : null; } },
-      X.mTxa('S', 'TXA 2 g (reikšminga GST – TCCC)'), X.mHpmk(), X.mMist,
+      X.mTxa('S', 'TXA 2 g (reikšminga GST – TCCC)'), X.mHpmk(), X.mProbes, X.mMist,
       X.rProbes,
       { ph: 'role1', id: 'rsi', n: 'RSI – kvėpavimo takų apsauga (GKS ≤ 8 – ETC)', c: 'S', when: sc => { const t = awT(sc, ['ett', 'cric', 'sga']); return t == null || t >= (sc.r1t0 || 0); }, win: 1200, done: (sc, p0) => awT(sc, ['ett', 'cric'], p0) },
       { ph: 'role1', id: 'hts1', n: 'HTS 250 ml – išvaržos požymiai (jei neskirta MEDEVAC)', c: 'K', when: sc => evAt(sc, 'herni') != null && first(sc, l => l.code === 'drug' && /^(hts|man)$/.test(l.id || ''), evAt(sc, 'herni')) == null || first(sc, l => l.code === 'drug' && /^(hts|man)$/.test(l.id || ''), evAt(sc, 'herni') || 0) >= (sc.r1t0 || 0), win: 600, done: (sc, p0) => first(sc, l => l.code === 'drug' && /^(hts|man)$/.test(l.id || ''), p0) },
@@ -302,7 +305,7 @@ const PSCEN = (() => {
       { ph: 'medevac', id: 'blood', n: 'Kraujas iki tikslo (radialinis pulsas / sAKS 100)', c: 'S', win: 900, done: sc => bloodT(sc) },
       X.mCa, X.mHpmk(), X.mPain, X.mAbx('Antibiotikas (ceftriaksonas 2 g IV / IO)'),
       { ph: 'medevac', id: 'redo', n: 'Pakartotinė NDC (ta pati vieta, nauja adata)', c: 'S', when: sc => evAt(sc, 'kink') != null, from: sc => evAt(sc, 'kink'), win: 180, done: sc => evAt(sc, 'kink') != null ? cardT(sc, 'ptx', ['ndc', 'fthor'], evAt(sc, 'kink')) : null },
-      X.mMist,
+      X.mProbes, X.mMist,
       X.rProbes,
       { ph: 'role1', id: 'fthor', n: 'Pirštinė torakostomija / drenas dešinėje', c: 'K', win: 300, done: (sc, p0) => cardT(sc, 'ptx', ['fthor', 'tube'], p0) },
       { ph: 'role1', id: 'la', n: 'Vietinė nejautra (lidokainas) prieš torakostomiją (sąmoningas)', c: 'S', when: sc => cardT(sc, 'ptx', ['fthor'], sc.r1t0 || 0) != null, done: sc => { const f = cardT(sc, 'ptx', ['fthor'], sc.r1t0 || 0), l = drugT(sc, 'lido', sc.r1t0 || 0); return l != null && l <= f ? l : false; }, bad: 'be nejautros' },
@@ -433,7 +436,8 @@ const PSCEN = (() => {
     const caN = count(sc, l => l.code === 'drug' && /^(ca|cacl)$/.test(l.id || ''));
     const caNeed = bu >= 1 && (caN === 0 || (r1 && Math.floor(bu / 4) > caN - 1));
     if (caNeed) add('C', 'Kalcio gliukonatas 10 % 30 ml', caN === 0 ? 'po 1-ojo kraujo vieneto – dar neskirtas' : 'kas 4 vienetus', 9, { k: 'drug', id: 'ca' });
-    if (r1 && sc.reprobe != null && !logs(sc).some(l => l.t >= sc.reprobe && /^(ecgon|spo2on|nibpon|probes)$/.test(l.code || ''))) add('M', 'Prijungti monitoriaus jutiklius', 'monitorius rodo „– – –“, kol komanda neprijungs EKG, SpO₂, AKS', 9, { k: 'ev', x: 'probeson' });
+    { const p0 = r1 && sc.reprobe != null ? sc.reprobe : !r1 && sc.sens0 ? 0 : null;
+      if (p0 != null) { const NM = { ecg: 'EKG', spo2: 'SpO₂', nibp: 'AKS manžetė' }, miss = Object.keys(NM).filter(k => !logs(sc).some(l => l.t >= p0 && (l.code === k + 'on' || l.code === 'probes'))); if (miss.length) add('M', 'Prijungti monitoriaus jutiklius', 'neprijungta: ' + miss.map(k => NM[k]).join(', ') + ' – juosta „Monitorius“ viršuje', 9, { k: 'ev', x: 'probeson' }); } }
     // R
     const chest = sc.inj.some(j => ['ptx', 'optx', 'htx'].indexOf(j.k) >= 0 && j.state !== 'drained');
     if (!sc.o2 && spo2 != null && (spo2 < (r1 ? 94 : 90) || shock || chest || (hr != null && sys != null && hr / Math.max(1, sys) >= 1.3))) add('R', 'Deguonis', 'SpO₂ ' + spo2 + (shock ? ' · šokas' : '') + (chest ? ' · krūtinės trauma' : ''), spo2 < 90 ? 14 : 7, { k: 'tx', x: 'o2' });

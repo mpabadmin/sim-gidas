@@ -44,6 +44,10 @@ const PULSE = (() => {
   const isLocal = () => cfg().eng !== 'pulse' || forceLocal;
   const useLoc = () => isLocal() || SH;   // kuriuo ryšiu kalbama dabar
   const isManual = () => cfg().eng === 'manual';
+  // monitoriaus jutikliai: EKG (ir KD iš elektrodų), SpO₂, AKS manžetė, termometras
+  const PRK = ['ecg', 'spo2', 'nibp', 'temp'];
+  const SENS_ON = { ecg: 'EKG elektrodai prijungti', spo2: 'SpO₂ jutiklis uždėtas', nibp: 'AKS manžetė uždėta', temp: 'Termometras prijungtas', all: 'Jutikliai prijungti (EKG, SpO₂, AKS, T)' };
+  const SENS_OFF = { ecg: 'EKG elektrodai atjungti', spo2: 'SpO₂ jutiklis nuimtas', nibp: 'AKS manžetė nuimta', temp: 'Termometras atjungtas', all: 'Visi jutikliai atjungti' };
   const curV = () => { try { const c = SIM.cur(); return { hr: c.hr, sys: Math.round(c.sys), dia: Math.round(c.dia), spo2: Math.round(c.spo2), rr: Math.round(c.rr), temp: Math.round(c.temp * 10) / 10 }; } catch (e) { return lastV || {}; } };
   function connect(then) {
     const c = cfg(), loc = useLoc(), u = loc ? 'local' : wsUrl(c);
@@ -265,7 +269,7 @@ const PULSE = (() => {
       }
       default: {
         const it = PCAT.TX.flatMap(g => g[2]).find(i => i[0] === code), ty = (it && it[4]) || code;   // daviklių kodai – katalogo 5-ame lauke (probe:ecg:1)
-        if (/^probe:/.test(ty)) { const [, k, on] = ty.split(':'); if (typeof exec === 'function') (k === 'all' ? ['ecg', 'spo2', 'nibp'] : [k]).forEach(kk => exec({ c: 'probe', k: kk, on: on === '1' })); }
+        if (/^probe:/.test(ty)) { const [, k, on] = ty.split(':'); if (typeof exec === 'function') (k === 'all' ? PRK : [k]).forEach(kk => exec({ c: 'probe', k: kk, on: on === '1' })); }
         if (code === 'txa' && SC.tTxa == null) SC.tTxa = simt;
         if (['hpmk', 'warm', 'bvm', 'vent', 'ett_g'].indexOf(code) >= 0) pa({ k: 'tx', id: code }, label || code, by, true, false, 'L');
         if (code === 'ett_g') {   // intubacija be kvėpavimo takų sužalojimo: jei obstrukcija yra – ją pašalina
@@ -288,7 +292,7 @@ const PULSE = (() => {
       case 'ecgoff': exec({ c: 'probe', k: 'ecg', on: false }); recE('Atlipo EKG elektrodas', by); break;
       case 'spo2off': exec({ c: 'probe', k: 'spo2', on: false }); recE('Nukrito SpO₂ jutiklis', by); break;
       case 'nibpoff': exec({ c: 'probe', k: 'nibp', on: false }); recE('Nuimta AKS manžetė', by); break;
-      case 'probeson': ['ecg', 'spo2', 'nibp'].forEach(k => exec({ c: 'probe', k, on: true })); rec('Jutikliai prijungti (EKG, SpO₂, AKS)', by, { code: 'probes', kind: 'tx', ev: by === 'team' ? 0 : 1 }); break;
+      case 'probeson': PRK.forEach(k => exec({ c: 'probe', k, on: true })); rec('Jutikliai prijungti (EKG, SpO₂, AKS, T)', by, { code: 'probes', kind: 'tx', ev: by === 'team' ? 0 : 1 }); break;
       case 'painup': { const j = firstBy(x => x.k === 'pain'); if (j) sevStep(j, 1, by); else run({ op: 'inj', j: { k: 'pain', sev: 0.8 }, by }); break; }
       case 'vib': { const on = p.on != null ? !!p.on : (!SIM.state().art || !SIM.state().art.motion); exec({ c: 'art', k: 'motion', on }); recE(on ? 'Vibracija – judesio artefaktai' : 'Vibracija baigėsi', by); break; }
       case 'noise': { const mn = +p.min || 10; exec({ c: 'mute', m: mn }); recE('Triukšmas – aliarmai negirdimi ' + mn + ' min', by); break; }
@@ -353,7 +357,7 @@ const PULSE = (() => {
     SC.set = 'role1'; SC.ph = 'role1'; SC.kit = { max: PCAT.SETTINGS.role1.blood, used: 0 }; SC.team2 = !!o.team2; SC.r1t0 = t0;
     SC.phs.push({ ph: 'role1', t0 });
     try { SIM.setLabel(('Role 1 · ' + (SC.mechN || 'Pulse')).slice(0, 40), ''); } catch (e) {}
-    if (o.reprobe && typeof exec === 'function') { ['ecg', 'spo2', 'nibp'].forEach(k => exec({ c: 'probe', k, on: false })); SC.reprobe = t0; }
+    if (o.reprobe && typeof exec === 'function') { PRK.forEach(k => exec({ c: 'probe', k, on: false, wait: 1 })); SC.reprobe = t0; }
     recE('Perduota į Role 1' + (o.skip ? ' (pervežimas ' + Math.round(o.skip / 60) + ' min)' : '') + (o.reprobe ? ' – monitorius: prijunkite jutiklius' : ''), 'instr');
     if (typeof PULSE_CM !== 'undefined') PULSE_CM.reset();
   }
@@ -508,6 +512,7 @@ const PULSE = (() => {
         SC = { set, pat: S.pat || {}, mech: S.mech || '', mechN: S.mechN || '', inj: [], inf: [], vinf: [], o2: null, vo2: null, kit: { max: PCAT.SETTINGS[set].blood, used: 0 }, log: [], arrest: '', min: { sys: 999, spo2: 100 }, ff: +o.ff || 0, nonce: o.nonce || '' };
         let acts = [];
         SC.ph = set; SC.phs = [{ ph: set, t0: SC.ff }]; SC.evd = {}; SC.hand = {}; SC.vh = [];
+        if (o.sens === 'team') SC.sens0 = 1;
         if (o.scen && typeof PSCEN !== 'undefined' && PSCEN.get(o.scen.id)) { const r = startScen(o); acts = r.acts; SC.ff = r.ff; }
         else {
           (S.inj || []).forEach(j => { const x = newInj(j, 0); SC.inj.push(x); hpush(x, 'Sužeidimas'); const a = PCAT.injAct(x); if (a) { acts.push(a); alog.push({ a, t: 0 }); } });
@@ -524,8 +529,8 @@ const PULSE = (() => {
         if (typeof PULSE_CM !== 'undefined') PULSE_CM.reset();
         keep();
         SIM.sesStart(); SIM.setLabel((PCAT.SETTINGS[set].n + ' · ' + (SC.mechN || 'Pulse')).slice(0, 40), '');
-        // švari pradžia: sinusinis ritmas, visi davikliai prijungti, be artefaktų (ankstesnio scenarijaus likučiai)
-        try { SIM.setRhythm('sinus'); ['ecg', 'spo2', 'nibp'].forEach(k => SIM.setProbe(k, true)); SIM.setArt('motion', false); SIM.setArt('cpr', false); SIM.unmute(); } catch (e) {}
+        // švari pradžia: sinusinis ritmas, be artefaktų; jutikliai – visi prijungti arba („Prijungia komanda“) visi laukia prijungimo
+        try { SIM.setRhythm('sinus'); PRK.forEach(k => SIM.setProbe(k, o.sens !== 'team', o.sens === 'team')); SIM.setArt('motion', false); SIM.setArt('cpr', false); SIM.unmute(); } catch (e) {}
         L(engN() + ': ' + (SC.scen ? 'scenarijus ' + SC.mechN : PCAT.SETTINGS[set].n + ' · ' + (SC.mechN || 'scenarijus')) + (SC.inj.length ? ' – ' + SC.inj.map(iname).join('; ') : ''));
         const smsg = { t: 'start', state: (SC.pat && SC.pat.state) || '', acts, speed: 1, ff: SC.ff, kg: (SC.pat && SC.pat.kg) || 80, sex: (SC.pat && SC.pat.sex) || 'M', age: (SC.pat && SC.pat.age) || 25, frozen: false, temp0: (SCN() || {}).temp0 || 36.6 };
         FB = cfg().eng === 'pulse' ? { smsg: Object.assign({}, smsg), rec: [] } : null;
@@ -550,6 +555,8 @@ const PULSE = (() => {
       }
       case 'resume': wantRun = true; if (c.sid) { if (ws && ws.readyState === 1) tx({ t: 'resume', sid: c.sid }); else connect(() => tx({ t: 'resume', sid: c.sid })); } break;
       case 'card': case 'inj': case 'tx': case 'ev': case 'istop': case 'site': if (SC && wantRun) enqueue(o); break;
+      // jutiklis prijungiamas / atjungiamas iš karto – instruktorius spaudžia, kai komanda realiai uždeda (be 5 s laukimo)
+      case 'sens': if (SC && wantRun && typeof exec === 'function') { const k = o.k === 'all' ? 'all' : PRK.indexOf(o.k) >= 0 ? o.k : null; if (!k) break; (k === 'all' ? PRK : [k]).forEach(kk => exec({ c: 'probe', k: kk, on: !!o.on })); if (o.on) rec(SENS_ON[k], o.by === 'instr' ? 'instr' : 'team', { code: k === 'all' ? 'probes' : k + 'on', kind: 'tx' }); else recE(SENS_OFF[k], o.by === 'team' ? 'team' : 'instr'); keep(); onChange(); } break;
       case 'undo': { const q = Q.find(x => x.uid === o.uid); Q = Q.filter(x => x.uid !== o.uid); if (q) L('Atšaukta: ' + q.n, 'sys'); onChange(); break; }
       case 'phase': if (SC && wantRun && o.to === 'role1' && SC.set !== 'role1') { if (SC.ph === 'medevac') closePh(); toRole1({ skip: Math.max(0, +o.skip || 0), reprobe: !!o.reprobe, team2: !!o.team2 }); keep(); onChange(); } break;
       case 'hand': if (SC) { SC.hand = SC.hand || {}; SC.hand[o.kind === 'atm' ? 'atm' : 'mist'] = { m: o.m || {}, t: Math.round(simt) }; if (o.kind !== 'atm' && SC.ph === 'medevac') { closePh(); SC.ph = 'handover'; } keep(); onChange(); } break;

@@ -56,7 +56,7 @@ const SIM = (() => {
   let S = load();
   function base() {
     const tr = {}; P.forEach(k => { tr[k] = { from: DEF[k], to: DEF[k], t0: 0, dur: 0 }; });
-    return { tr, rhythm: 'sinus', probe: { ecg: 1, spo2: 1, nibp: 1 }, nibp: { mode: 0, last: null, meas: 0, next: 0, stat: 0 }, alarms: 1, sound: 1, beep: 1, label: '', stage: '', mute: 0,
+    return { tr, rhythm: 'sinus', probe: { ecg: 1, spo2: 1, nibp: 1, temp: 1 }, pw: {}, nibp: { mode: 0, last: null, meas: 0, next: 0, stat: 0 }, alarms: 1, sound: 1, beep: 1, label: '', stage: '', mute: 0,
       art: { motion: 0, cpr: 0 }, pace: { on: 0, rate: 70, ma: 70 }, pause: 0, pauseAt: 0, shk: -99, shkJ: 0 };
   }
   function load() {
@@ -67,7 +67,8 @@ const SIM = (() => {
         P.forEach(k => { const v = o.v && isFinite(o.v[k]) ? clamp(k, o.v[k]) : DEF[k]; b.tr[k] = { from: v, to: v, t0: 0, dur: 0 }; });
         if (RH.some(r => r[0] === o.rhythm)) b.rhythm = o.rhythm;
         ['alarms', 'sound', 'beep'].forEach(k => { if (k in o) b[k] = o[k] ? 1 : 0; });
-        if (o.probe) ['ecg', 'spo2', 'nibp'].forEach(k => { b.probe[k] = o.probe[k] === 0 ? 0 : 1; });
+        if (o.probe) ['ecg', 'spo2', 'nibp', 'temp'].forEach(k => { b.probe[k] = o.probe[k] === 0 ? 0 : 1; });
+        if (o.pw && typeof o.pw === 'object') ['ecg', 'spo2', 'nibp', 'temp'].forEach(k => { if (o.pw[k] && !b.probe[k]) b.pw[k] = 1; });
         if (NMODES.indexOf(+o.nmode) >= 0) b.nibp.mode = +o.nmode;
         if (o.art) ['motion', 'cpr'].forEach(k => { b.art[k] = o.art[k] ? 1 : 0; });
         if (o.pace) { b.pace.on = o.pace.on ? 1 : 0; if (isFinite(o.pace.rate)) b.pace.rate = +o.pace.rate; if (isFinite(o.pace.ma)) b.pace.ma = +o.pace.ma; }
@@ -77,7 +78,7 @@ const SIM = (() => {
     return b;
   }
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify({ v: targets(), rhythm: S.rhythm, alarms: S.alarms, sound: S.sound, beep: S.beep, probe: S.probe, nmode: S.nibp.mode, label: S.label, stage: S.stage, art: S.art, pace: S.pace })); } catch (e) {}
+    try { localStorage.setItem(KEY, JSON.stringify({ v: targets(), rhythm: S.rhythm, alarms: S.alarms, sound: S.sound, beep: S.beep, probe: S.probe, pw: S.pw, nmode: S.nibp.mode, label: S.label, stage: S.stage, art: S.art, pace: S.pace })); } catch (e) {}
   }
   // simuliacijos laikas (s) – sustoja per pauzę
   const rnow = () => performance.now() / 1000;
@@ -97,7 +98,8 @@ const SIM = (() => {
   }
   function resetBeats() { beats.length = 0; nextBeat = 0; spikes.length = 0; nextSpike = 0; }
   function setRhythm(r) { if (!RH.some(x => x[0] === r) || r === S.rhythm) return; S.rhythm = r; resetBeats(); save(); fire(); }
-  function setProbe(k, on) { if (k in S.probe) { S.probe[k] = on ? 1 : 0; save(); fire(); } }
+  // wait – jutiklis dar nebuvo prijungtas (scenarijaus pradžia, perdavimas): be techninio aliarmo, užrašas „Neprijungta“
+  function setProbe(k, on, wait) { if (!(k in S.probe)) return; S.probe[k] = on ? 1 : 0; S.pw = S.pw || {}; if (on || !wait) delete S.pw[k]; else S.pw[k] = 1; if (k === 'nibp' && !on && wait) { S.nibp.last = null; S.nibp.meas = 0; } save(); fire(); }
   function setArt(k, on) { if (k in S.art) { S.art[k] = on ? 1 : 0; save(); fire(); } }
   function setOpt(k, v) { if (['alarms', 'sound', 'beep'].indexOf(k) >= 0) { S[k] = v ? 1 : 0; save(); fire(); } }
   function setLabel(label, stage) { if (label != null) S.label = String(label).slice(0, 80); if (stage != null) S.stage = String(stage).slice(0, 80); save(); fire(); }
@@ -287,6 +289,7 @@ const SIM = (() => {
   }
   function testSound() { audio(); alarmTone(2); if (ac) setTimeout(() => tone(beepF(98), 0.07, 0, 0.12 * BV()), 1700); }
 
+  const pw = k => !!(S.pw && S.pw[k]);
   // ── aliarmai ──
   function alarms(c, pf) {
     const out = [], L0 = CFG.lim;
@@ -294,16 +297,16 @@ const SIM = (() => {
       if (S.rhythm === 'asys' && !cap()) out.push([2, 'ASISTOLIJA']);
       else if (S.rhythm === 'vf') out.push([2, 'SKILVELIŲ VIRPĖJIMAS']);
       else if (S.rhythm === 'vt' && !cap()) out.push([2, 'SKILVELINĖ TACHIKARDIJA']);
-    } else out.push([1, 'EKG elektrodai atjungti']);
+    } else if (!pw('ecg')) out.push([1, 'EKG elektrodai atjungti']);
     const chk = (k, v, nm) => { const L = L0[k]; if (v == null || !L) return; if (L[2] != null && v < L[2]) out.push([2, nm + ' ' + fmt(k, v) + ' ↓']); else if (L[3] != null && v > L[3]) out.push([2, nm + ' ' + fmt(k, v) + ' ↑']); else if (L[0] != null && v < L[0]) out.push([1, nm + ' ' + fmt(k, v) + ' ↓']); else if (L[1] != null && v > L[1]) out.push([1, nm + ' ' + fmt(k, v) + ' ↑']); };
     // ŠSD ribos tikrinamos ir BEA metu (elektrinis dažnis); SkV, asistolija, SkT – savi aliarmai
     if (S.probe.ecg && (cap() || ['vf', 'asys', 'vt'].indexOf(S.rhythm) < 0)) chk('hr', hrShown(c), 'ŠSD');
-    if (!S.probe.spo2) out.push([1, 'SpO₂ jutiklis nuimtas']);
+    if (!S.probe.spo2) { if (!pw('spo2')) out.push([1, 'SpO₂ jutiklis nuimtas']); }
     else if (pf <= 0) out.push([1, 'SpO₂ – nėra pulso signalo']);
     else { if (pf < 0.15) out.push([1, 'SpO₂ – silpnas signalas']); chk('spo2', c.spo2, 'SpO₂'); }
     if (S.nibp.last && S.nibp.last.ok && Date.now() - S.nibp.last.t < 20 * 60000) chk('sys', S.nibp.last.sys, 'AKS sist.');
-    if (CFG.show.rr) { if (c.rr === 0) out.push([2, 'APNĖJA']); else chk('rr', c.rr, 'KD'); }
-    if (CFG.show.temp) chk('temp', c.temp, 'T');
+    if (CFG.show.rr && S.probe.ecg) { if (c.rr === 0) out.push([2, 'APNĖJA']); else chk('rr', c.rr, 'KD'); }   // KD – iš EKG elektrodų (impedansas)
+    if (CFG.show.temp && S.probe.temp) chk('temp', c.temp, 'T');
     return out.sort((a, b) => b[0] - a[0]);
   }
   function fmt(k, v) { return k === 'temp' ? String((+v).toFixed(1)).replace('.', ',') : String(v); }
@@ -342,7 +345,7 @@ const SIM = (() => {
   const muted = () => S.mute && Date.now() < S.mute;
   function snapshot() {
     const c = cur(), pf = perf(c), A = S.alarms ? alarms(c, pf) : [];
-    return { c, pf: Math.round(pf * 100) / 100, t: targets(), rhythm: S.rhythm, probe: Object.assign({}, S.probe), nibp: { mode: S.nibp.mode, last: S.nibp.last, meas: S.nibp.meas ? 1 : 0, stat: S.nibp.stat && Date.now() < S.nibp.stat ? 1 : 0 },
+    return { c, pf: Math.round(pf * 100) / 100, t: targets(), rhythm: S.rhythm, probe: Object.assign({}, S.probe), pw: Object.assign({}, S.pw || {}), nibp: { mode: S.nibp.mode, last: S.nibp.last, meas: S.nibp.meas ? 1 : 0, stat: S.nibp.stat && Date.now() < S.nibp.stat ? 1 : 0 },
       alarms: S.alarms, sound: S.sound, beep: S.beep, a: A.map(x => x[1]), ap: A.map(x => x[0]), pri: A.length ? A[0][0] : 0, label: S.label, stage: S.stage,
       trend: P.some(k => S.tr[k].dur && now() - S.tr[k].t0 < S.tr[k].dur), hrs: hrShown(c), cfg: JSON.parse(JSON.stringify(CFG)), art: Object.assign({}, S.art),
       pace: { on: S.pace.on, rate: S.pace.rate, ma: S.pace.ma, cap: cap() ? 1 : 0 }, pause: S.pause, mute: muted() ? Math.ceil((S.mute - Date.now()) / 1000) : 0,
@@ -444,7 +447,7 @@ const SIM = (() => {
       const ts = t - dt + sdt * (i + 1); let v;
       if (C.k === 'ecg') v = C.h * 0.62 - ecg(ts, sdt) * amp * 0.95 * gain;
       else if (C.k === 'pleth') v = C.h * 0.85 - pleth(ts, pf) * C.h * 0.62 * (CFG.pgain || 1);
-      else v = C.h * 0.82 - resp(ts) * C.h * 0.6 * (CFG.rgain || 1);
+      else v = C.h * 0.82 - (S.probe.ecg ? resp(ts) : 0) * C.h * 0.6 * (CFG.rgain || 1);
       v = Math.max(lw * C.dpr, Math.min(C.h - lw * C.dpr, v));
       if (C.py != null && C.x > 0) { if (!open) { cx.moveTo(C.x - 1, C.py); open = true; } cx.lineTo(C.x, v); }
       C.py = v; C.x += 1;
@@ -457,7 +460,7 @@ const SIM = (() => {
     const e = Math.round(elapsed() / 1000), L = J.tr[J.tr.length - 1];
     if (L && e - L[0] < 5) return;
     const h = hrShown(c), noP = !cap() && (NOPULSE[S.rhythm] || (S.rhythm === 'vt' && c.sys < 60));
-    J.tr.push([e, h, S.probe.spo2 && pf > 0 ? c.spo2 : null, noP ? 0 : c.sys, c.rr]);
+    J.tr.push([e, h, S.probe.spo2 && pf > 0 ? c.spo2 : null, noP ? 0 : c.sys, S.probe.ecg ? c.rr : null]);
     if (J.tr.length > 3000) J.tr.shift();
     saveJ();
   }
@@ -475,17 +478,17 @@ const SIM = (() => {
     const h = hrShown(c), hr = h == null ? '---' : String(h);
     const sp = !S.probe.spo2 || pf <= 0 ? '--' : String(c.spo2);
     const N = S.nibp, L = N.last, auto = N.stat && Date.now() < N.stat ? 'STAT' : N.mode ? 'auto ' + N.mode + ' min' : 'rankinis';
-    let bp = '---/---', bsub = auto + ' · palieskite', bw = 0;
+    let bp = '---/---', bsub = S.probe.nibp ? auto + ' · palieskite' : pw('nibp') ? 'Manžetė neuždėta' : 'Manžetė nuimta', bw = 0;
     if (N.meas) { bp = '<small>' + cuff() + '</small>'; bsub = 'Matuojama…'; }
     else if (L && L.ok) { bp = L.sys + '/' + L.dia; bsub = '(' + L.map + ') · ' + hhmm(L.t) + ' · ' + auto; bw = limPri('sys', L.sys); }
     else if (L) { bsub = L.why + ' · ' + hhmm(L.t); bw = 1; }
     const hrw = !S.probe.ecg ? 0 : cap() ? limPri('hr', h) : S.rhythm === 'asys' || S.rhythm === 'vf' || S.rhythm === 'vt' ? 2 : limPri('hr', h);
-    const hsub = cap() ? 'Stimuliacija ' + S.pace.ma + ' mA' : S.pace.on ? 'Stim. – nėra pagavimo' : CFG.rhy ? rhName() : '';
+    const hsub = !S.probe.ecg ? (pw('ecg') ? 'EKG neprijungta' : 'Elektrodai atjungti') : cap() ? 'Stimuliacija ' + S.pace.ma + ' mA' : S.pace.on ? 'Stim. – nėra pagavimo' : CFG.rhy ? rhName() : '';
     setBox('hr', hr, hsub, hrw);
-    setBox('spo2', sp, S.probe.spo2 && pf > 0 ? bar(pf) : S.probe.spo2 ? '' : 'Jutiklis nuimtas', sp === '--' ? 1 : limPri('spo2', c.spo2));
+    setBox('spo2', sp, S.probe.spo2 && pf > 0 ? bar(pf) : S.probe.spo2 ? '' : pw('spo2') ? 'Neprijungta' : 'Jutiklis nuimtas', sp === '--' ? (pw('spo2') ? 0 : 1) : limPri('spo2', c.spo2));
     setBox('nibp', bp, bsub, bw);
-    setBox('rr', String(c.rr), '', limPri('rr', c.rr));
-    setBox('temp', fmt('temp', c.temp), '', limPri('temp', c.temp));
+    setBox('rr', S.probe.ecg ? String(c.rr) : '--', S.probe.ecg ? '' : 'iš EKG elektrodų', S.probe.ecg ? limPri('rr', c.rr) : 0);
+    setBox('temp', S.probe.temp ? fmt('temp', c.temp) : '--', S.probe.temp ? '' : pw('temp') ? 'Neprijungta' : 'Atjungta', S.probe.temp ? limPri('temp', c.temp) : 0);
     const mal = document.getElementById('mal'), mlb = document.getElementById('mlb'), clk = document.getElementById('mclk'), mtm = document.getElementById('mtm');
     if (mlb) { const t = [CFG.pat, CFG.scen ? [S.label, S.stage].filter(Boolean).join(' · ') : ''].filter(Boolean).join(' · '); if (mlb.textContent !== t) mlb.textContent = t; }
     if (clk) clk.textContent = hhmm(Date.now());

@@ -414,6 +414,12 @@ body.conwide #app{max-width:1480px;padding-left:20px;padding-right:20px}
 .pxbrief{margin:4px 0 10px;padding:10px 12px;border-left:3px solid var(--amb);background:var(--bg);border-radius:8px;font-size:15px;line-height:1.45}
 .pxinote summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--tx2)}.pxinote ul{margin:4px 0 8px;padding-left:18px;font-size:14px;line-height:1.4}.pxinote li{margin:3px 0}
 .pxsteps2 button:disabled{opacity:.35;cursor:not-allowed}
+/* v11.10: monitoriaus jutiklių juosta pulte */
+.pxsens{display:grid;grid-template-columns:auto repeat(4,minmax(0,1fr));align-items:center;gap:6px;margin:8px 0 2px}.pxsens>small{color:var(--tx2);font-size:14px;margin-right:2px}
+@media (max-width:520px){.pxsens{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px 6px}.pxsens>small{grid-column:1/-1;font-size:13px}}
+.pxsen{min-height:44px;min-width:0;padding:0 6px;border-radius:12px;border:1px dashed var(--line);background:transparent;color:var(--tx2);font:inherit;font-size:15px;font-weight:600;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pxsen.on{border:1px solid var(--grn,#2e9e5b);background:color-mix(in srgb,var(--grn,#2e9e5b) 18%,transparent);color:var(--tx)}
+.pxvit>div.off b{opacity:.4}.pxvit>div.off small{color:var(--tx2);white-space:nowrap}
 .pxwide{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px;align-items:start}
 .pxwide .pxcolL{position:sticky;top:calc(var(--rh,0px) + 4px);max-height:calc(100vh - var(--rh,0px) - 10px);overflow-y:auto;overscroll-behavior:contain;padding-right:4px}
 .pxwide .pxcolR>.pxnav{margin:10px 0 8px}.pxwide .pxbot{background:none}

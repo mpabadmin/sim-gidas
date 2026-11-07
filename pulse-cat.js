@@ -134,7 +134,11 @@ const PCAT = (() => {
   // tik būklę keičiantys bendri veiksmai (vietiniai – sužalojimų kortelėse; vaistai, kraujas ir skysčiai – skiltyje „Vaistai“)
   const TX = [
     ['Mon', 'Monitorius', [
-      ['probes', 'Jutikliai prijungti', null, '', 'probe:all:1', '']
+      ['ecgon', 'EKG elektrodai prijungti', null, '', 'probe:ecg:1', ''],
+      ['spo2on', 'SpO₂ jutiklis uždėtas', null, '', 'probe:spo2:1', ''],
+      ['nibpon', 'AKS manžetė uždėta', null, '', 'probe:nibp:1', ''],
+      ['tempon', 'Termometras prijungtas', null, '', 'probe:temp:1', ''],
+      ['probes', 'Visi jutikliai prijungti', null, '', 'probe:all:1', '']
     ]],
     ['A', 'Kvėpavimo takai', [
       ['ett_g', 'Intubacija (RSI)', null, '5–10 min', 'rsi', 'role1']
