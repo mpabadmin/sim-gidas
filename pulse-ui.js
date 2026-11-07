@@ -16,8 +16,8 @@ const PUI = (() => {
   }
   const RUN = ['run', 'pause', 'load', 'conn'];
   // pasiruošimo juodraštis (instruktoriaus telefone)
-  let SU = Object.assign({ set: 'medevac', mech: 'gswt', inj: null, pat: { state: 'Soldier@0s.json', name: '', age: 25, kg: 80, allergy: '', sex: 'M' }, ff: 0, scen: '', eng: 'local', step: 1 }, LS('sim-pu-su', {}));
-  SU.scen = ''; if (!SU.pat.sex) SU.pat.sex = 'M'; if (['manual', 'local', 'pulse'].indexOf(SU.eng) < 0) SU.eng = 'local';
+  let SU = Object.assign({ set: 'medevac', mech: 'gswt', inj: null, pat: { state: 'Soldier@0s.json', name: '', age: 25, kg: 80, allergy: '', sex: 'M' }, ff: 0, scen: '', mode: 'chain', out: 'typ', auto: true, team2: false, eng: 'local', step: 1 }, LS('sim-pu-su', {}));
+  if (SU.scen && !PSCEN.get(SU.scen)) SU.scen = ''; if (SU.scen && SU.eng === 'manual') SU.eng = 'local'; if (!SU.pat.sex) SU.pat.sex = 'M'; if (['manual', 'local', 'pulse'].indexOf(SU.eng) < 0) SU.eng = 'local';
   let LOCAL = SU.eng !== 'pulse', Q = '', seenR1 = LS('sim-pu-r1', ''), seenH = LS('sim-pu-h', '');
   const saveSU = () => LSs('sim-pu-su', SU);
   const mechBy = k => PCAT.MECH.find(m => m[0] === k) || PCAT.MECH[0];
@@ -113,6 +113,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
     seal: 'M5 5h14v14H5z|M10 10h4v4h-4z', cric: 'M3 21 14 10|M14 10l3-7 4 4-7 3', npa: 'M8 3c4 0 6 4 6 9s2 9 6 9|M5 3h6', tube2: 'M7 3v10a5 5 0 0 0 10 0|M5 3h4|M15 13h4', bed: 'M2 4v16|M2 8h18a2 2 0 0 1 2 2v10|M2 17h20|M6 8v9', ok: 'M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z|m8 12 3 3 5-6'
   };
   const ic = (k, cls) => `<svg class="pxic${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" aria-hidden="true">${(ICP[k] || ICP.plus).split('|').map(d => `<path d="${d}"/>`).join('')}</svg>`;
+  const SCIC = { lusis: 'drop', erelis: 'lung', sernas: 'flame', stumbras: 'brain', vilkas: 'zap' };
   const INJIC = { bleed: 'drop', ptx: 'lung', optx: 'lung', htx: 'lung', aw: 'mouth', tbi: 'brain', tam: 'heart', burn: 'flame', bronch: 'wind', pain: 'bolt' };
   // procedūrų ir priešistorės ikonos
   const PIC = { tq: 'tq', jtq: 'tq', tqre: 'tq', pack: 'band', pdress: 'band', tqconv: 'band', pos: 'user', npa: 'npa', suct: 'wind', sga: 'mouth', cric: 'cric', ett: 'tube2', occl: 'seal', seal: 'seal', burp: 'seal', ndc: 'needle', fthor: 'cric', tube: 'drain',
@@ -159,10 +160,22 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
   function wizardHtml(P, local) {
     const st = SU.step || 1, S = PCAT.SETTINGS;
     const steps = [['tent', 'Vieta', 'Vieta'], ['user', 'Pacientas', 'Pacient.'], ['drop', 'Sužalojimai', 'Sužal.'], ['band', 'Iki atvykimo', 'Iki atv.'], ['wave', 'Dinamika', 'Dinam.']], NST = steps.length;
-    let h = '<div class="pxw pxwiz"><div class="pxsteps2">' + steps.map((x, i) => `<button class="${st === i + 1 ? 'on' : st > i + 1 ? 'done' : ''}" data-act="px" data-k="wz" data-x="${i + 1}" aria-label="${x[1]}">${ic(x[0])}<small class="wl">${x[1]}</small><small class="ws" aria-hidden="true">${x[2]}</small></button>`).join('') + '</div>';
+    const SC0 = SU.scen ? PSCEN.get(SU.scen) : null;
+    let h = '<div class="pxw pxwiz"><div class="pxsteps2">' + steps.map((x, i) => `<button class="${st === i + 1 ? 'on' : st > i + 1 ? 'done' : ''}" data-act="px" data-k="wz" data-x="${i + 1}" aria-label="${x[1]}"${SC0 && i > 0 && i < 4 ? ' disabled title="Nustatyta scenarijuje"' : ''}>${ic(x[0])}<small class="wl">${x[1]}</small><small class="ws" aria-hidden="true">${x[2]}</small></button>`).join('') + '</div>';
     if (st === 1) {
       h += '<h2 class="pxq2">Kur vyksta?</h2><div class="pxbig2">' +
-        [['medevac', 'heli', 'MEDEVAC', 'MARCH gidas · transportas'], ['role1', 'tent', 'Role 1', 'ETC gidas · medicinos punktas']].map(o => `<button class="pxbigc${SU.set === o[0] ? ' on' : ''}" data-act="px" data-k="wz-set" data-x="${o[0]}">${ic(o[1], 'xl')}<b>${o[2]}</b><small>${o[3]}</small></button>`).join('') + '</div>';
+        [['medevac', 'heli', 'MEDEVAC', 'MARCH gidas · transportas'], ['role1', 'tent', 'Role 1', 'ETC gidas · medicinos punktas']].map(o => `<button class="pxbigc${!SC0 && SU.set === o[0] ? ' on' : ''}" data-act="px" data-k="wz-set" data-x="${o[0]}">${ic(o[1], 'xl')}<b>${o[2]}</b><small>${o[3]}</small></button>`).join('') + '</div>';
+      h += `<p class="pxlbl">${ic('heli')} Paruošti scenarijai: MEDEVAC → Role 1</p><div class="pxscl">` + PSCEN.LIST.map(o => `<button class="pxrow pxscn${SU.scen === o.id ? ' on' : ''}" data-act="px" data-k="su-scen" data-x="${o.id}" aria-pressed="${SU.scen === o.id}">${ic(SCIC[o.id] || 'heart')}<span><b>${E(o.n)}</b><small>${E(o.d)}</small></span></button>`).join('') + '</div>';
+      if (SC0) {
+        const MD = [['chain', 'Visa grandinė', 'MEDEVAC ' + PSCEN.mm(SC0.start.medevac) + ' → MIST → Role 1 → ATMISTER'], ['medevac', 'Tik MEDEVAC', 'baigiasi nusileidimu ir MIST'], ['role1', 'Tik Role 1', 'atvežamas ' + PSCEN.mm(SC0.role1At) + ' – MEDEVAC dalis atkartojama pagal pasirinktą baigtį']];
+        h += `<div class="pxscd"><p class="pxlbl">Pradžia</p>` + MD.map(o => `<button class="pxrow${SU.mode === o[0] ? ' on' : ''}" data-act="px" data-k="su-mode" data-x="${o[0]}" aria-pressed="${SU.mode === o[0]}"><span><b>${E(o[1])}</b><small>${E(o[2])}</small></span></button>`).join('') +
+          (SU.mode === 'role1' ? '<div class="pxo2q">' + Object.keys(SC0.out).map(k => `<button class="chip pxch${SU.out === k ? ' on' : ''}" data-act="px" data-k="su-out" data-x="${k}">${E(SC0.out[k].n)}</button>`).join('') + `</div><p class="muted pxc">${E((SC0.out[SU.out] || SC0.out.typ).d)}</p>` : '') +
+          `<button class="pxrow" data-act="px" data-k="su-auto" aria-pressed="${!!SU.auto}"><span><b>Planuoti įvykiai automatiškai</b><small>${SU.auto ? 'Įvyks patys (pvz. atsilaisvinęs turniketas, užsilenkęs kateteris, triukšmas)' : 'Sukelsite patys skiltyje „Įvykiai“'}</small></span><i>${SU.auto ? 'Taip' : 'Ne'}</i></button>` +
+          (SU.mode === 'chain' ? `<button class="pxrow" data-act="px" data-k="su-team2" aria-pressed="${!!SU.team2}"><span><b>Role 1 – kita komanda</b><small>${SU.team2 ? 'Perdavus keičiasi komanda; vertinama atskirai' : 'Ta pati komanda tęsia'}</small></span><i>${SU.team2 ? 'Taip' : 'Ne'}</i></button>` : '') +
+          `<p class="pxlbl">Įžanga komandai (perskaitykite)</p><p class="pxbrief">${E(SU.mode === 'role1' ? SC0.brief1 || SC0.brief : SC0.brief)}</p>` +
+          `<details class="pxinote"><summary>Tik instruktoriui: sužalojimai ir planuoti įvykiai</summary><ul>` + SC0.inj.filter(j => j.lbl).map(j => `<li><b>${E(j.lbl)}</b>${j.note ? ' – ' + E(j.note) : ''}</li>`).join('') + '</ul><ul>' +
+          SC0.ev.filter(e => !e.hide && !e.quiet).map(e => `<li>${e.at != null ? (e.ph === 'role1' ? 'Role 1 +' + Math.round(e.at / 60) + ' min' : PSCEN.mm(e.at)) : 'pagal sąlygą'} – ${E(e.n)}</li>`).join('') + '</ul></details></div>';
+      }
     } else if (st === 2) {
       const p = SU.pat;
       h += '<h2 class="pxq2">Pacientas</h2><div class="pxseg pxsex">' + [['M', '♂ Vyras'], ['F', '♀ Moteris']].map(o => `<button class="pxsg${p.sex === o[0] ? ' on' : ''}" data-act="px" data-k="wz-sex" data-x="${o[0]}"><b>${o[1]}</b></button>`).join('') + '</div>' +
@@ -186,7 +199,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
         const pv = preview(); h += prevHtml(pv, 'Rodikliai atvykus (prognozė)') + progWarn(pv);
       }
     } else {
-      h += '<h2 class="pxq2">Kaip keisis būklė?</h2><div class="pxengc">' + ['manual', 'local', 'pulse'].map(k => `<button class="pxbigc row${SU.eng === k ? ' on' : ''}" data-act="px" data-k="su-eng" data-x="${k}">${ic(ENGN[k][0], 'xl')}<span><b>${E(ENGN[k][1])}</b><small>${E(ENGN[k][2])}</small></span></button>`).join('') + '</div>';
+      h += '<h2 class="pxq2">Kaip keisis būklė?</h2><div class="pxengc">' + (SC0 ? ['local', 'pulse'] : ['manual', 'local', 'pulse']).map(k => `<button class="pxbigc row${SU.eng === k ? ' on' : ''}" data-act="px" data-k="su-eng" data-x="${k}">${ic(ENGN[k][0], 'xl')}<span><b>${E(ENGN[k][1])}</b><small>${E(ENGN[k][2])}</small></span></button>`).join('') + '</div>';
       if (SU.eng === 'pulse') {
         const w = PULSE.wakeState();
         h += `<div class="pxwake">${w.st === 'ready' ? `<b class="ok">${ic('check')} Serveris pabudęs</b><small>budrus dar ${w.left} min</small>` : w.st === 'waking' ? `<b class="amb">${ic('clock')} Žadinama… ${w.sec} s</b><small>miegantis serveris pasileidžia per 1–2 min</small>` : w.st === 'err' ? `<b class="bad">${ic('x')} ${E(w.msg)}</b>` : `<button class="pxb pri" data-act="px" data-k="wake">${ic('cloud')} Pažadinti serverį</button>`}</div>` +
@@ -196,12 +209,14 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
       } else if (SU.eng === 'manual') h += '<p class="muted pxc">Pradiniai rodikliai – pagal sužalojimus. Toliau juos keičiate skirtuke „Rodikliai“, o veiksmai ir vaistai žymimi žurnale ir ataskaitoje.</p>';
       else h += '<p class="muted pxc"><span class="apx">≈</span> Telefono modelyje apytiksliai: kraujo netekimas, pneumotoraksas, kvėpavimo takai, deguonis, vaistai, nudegimai, temperatūra.</p>';
       if (P && P.sc && P.sc.end != null) h += btn('view', 'rep', ic('clip') + ' Ankstesnio scenarijaus ataskaita', 'pxb wide');
-      h += progWarn(preview());
+      if (SC0) h += `<p class="muted pxc">${ic('heli')} ${E(SC0.n)} · ${E({ chain: 'visa grandinė', medevac: 'tik MEDEVAC', role1: 'tik Role 1 (' + ((SC0.out[SU.out] || SC0.out.typ).n || '').toLowerCase() + ')' }[SU.mode] || '')} – pacientas, sužalojimai ir pagalba iki atvykimo nustatyti scenarijuje.</p>`;
+      else h += progWarn(preview());
     }
     const npre = PCAT.preOps(keyed(), SU.pre, SU.ff, SU.set).length;
-    const lbl = (SU.set === 'role1' ? 'Role 1' : 'MEDEVAC') + ' · ' + (SU.inj.length ? SU.inj.length + ' sužal.' : 'sveikas') + (npre ? ' · iki atv. ' + npre : '') + ' · ' + ENGN[SU.eng || 'local'][1].replace(' ≈', '');
-    h += '<div class="pxbot pxbotsu pxwnav">' + (st > 1 ? btn('wz', st - 1, ic('back'), 'pxb pxwb', ' aria-label="Atgal"') : '<span></span>') +
-      (st < NST ? btn('wz', st + 1, 'Toliau ' + ic('next'), 'pxgo sm') : btn('start', null, ic('play') + ' PRADĖTI<small>' + E(lbl) + '</small>', 'pxgo sm pxstart')) + '</div></div>';
+    const lbl = SC0 ? SC0.n.split(' · ')[0] + ' · ' + ({ chain: 'grandinė', medevac: 'MEDEVAC', role1: 'Role 1' }[SU.mode] || '') + ' · ' + ENGN[SU.eng || 'local'][1].replace(' ≈', '') : (SU.set === 'role1' ? 'Role 1' : 'MEDEVAC') + ' · ' + (SU.inj.length ? SU.inj.length + ' sužal.' : 'sveikas') + (npre ? ' · iki atv. ' + npre : '') + ' · ' + ENGN[SU.eng || 'local'][1].replace(' ≈', '');
+    const prv = SC0 && st === 5 ? 1 : st - 1, nxt = SC0 && st === 1 ? 5 : st + 1;
+    h += '<div class="pxbot pxbotsu pxwnav">' + (st > 1 ? btn('wz', prv, ic('back'), 'pxb pxwb', ' aria-label="Atgal"') : '<span></span>') +
+      (st < NST ? btn('wz', nxt, 'Toliau ' + ic('next'), 'pxgo sm') : btn('start', null, ic('play') + ' PRADĖTI<small>' + E(lbl) + '</small>', 'pxgo sm pxstart')) + '</div></div>';
     return h;
   }
   function slider(k, lbl, v, min, max, step, u) {
@@ -384,7 +399,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
   function recvHtml(P) {
     const sc = P.sc, v = P.v || {}, R = PSCEN.takeover(P);
     let h = '<div class="pxrecv"><b>Kas pasikeitė</b><dl>' +
-      `<dt>Gidas</dt><dd>MARCH → ETC (procedūros, vaistai, dozės)</dd><dt>AKS tikslas</dt><dd>sAKS ≈ 100 (90–110), kai gaivinama krauju; be kraujo 80–90 (JTS); GST – ≥ 110${v.sys != null ? ' · dabar ' + v.sys + (v.sys > 110 ? ' – virš tikslo' : v.sys < 90 ? ' – žemiau tikslo' : ' – tiksle') : ''}</dd>` +
+      `<dt>Gidas</dt><dd>MARCH → ETC (procedūros, vaistai, dozės)</dd><dt>AKS tikslas</dt><dd>sAKS ≈ 100 (90–110), kai gaivinama krauju; be kraujo 80–90 (JTS); GST – ≥ 110${v.sys != null ? ' · dabar ' + v.sys + (v.sys > 110 && PSCEN.txT(sc, 'fluid') != null ? ' – virš tikslo' : v.sys < 90 ? ' – žemiau tikslo' : v.sys <= 110 ? ' – tiksle' : '') : ''}</dd>` +
       `<dt>Priemonės</dt><dd>kraujo bankas ${sc.kit ? sc.kit.max : 6} vnt., pirštinė torakostomija, drenas, RSI, e-FAST, šildymas</dd><dt>Laikmačiai</dt><dd>TXA – geriausia per 90 min; kalcis po 1-ojo ir kas 4 vnt.; vertinimas kas 15 min</dd></dl></div>`;
     h += '<p class="pxlbl">Perimta iš MEDEVAC – patikrinkite</p>' + R.map(r => `<div class="pxtk ${r[0]}"><b>${r[0] === 'ok' ? '✓' : r[0] === 'bad' ? '✕' : '!'}</b><span>${E(r[1])}<small>${E(r[2])}</small></span></div>`).join('');
     if (sc.team2) h += '<p class="muted">Komanda pasikeitė – Role 1 vertinimas skaičiuojamas atskirai.</p>';
@@ -725,7 +740,8 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
     const inj = keyed();
     // numatytasis adresas ir žetonas nesiunčiami (monitorius juos turi) – tik savi
     return Object.assign({ c: 'pulse', op: 'start', eng: SU.eng, nonce: sent ? sent.n : '', ff: SU.ff, pre: PCAT.preOps(inj, SU.pre, SU.ff, SU.set), sc: { set: SU.set, pat: SU.pat, mech: 'wiz', mechN, inj } },
-      c.url && c.url !== PULSE.DEF_URL ? { url: c.url } : {}, c.token && c.token !== PULSE.DEF_TOKEN ? { token: c.token } : {});
+      c.url && c.url !== PULSE.DEF_URL ? { url: c.url } : {}, c.token && c.token !== PULSE.DEF_TOKEN ? { token: c.token } : {},
+      SU.scen && PSCEN.get(SU.scen) ? { scen: { id: SU.scen, mode: SU.mode || 'chain', out: SU.out || 'typ', auto: SU.auto !== false, team2: SU.mode === 'chain' && !!SU.team2 }, pre: [] } : {});
   }
   function txAct(x, by, C) {
     const P = lastP || {}, it = PCAT.TX.flatMap(g => g[2]).find(i => i[0] === x); if (!it) return null;
@@ -743,20 +759,25 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
     switch (k) {
       // pasiruošimas
       case 'su-set': SU.set = x; saveSU(); rerender(); return null;
-      case 'wz': SU.step = Math.max(1, Math.min(5, +x)); saveSU(); rerender(); scrollTop(); return null;
+      case 'wz': { let n = Math.max(1, Math.min(5, +x)); if (SU.scen && n > 1 && n < 5) n = n > (SU.step || 1) ? 5 : 1; SU.step = n; saveSU(); rerender(); scrollTop(); return null; }
+      case 'su-scen': SU.scen = SU.scen === x ? '' : x; if (SU.scen) { SU.set = 'medevac'; if (SU.eng === 'manual') SU.eng = 'local'; } saveSU(); vib(); rerender(); return null;
+      case 'su-mode': SU.mode = x; saveSU(); rerender(); return null;
+      case 'su-out': SU.out = x; saveSU(); rerender(); return null;
+      case 'su-auto': SU.auto = !SU.auto; saveSU(); rerender(); return null;
+      case 'su-team2': SU.team2 = !SU.team2; saveSU(); rerender(); return null;
       case 'wz-inj': { if (SU.inj.some(j => j.k === x)) SU.inj = SU.inj.filter(j => j.k !== x); else SU.inj.push(injDef(x)); preClean(); saveSU(); vib(); rerender(); return null; }
       case 'su-edit': { const j = SU.inj[+x]; if (!j) return null; openSheet('inj', { mode: 'edit', idx: +x, k: j.k, sev: j.sev, loc: j.loc || null, side: j.side || null }); return null; }
       case 'pre-t': { if (SU.pre[x] != null) delete SU.pre[x]; else { const [u, code] = x.split(':'), ffm = Math.round((SU.ff || 0) / 60), j = SU.inj.find(z => z.uid === u), A = u === 'g' ? PCAT.PRE_GEN.find(a => a[0] === code) : j && PCAT.preInj(j).find(a => a[0] === code); SU.pre[x] = Math.min(ffm, A ? A[3] : 5); } saveSU(); vib(); rerender(); return null; }
       case 'ptg': openSheet('tgt', { code: x }); return null;
       case 'icard': openSheet('card', { iid: x }); return null;
-      case 'wz-set': SU.set = x; SU.step = 2; saveSU(); rerender(); scrollTop(); return null;
+      case 'wz-set': SU.set = x; SU.scen = ''; SU.step = 2; saveSU(); rerender(); scrollTop(); return null;
       case 'wz-sex': SU.pat.sex = x; saveSU(); rerender(); return null;
       case 'wz-healthy': SU.inj = []; preClean(); saveSU(); rerender(); return null;
       case 'si-k0': { const t = PCAT.injBy(x), S0 = t.sevs || PCAT.SEV; openSheet('inj', { mode: 'setup', k: x, sev: S0[Math.min(2, S0.length - 1)][2], loc: t.pick.indexOf('loc') >= 0 ? 'RightLeg' : null, side: t.pick.indexOf('side') >= 0 ? 'R' : null }); return null; }
       case 'newsc': view = 'pt'; LSs('sim-pu-view', view); SU.step = 1; saveSU(); rerender(); scrollTop(); return null;
       case 'stopask': openSheet('confirm', { what: 'stop' }); return null;
       case 'arrask': openSheet('confirm', { what: 'arrest', code: x }); return null;
-      case 'xferask': openSheet('xfer', { skip: 1, reprobe: 1, team2: 0 }); return null;
+      case 'xferask': openSheet('xfer', { skip: 1, reprobe: 1, team2: P.sc && P.sc.scen && P.sc.scen.team2 ? 1 : 0 }); return null;
       case 'xf-t': sheet[x] = sheet[x] ? 0 : 1; drawSheet(); return null;
       case 'xf-ok': { const o = { op: 'phase', to: 'role1', skip: sheet.skip ? 180 : 0, reprobe: !!sheet.reprobe, team2: !!sheet.team2 }; closeSheet(); view = 'recv'; LSs('sim-pu-view', view); return C(o); }
       case 'cf-ok': { const w = sheet.what, code = sheet.code; closeSheet(); if (w === 'stop') { view = 'rep'; LSs('sim-pu-view', view); return C({ op: 'stop' }); } return C({ op: 'ev', code }); }
