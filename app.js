@@ -1,6 +1,6 @@
 'use strict';
 // ───────── SIM – programėlės eiga: pradžia, monitorius, instruktoriaus pultas, scenarijai, žurnalas, nustatymai ─────────
-const VER = 'v11.7 · 2026-11-06';
+const VER = 'v11.8 · 2026-11-07';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
 const LSg = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
@@ -120,24 +120,55 @@ function playTick() {
 setInterval(playTick, 500);
 function hostSnap() { const s = SIM.snapshot(); s.pl = playInfo(); s.pu = PULSE.status(); s.ver = VER; return s; }
 function hostSend(o) { let n = 0; if (RTC.role() === 'host' && RTC.open() && RTC.send(o)) n++; if (RELAY.role() === 'host' && RELAY.up() && RELAY.send(o)) n++; return n > 0; }
-function pushSnap() { if (route() === 'monitorius') hostSend({ c: 'snap', s: hostSnap() }); }
-setInterval(pushSnap, 1000);
+// sinchronizacija: scenarijus (žurnalas, sužalojimai, rodiklių istorija) siunčiamas tik pasikeitus arba kas 5 s, žurnalas ir istorija – sutrumpinti
+// (visas – tik paprašius, pvz. ataskaitai); kitais kartais – tik požymis scSame, instruktorius naudoja ankstesnį
+const SYNC_LOG = 120, SYNC_VH = 120;
+let scSent = { sig: '', t: 0 }, lastPush = 0;
+const SENT = {};   // retai kintančios dalys (scenarijus, komentarai, variklio sąrašai, nustatymai): paskutinis parašas ir laikas
+function sticky(o, key, pre) {
+  const val = o[key]; if (val == null) return;
+  const sig = JSON.stringify(val), now = Date.now(), id = pre + key, S0 = SENT[id] || {};
+  if (sig === S0.sig && now - S0.t < 5000 && scSent.sig) { delete o[key]; (o.same = o.same || []).push(key); return; }
+  SENT[id] = { sig, t: now };
+}
+function syncPu(pu) {
+  if (!pu) return pu;
+  const o = Object.assign({}, pu);
+  if (pu.sc) { const sc = pu.sc, L = sc.log || [], H = sc.vh || []; o.sc = Object.assign({}, sc, { log: L.slice(-SYNC_LOG), vh: H.slice(-SYNC_VH), logN: L.length, vhN: H.length }); }
+  ['sc', 'cm', 'sup', 'comp', 'sub', 'hemc'].forEach(k => sticky(o, k, 'pu.'));
+  if (o.same) o.scSame = o.same.indexOf('sc') >= 0 ? 1 : 0;
+  return o;
+}
+function pushSnap() {
+  if (route() !== 'monitorius') return;
+  const s = hostSnap(); s.pu = syncPu(s.pu); sticky(s, 'cfg', '');
+  scSent.sig = scSent.sig || 'x'; lastPush = Date.now(); hostSend({ c: 'snap', s });
+}
+setInterval(() => { if (Date.now() - lastPush > 800) pushSnap(); }, 1000);   // kas sekundę (jei ką tik nesiųsta dėl pokyčio)
 
 // ───────── ryšys ─────────
-let remoteSnap = null, remoteT = 0, rtcState = 'off', relState = 'off', rtt = 0, remoteDump = null, dumpReqT = 0, pushT = 0;
+let remoteSnap = null, remoteT = 0, rtcState = 'off', relState = 'off', rtt = 0, remoteDump = null, dumpReqT = 0, pushT = 0, puFull = null, puReqT = 0, scReqT = 0;
 const sig = s => s ? JSON.stringify([s.rhythm, s.probe, s.nibp && s.nibp.mode, s.nibp && s.nibp.stat, s.sound, s.beep, s.alarms, s.label, s.stage, s.t, s.cfg, s.art, s.pace, s.pause, !!s.mute, s.son, s.pl && [s.pl.src, s.pl.id, s.pl.i, s.pl.auto, s.pl.useD], s.pu && [s.pu.st, s.pu.speed, s.pu.eng, s.pu.sid, s.pu.msg, s.pu.skip, s.pu.sc ? JSON.stringify([s.pu.sc.inj, s.pu.sc.inf, s.pu.sc.o2, s.pu.sc.log.length, s.pu.sc.arrest, s.pu.sc.end]) : 0, (s.pu.q || []).map(x => x.uid + x.left).join(), (s.pu.cm || []).map(c => c.id + c.end).join(), (s.pu.h || []).map(x => x.n + x.t).join()]]) : '';
 function onLinkMsg(host, o) {
   if (!o || typeof o !== 'object') return;
   if (host) {
     if (o.c === 'ping') { hostSend({ c: 'pong', id: o.id, t: o.t }); return; }
     if (o.c === 'dump') { const j = SIM.journal(); if (j.tr.length > 720) { const k = Math.ceil(j.tr.length / 720); j.tr = j.tr.filter((x, i) => i % k === 0 || i === j.tr.length - 1); } j.log = j.log.slice(-300); hostSend({ c: 'dump', j }); return; }
+    if (o.c === 'scfull') { scSent.sig = ''; pushSnap(); return; }   // instruktorius dar neturi retai kintančių dalių – siųsti viską
+    if (o.c === 'pudump') { const P = PULSE.status(); if (P.sc) hostSend({ c: 'pudump', sc: P.sc }); return; }   // visas žurnalas ir istorija (ataskaitai)
     exec(o); clearTimeout(pushT); pushT = setTimeout(pushSnap, 60);
     if ($('#drawer.on') && !inputBusy()) rerenderPanel();
     return;
   }
   if (o.c === 'pong') { if (o.t) rtt = Math.max(1, Date.now() - o.t); return; }
   if (o.c === 'dump') { remoteDump = o.j; if (UI.tab === 'log' && !inputBusy()) rerenderTab(); return; }
+  if (o.c === 'pudump') { if (o.sc) { puFull = { sc: o.sc, t: Date.now() }; if (UI.tab === 'pu' && !inputBusy()) rerenderTab(); } return; }
   if (o.c !== 'snap' || !o.s) return;
+  // nepasikeitusios dalys – iš ankstesnės nuotraukos; jei jos dar nėra – paprašyti visos
+  const prevS = remoteSnap || {}, prevP = prevS.pu || {}; let miss = false;
+  if (o.s.pu && Array.isArray(o.s.pu.same)) o.s.pu.same.forEach(k => { if (prevP[k] != null) o.s.pu[k] = prevP[k]; else miss = true; });
+  if (Array.isArray(o.s.same)) o.s.same.forEach(k => { if (prevS[k] != null) o.s[k] = prevS[k]; else miss = true; });
+  if (miss && Date.now() - scReqT > 2000) { scReqT = Date.now(); rsend({ c: 'scfull' }); }
   const old = sig(remoteSnap); remoteSnap = o.s; remoteT = Date.now(); mirror(); curvFeed();
   if ((route() === 'instruktorius' || route() === 'nustatymai') && sig(remoteSnap) !== old && !inputBusy()) rerenderPanel();
 }
@@ -149,9 +180,11 @@ const ctrlOn = () => linkOn() && !isHost();
 const rsend = o => !!((RTC.open() && RTC.role() === 'ctrl' && RTC.send(o)) || (RELAY.role() === 'ctrl' && RELAY.send(o)));
 let tabPu = 0;   // instruktoriui prisijungus pirmą kartą – Simuliacija (vėliau ryšiui trūkinėjant skirtukas nekeičiamas)
 const toPu = () => { if (tabPu) return; tabPu = 1; UI.tab = 'pu'; saveUI(); };
-RTC.onState = s => { rtcState = s; if (s === 'on' && RTC.role() === 'ctrl') toPu(); if (s === 'on') toast(RTC.role() === 'host' ? 'Instruktorius prijungtas' : 'Prijungta prie monitoriaus'); if (s === 'lost' || s === 'off') { if (RTC.role()) toast('Ryšys nutrūko'); } refresh(); };
+RTC.onState = s => { rtcState = s; if (s === 'on' && RTC.role() === 'ctrl') toPu(); if (s === 'on') { scSent.sig = ''; toast(RTC.role() === 'host' ? 'Instruktorius prijungtas' : 'Prijungta prie monitoriaus'); } if (s === 'lost' || s === 'off') { if (RTC.role()) toast('Ryšys nutrūko'); } monRemote(); refresh(); };
 RELAY.onState = s => {
   const prev = relState; relState = s;
+  if (s === 'on' && prev !== 'on') scSent.sig = '';
+  monRemote();
   if (s === 'on' && prev !== 'on') toast(RELAY.role() === 'host' ? 'Instruktorius prijungtas' : 'Prijungta prie monitoriaus');
   if (s === 'on' && prev !== 'on' && RELAY.role() === 'ctrl') toPu();   // instruktoriui pirmiausia – Simuliacija
   pairCard();
@@ -165,6 +198,9 @@ setInterval(() => { if (ctrlOn() && route() !== 'monitorius') rsend({ c: 'ping',
 const joinUrl = code => location.origin + location.pathname + '#/instruktorius?k=' + code;
 const fmtRoom = c => c.slice(0, 3) + '-' + c.slice(3);
 const isHostRoute = () => route() === 'monitorius';
+// monitoriuje prijungtas nuotolinis instruktorius – pulto mygtukas paslepiamas (mokiniai neatsidarys pulto netyčia)
+const remoteInstr = () => (RELAY.role() === 'host' && relState === 'on') || (RTC.role() === 'host' && rtcState === 'on');
+function monRemote() { document.body.classList.toggle('monremote', route() === 'monitorius' && remoteInstr()); }
 
 // ───────── instruktoriaus pultas (bendras: monitoriaus stalčius ir nuotolinis telefonas) ─────────
 const DUR = [[0, 'Iš karto'], [30, '30 s'], [60, '1 min'], [120, '2 min'], [300, '5 min']];
@@ -213,7 +249,7 @@ function mirrorHtml() {
     `${cell('AKS', s.nibp.meas ? '…' : L && L.ok ? L.sys + '/' + L.dia : '---', L && L.ok ? 'išm. ' + new Date(L.t).toTimeString().slice(0, 5) : 'mm Hg')}${cell('KD', c.rr, 'k./min')}${cell('T', f1('temp', c.temp), '°C')}</div>` +
     `<div class="mirs">${esc(SIM.rhName(s.rhythm))}${ex.length ? ' · ' + ex.join(' · ') : ''}</div>` +
     (s.a && s.a.length ? `<div class="mira p${s.pri}">${s.a.map(esc).join(' · ')}</div>` : '') +
-    (s.au === 0 && s.sound ? '<div class="mira p1">⚠ Monitoriaus garsas neįjungtas – palieskite monitoriaus ekraną</div>' : '');
+    (s.au === 0 && s.sound ? '<div class="mira p1 wrap">⚠ Monitoriaus garsas neįjungtas – palieskite monitoriaus ekraną</div>' : '');
 }
 function mirror() { const el = $('#mirror'); if (el) el.innerHTML = mirrorHtml(); }
 function cstHtml() {
@@ -231,16 +267,29 @@ function tabsHtml() {
 }
 function stripHtml(compact) {
   const s = snap() || {};
-  if (compact) return `<span class="tmr">${ICO.clock}<b id="tmrv">${s.son ? SIM.mmss(s.el) : '--:--'}</b></span>` +
+  if (compact) return `<span class="tmr" title="Sesijos laikas">${ICO.clock}<span class="tmrw"><b id="tmrv">${s.son ? SIM.mmss(s.el) : '--:--'}</b><small>sesija</small></span></span>` +
     `<button class="sb ic${s.pause ? ' on' : ''}" data-act="pause" aria-label="${s.pause ? 'Tęsti' : 'Pauzė'}">${s.pause ? ICO.play : ICO.pause}</button>` +
     `<button class="sb ic${s.mute ? ' on' : ''}" data-act="${s.mute ? 'unmute' : 'mute'}" aria-label="Aliarmų nutildymas">${ICO.mute}<span id="mutv">${s.mute ? SIM.mmss(s.mute * 1000) : ''}</span></button>`;
-  return `<div class="strip"><span class="tmr">${ICO.clock}<b id="tmrv">${s.son ? SIM.mmss(s.el) : '--:--'}</b></span>` +
+  return `<div class="strip"><span class="tmr" title="Sesijos laikas">${ICO.clock}<span class="tmrw"><b id="tmrv">${s.son ? SIM.mmss(s.el) : '--:--'}</b><small>sesija</small></span></span>` +
     `<button class="sb${s.pause ? ' on' : ''}" data-act="pause" aria-label="${s.pause ? 'Tęsti' : 'Pauzė'}">${s.pause ? ICO.play + 'Tęsti' : ICO.pause + 'Pauzė'}</button>` +
     `<button class="sb${s.mute ? ' on' : ''}" data-act="${s.mute ? 'unmute' : 'mute'}" aria-label="Aliarmų nutildymas">${ICO.mute}<span id="mutv">${s.mute ? SIM.mmss(s.mute * 1000) : '2 min'}</span></button></div>`;
 }
 function headHtml() { return `<div id="mirror" class="mirw">${mirrorHtml()}</div>` + stripHtml(); }
 function tabBody() {
-  switch (UI.tab) { case 'sc': return scTab(); case 'act': return actTab(); case 'log': return logTab(); case 'set': return setTab(); case 'link': return linkTab(); case 'pu': { const s = snap(), loc = tgt() === 'local'; return PUI.render(loc ? PULSE.status() : s && s.pu, loc, s ? s.ver || '' : null); } default: return ctlTab(); }
+  switch (UI.tab) { case 'sc': return scTab(); case 'act': return actTab(); case 'log': return logTab(); case 'set': return setTab(); case 'link': return linkTab(); case 'pu': { const s = snap(), loc = tgt() === 'local'; return PUI.render(loc ? PULSE.status() : puMerged(s && s.pu), loc, s ? s.ver || '' : null, loc ? SIM.state().probe : s && s.probe, conWide()); } default: return ctlTab(); }
+}
+// plati instruktoriaus pulto išdėstymo forma (planšetė, kompiuteris): dvi kolonos
+const conWide = () => route() === 'instruktorius' && innerWidth >= 800 && innerHeight >= 560 && linkOn();
+// ataskaitai – visas žurnalas ir AKS istorija iš monitoriaus (sinchronizacijoje jie sutrumpinti)
+function puMerged(pu) {
+  if (!pu || !pu.sc) return pu;
+  const sc = pu.sc, trimmed = (sc.logN || 0) > (sc.log || []).length || (sc.vhN || 0) > (sc.vh || []).length;
+  if (!trimmed || PUI.view !== 'rep') return pu;
+  if (Date.now() - puReqT > 5000) { puReqT = Date.now(); setTimeout(() => rsend({ c: 'pudump' }), 0); }
+  if (!puFull || puFull.sc.nonce !== sc.nonce) return pu;
+  const L = puFull.sc.log.slice(); (sc.log || []).forEach(l => { if (!L.some(x => x.t === l.t && x.n === l.n)) L.push(l); });
+  const H = (puFull.sc.vh || []).slice(); (sc.vh || []).forEach(v => { if (!H.length || v[0] > H[H.length - 1][0]) H.push(v); });
+  return Object.assign({}, pu, { sc: Object.assign({}, sc, { log: L, vh: H }) });
 }
 const durChips = () => '<div class="chips">' + DUR.map(([d, t]) => chip('dur', d, dur === d, t)).join('') + '</div>';
 
@@ -456,9 +505,9 @@ function home() {
     `<a class="tile" href="#/instruktorius">${ICO.ctrl}<b>Instruktorius</b><small>Valdyti kitą telefoną</small></a>` +
     `<a class="tile wide" href="#/nustatymai">${ICO.cog}<b>Nustatymai</b><small>Aliarmų ribos, garsas, ekranas</small></a>` +
     `<a class="tile wide" href="#/" data-g="open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z"/><path d="M9.5 9.3a2.6 2.6 0 0 1 5 .9c0 1.7-2.5 2.3-2.5 3.8"/><path d="M12 17h.01"/></svg><b>Kaip naudotis</b><small>Trumpa instrukcija: monitorius, pultas, simuliacija</small></a></div>` +
-    `<details class="hlp"><summary>Apie</summary><p>Versija ${VER}. Parengė 1040 medkuopa Mebius. Mokymo priemonė – ne medicinos prietaisas; rodikliai ir kreivės sugeneruoti (Pulse režime – skaičiuojami Kitware Pulse fiziologijos modeliu).</p>` +
+    `<details class="hlp"><summary>Apie</summary><p>Versija ${VER}. Parengė 1040 medkuopa Moebius. Mokymo priemonė – ne medicinos prietaisas; rodikliai ir kreivės sugeneruoti (Pulse režime – skaičiuojami Kitware Pulse fiziologijos modeliu).</p>` +
     `<p class="muted">Rodomi: EKG (II), ŠSD, SpO₂ su pletizmograma, neinvazinis AKS (sist./diast., vidutinis), kvėpavimo dažnis ir kreivė, temperatūra. Aliarmų ribos – tipinės suaugusiųjų monitoriaus numatytosios (keičiamos nustatymuose); garsiniai signalai primena IEC 60601-1-8 prioritetus. Scenarijai – SIM, ETC gido ir March gido treniruočių scenarijai.</p>` +
-    otherApps() + '</details><p class="credit">Parengė 1040 medkuopa Mebius</p>';
+    otherApps() + '</details><p class="credit">Parengė 1040 medkuopa Moebius</p>';
 }
 // kitos 1040 medkuopos programėlės (Apie ir Nustatymai)
 function otherApps() {
@@ -470,7 +519,7 @@ function settingsPage() {
   const remote = tgt() === 'remote';
   return `<div class="bar"><a class="ib" href="#/" aria-label="Atgal">${ICO.back}</a><h1>Nustatymai</h1>${remote ? cstHtml() : ''}</div>` +
     `<p class="muted mt0">${remote ? 'Keičiami <b>prijungto monitoriaus</b> nustatymai.' : 'Šio telefono monitoriaus nustatymai. Prijungus instruktorių, juos galima keisti ir nuotoliniu būdu.'}</p>` +
-    '<p><button class="btn" data-g="open">Kaip naudotis – trumpa instrukcija</button></p>' + setTab() + `<section class="pnl">${otherApps()}<p class="credit">Versija ${VER} · Parengė 1040 medkuopa Mebius</p></section>`;
+    '<p><button class="btn" data-g="open">Kaip naudotis – trumpa instrukcija</button></p>' + setTab() + `<section class="pnl">${otherApps()}<p class="credit">Versija ${VER} · Parengė 1040 medkuopa Moebius</p></section>`;
 }
 function pairHost() {
   // monitoriaus pusė – rodomas pultas
@@ -520,6 +569,7 @@ function instructor() {
 }
 function monitor() {
   return `<div id="monroot"></div><div class="pustrip" id="pustrip"></div><button class="mbtn mg" data-act="drawer" aria-label="Instruktoriaus pultas">${ICO.gear}</button><button class="mbtn mm" data-act="mmute" aria-label="Nutildyti aliarmus 2 min">${ICO.mute}</button>` +
+    `<div class="mhold" id="mhold" hidden><b>Laikykite – instruktoriaus pultas</b><i><i></i></i></div><div class="mrot" id="mrot" data-act="mrot-x" hidden>↻ Pasukite telefoną gulsčiai – didesni skaičiai ir kreivės</div>` +
     `<div class="drawer" id="drawer"><div class="dhd"><div id="dtabs" class="dtabs"></div><button class="ib" data-act="drawer" aria-label="Uždaryti">${ICO.x}</button></div><div class="dbd" id="dbd"></div></div>` +
     `<div class="alist" id="alist" data-act="alist-x" hidden></div>` +
     `<div class="tapsound" id="tapsound" data-act="sound-on">Palieskite – įjungti garsą</div>`;
@@ -557,8 +607,11 @@ function render() {
   const r = route(), app = $('#app');
   if (r !== lastRoute) { if (lastRoute === 'monitorius') { SIM.stop(); if (RELAY.role() === 'host') { RELAY.stop(true); relState = 'off'; } if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); if (wl) { try { wl.release(); } catch (e) {} wl = null; } } RTC.scanStop(); }
   document.body.classList.toggle('monmode', r === 'monitorius');
+  document.body.classList.toggle('conmode', r === 'instruktorius');
+  document.body.classList.toggle('conwide', conWide());
+  monRemote();
   if (r === 'monitorius') {
-    if (lastRoute !== 'monitorius') { app.innerHTML = monitor(); SIM.mount($('#monroot')); wake(); const hr = LSg('sim-room-host', ''); if (hr && !RELAY.role() && RELAY.valid(hr)) RELAY.host(hr); else if (!RELAY.role() && !RTC.role()) LSs('sim-room-host', RELAY.host()); pairCard(); PULSE.boot(); }
+    if (lastRoute !== 'monitorius') { app.innerHTML = monitor(); SIM.mount($('#monroot')); wake(); rotHint(); const hr = LSg('sim-room-host', ''); if (hr && !RELAY.role() && RELAY.valid(hr)) RELAY.host(hr); else if (!RELAY.role() && !RTC.role()) LSs('sim-room-host', RELAY.host()); pairCard(); PULSE.boot(); }
     if ($('#drawer.on')) { $('#dtabs').innerHTML = tabsHtml(); $('#dbd').innerHTML = drawerBody(); }
     qrHost();
   } else if (r === 'instruktorius') {
@@ -630,6 +683,25 @@ function rerenderPanel() {
   else { const y = scrollY; render(); scrollTo(0, y); }
 }
 function rerenderTab() { const c = $('#tabc'); if (!c) return; c.innerHTML = tabBody(); afterTab(); }
+// stačias telefonas – užuomina pasukti (rodomas ir stačias vaizdas)
+let rotT = 0;
+function rotHint() {
+  const el = $('#mrot'); if (!el) return;
+  const show = route() === 'monitorius' && innerHeight > innerWidth && innerWidth < 600;
+  clearTimeout(rotT); el.hidden = !show; if (show) rotT = setTimeout(() => { const e = $('#mrot'); if (e) e.hidden = true; }, 7000);
+}
+let rotO = innerWidth > innerHeight;
+window.addEventListener('resize', () => {
+  const o = innerWidth > innerHeight; if (o !== rotO) { rotO = o; rotHint(); }
+  const w = conWide(); if (document.body.classList.contains('conwide') !== w) { document.body.classList.toggle('conwide', w); if (route() === 'instruktorius' && !inputBusy()) { const y = scrollY; render(); scrollTo(0, y); } }
+});
+// pulto atidarymas monitoriuje: prijungus nuotolinį instruktorių – tik palaikius 3 s ir patvirtinus
+function holdAsk() {
+  let c = $('#mcf'); if (c) c.remove();
+  c = document.createElement('div'); c.id = 'mcf'; c.className = 'alist'; c.dataset.act = 'mcf-x';
+  c.innerHTML = '<div class="alb mcf" data-act="noop" role="dialog" aria-label="Atidaryti pultą"><div class="dhd"><b>Atidaryti pultą šiame monitoriuje?</b><button class="ib" data-act="mcf-x" aria-label="Uždaryti">' + ICO.x + '</button></div><p>Instruktorius prijungtas nuotoliniu būdu. Pultas monitoriuje reikalingas tik be instruktoriaus telefono.</p><div class="acts"><button class="btn" data-act="mcf-x">Atšaukti</button><button class="btn pri" data-act="mcf-ok">Atidaryti pultą</button></div></div>';
+  document.body.appendChild(c);
+}
 function openDrawer() { const d = $('#drawer'); if (!d) return; d.classList.add('on'); $('#dtabs').innerHTML = tabsHtml(); $('#dbd').innerHTML = drawerBody(); qrHost(); afterTab(); const ts = $('#tapsound'); if (ts) ts.remove(); }
 // kas sekundę – laikmatis, atgalinis skaičiavimas, ryšio būsena, žurnalas
 setInterval(() => {
@@ -675,10 +747,13 @@ let liveT = 0;
 function liveApply(now) { clearTimeout(liveT); liveT = setTimeout(applyDraft, now ? 0 : 600); }
 function applyDraft() { if (!Object.keys(draft).length) return; if (send({ c: 'apply', v: draft, d: dur })) { if (!UI.live) toast(dur ? 'Keičiasi per ' + DUR.find(x => x[0] === dur)[1] : 'Pritaikyta'); draft = {}; if (!inputBusy() && !hold) rerenderPanel(); } }
 let hold = null, lp = null, lpFired = 0;
+const HOLD_MS = 3000;
+const holdInd = on => { const h = $('#mhold'); if (h) { h.hidden = !on; h.classList.toggle('on', !!on); } };
 document.addEventListener('pointerdown', e => {
   const t = e.target; ptrT = Date.now();
-  if (route() === 'monitorius' && t.closest && t.closest('#monroot') && !$('#drawer.on')) {
-    lp = { x: e.clientX, y: e.clientY, t: setTimeout(() => { lp = null; lpFired = Date.now(); openDrawer(); if (navigator.vibrate) navigator.vibrate(30); }, 650) };
+  // pultas monitoriuje: palaikyti 3 s (prijungus instruktorių – dar ir patvirtinti); trumpo ilgo paspaudimo nebėra
+  if (route() === 'monitorius' && t.closest && t.closest('#monroot') && !$('#drawer.on') && !$('#mcf')) {
+    lp = { x: e.clientX, y: e.clientY, i: setTimeout(() => holdInd(true), 400), t: setTimeout(() => { lp = null; lpFired = Date.now(); holdInd(false); if (navigator.vibrate) navigator.vibrate(30); if (remoteInstr()) holdAsk(); else openDrawer(); }, HOLD_MS) };
   }
   const b = t.closest && t.closest('.pb[data-act="d-"], .pb[data-act="d+"]');
   if (b && !b.disabled) { const k = b.dataset.k, dir = b.dataset.act === 'd+' ? 1 : -1; hold = { n: 0, t: 0 }; const rep = () => { hold.n++; stepParam(k, dir); hold.t = setTimeout(rep, 110); }; hold.t = setTimeout(rep, 450); }
@@ -686,10 +761,10 @@ document.addEventListener('pointerdown', e => {
   if (t.closest && t.closest('#spkw')) chartPoint(e);
 }, { passive: true });
 document.addEventListener('pointermove', e => {
-  if (lp && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 12) { clearTimeout(lp.t); lp = null; }
+  if (lp && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 12) { clearTimeout(lp.t); clearTimeout(lp.i); lp = null; holdInd(false); }
   if (e.target.closest && e.target.closest('#spkw') && (e.buttons || e.pointerType === 'mouse')) chartPoint(e);
 }, { passive: true });
-const endPtr = () => { ptrT = 0; if (lp) { clearTimeout(lp.t); lp = null; } if (hold) clearTimeout(hold.t); if (slDrag) { slDrag = 0; } };
+const endPtr = () => { ptrT = 0; if (lp) { clearTimeout(lp.t); clearTimeout(lp.i); lp = null; holdInd(false); } if (hold) clearTimeout(hold.t); if (slDrag) { slDrag = 0; } };
 document.addEventListener('pointerup', endPtr, { passive: true });
 document.addEventListener('pointercancel', endPtr, { passive: true });
 document.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('#monroot, .pb')) e.preventDefault(); });
@@ -703,7 +778,10 @@ document.addEventListener('click', async e => {
   switch (a) {
     case 'noop': return;
     case 'sound-on': el.remove(); try { const d = document.documentElement; if (d.requestFullscreen && !document.fullscreenElement && !matchMedia('(display-mode: standalone)').matches) d.requestFullscreen().catch(() => {}); } catch (x) {} return;
-    case 'drawer': { const d = $('#drawer'); if (d.classList.contains('on')) d.classList.remove('on'); else openDrawer(); const ts = $('#tapsound'); if (ts) ts.remove(); return; }
+    case 'drawer': { const d = $('#drawer'); if (d.classList.contains('on')) d.classList.remove('on'); else if (remoteInstr()) holdAsk(); else openDrawer(); const ts = $('#tapsound'); if (ts) ts.remove(); return; }
+    case 'mcf-ok': { const c = $('#mcf'); if (c) c.remove(); openDrawer(); return; }
+    case 'mcf-x': { const c = $('#mcf'); if (c) c.remove(); return; }
+    case 'mrot-x': el.hidden = true; return;
     case 'tab': UI.tab = k; saveUI(); scenList = scenList && k === 'sc'; if (route() === 'monitorius') { $('#dtabs').innerHTML = tabsHtml(); $('#dbd').innerHTML = drawerBody(); $('#dbd').scrollTop = 0; qrHost(); afterTab(); } else { render(); const tb = $('.rhead'); if (tb && scrollY > tb.offsetTop) scrollTo(0, tb.offsetTop); } { const on = document.querySelector('.tab.on'); if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } return;
     case 'mmute': { const st = SIM.state(), mu = st.mute && Date.now() > 0 && Date.now() < st.mute; exec(mu ? { c: 'mute', off: 1 } : { c: 'mute' }); pushSnap(); toast(mu ? 'Aliarmų garsas grąžintas' : 'Aliarmai nutildyti 2 min'); const al = $('#alist'); if (al && !al.hidden) al.innerHTML = alistHtml(); if ($('#drawer.on')) rerenderPanel(); return; }
     case 'mon-nibp': exec({ c: 'nibp' }); pushSnap(); toast('AKS matuojamas'); return;

@@ -3,13 +3,16 @@
 const PULSE_CM = (() => {
   const ago = (t, t0) => { const m = Math.round((t - t0) / 60); return m < 1 ? 'ką tik' : 'prieš ' + m + ' min'; };
   const r0 = n => Math.round(n);
-  // kontekstas iš veiksmų sąrašo [{a, t}]
+  // kontekstas iš veiksmų sąrašo [{a, t}] – Pulse veiksmai (bolus) ir telefono modelio (drug, L variantai)
+  const SUBN = { ket: 'Ketamine', esket: 'Ketamine', fen: 'Fentanyl', mor: 'Morphine', nal: 'Naloxone', mid: 'Midazolam', adr: 'Epinephrine' };
   function ctx(list, t) {
     const c = { tpx: {}, htx: {}, aw: 0, tbi: 0, eff: 0, burn: 0, arrest: '', drugs: [], cryst: 0, blood: 0, intub: false, o2: false, hem: 0 };
-    list.forEach(({ a, t: ta }) => {
+    list.forEach(({ a: a0, t: ta }) => {
+      const a = a0 && a0.k === '_' && a0.L ? a0.L : a0 || {};
       switch (a.k) {
         case 'tpx': c.tpx[a.side || 'L'] = { sev: +a.sev || 0.6, open: !!a.open, t: ta }; break;
-        case 'ndc': if (c.tpx[a.side || 'L']) c.tpx[a.side || 'L'].done = ta; break;
+        case 'ndc': case 'tube': if (c.tpx[a.side || 'L']) c.tpx[a.side || 'L'].done = ta; if (a.k === 'tube' || (a.L && a.L.k === 'tube')) c.htx[a.side || 'L'] = 0; break;
+        case 'drug': if (SUBN[a.id] && !c.drugs.some(d => d.t === ta && d.s === SUBN[a.id])) c.drugs.push({ s: SUBN[a.id], mg: a.id === 'esket' ? +a.mg * 2 : +a.mg, r: a.route === 'IO' ? 'IV' : a.route || 'IV', t: ta }); break;
         case 'occl': if (c.tpx[a.side || 'L'] && c.tpx[a.side || 'L'].open) c.tpx[a.side || 'L'].done = ta; break;
         case 'aw': c.aw = +a.sev || 0; break;
         case 'intub': c.intub = true; c.aw = 0; break;
@@ -20,7 +23,7 @@ const PULSE_CM = (() => {
         case 'eff': c.eff = +a.rate || 0; c.effT = ta; break;
         case 'burn': c.burn = +a.tbsa || 0; break;
         case 'arrest': c.arrest = a.rhythm === 'NormalSinus' ? '' : (a.rhythm || 'Asystole'); c.arrT = ta; break;
-        case 'bolus': c.drugs.push({ s: a.sub, mg: +a.mg, r: a.route || 'IV', t: ta }); break;
+        case 'bolus': if (!c.drugs.some(d => d.t === ta && d.s === a.sub)) c.drugs.push({ s: a.sub, mg: +a.mg, r: a.route || 'IV', t: ta }); break;
         case 'inf': if (a.cmp === 'Blood' || a.cmp === 'PackedRBC' || a.cmp === 'Plasma') c.blood += +a.ml || 0; else c.cryst += +a.ml || 0; break;
         case 'hem': c.hem = Math.max(c.hem, +a.sev || 0); break;
       }
@@ -38,7 +41,8 @@ const PULSE_CM = (() => {
   const side = s => s === 'R' ? 'dešinėje' : 'kairėje';
   // taisyklės: grąžina {id, lvl, title, why[], todo[]} arba null
   function rules(v, c, x) {
-    const out = [], loss = x.bv0 && v.bv ? x.bv0 - v.bv : 0, lossP = x.bv0 ? loss / x.bv0 : 0, t = x.t;
+    // telefono modelis siunčia tikrą pradinį tūrį (bv0) ir netektą kraują (lost); Pulse – tik dabartinį tūrį
+    const out = [], bv0 = v.bv0 || x.bv0, net = bv0 && v.bv ? Math.max(0, bv0 - v.bv) : 0, loss = v.lost != null ? Math.max(0, v.lost) : net, lossP = bv0 ? (v.lost != null ? Math.min(net, v.lost) : net) / bv0 : 0, t = x.t;
     const shockWhy = (why, todo) => {
       if (x.hems.length || lossP > 0.15) {
         why.push(`Kraujo netekimas ≈ ${r0(loss / 50) * 50} ml (${r0(lossP * 100)} % tūrio${lossP > 0.4 ? ', IV klasė' : lossP > 0.3 ? ', III klasė' : lossP > 0.15 ? ', II klasė' : ''})${x.hems.length ? ' – kraujavimas vis dar nesustabdytas' : ''}.`);
@@ -65,9 +69,14 @@ const PULSE_CM = (() => {
       if (c.opioid || c.mid) why.push('Vaistais nuslopintas kvėpavimas → hipoksija.');
       if (c.tbi >= 0.6) why.push('Sunki galvos smegenų trauma.');
       if (!why.length) why.push('Aiškios priežasties tarp pažymėtų veiksmų nėra.');
-      todo.push('Trauminis sustojimas: pirmiausia grįžtamos priežastys – kraujavimo kontrolė ir kraujas, abipusė adatinė dekompresija, kvėpavimo takai ir ventiliacija.');
-      todo.push('KPR pagal ALS; SpO₂ be pulso – nepatikimas.');
-      if (c.arrest && c.arrest !== 'Asystole') todo.push('Skilvelių virpėjimas – defibriliacija.');
+      if (c.arrest) { todo.push('Instruktoriaus sukeltas sustojimas – KPR ir ALS algoritmas (adrenalinas, ritmo vertinimas).'); if (c.arrest !== 'Asystole') todo.push('Skilvelių virpėjimas – defibriliacija.'); }
+      else {
+        todo.push('Trauminis sustojimas – HOTT: H – sustabdyti kraujavimą (turniketai, tamponavimas, dubens diržas).');
+        todo.push('O – oksigenacija: atverti kvėpavimo takus, ventiliuoti su O₂.');
+        todo.push('T – abipusė krūtinės dekompresija (adata; Role 1 – pirštinė torakostomija).');
+        todo.push('T – tūris: kraujas (+ kalcis); kompresijos ir adrenalinas – tik pašalinus grįžtamas priežastis.');
+      }
+      todo.push('SpO₂ be pulso – nepatikimas.');
       out.push({ id: 'arrest', lvl: 'crit', title: 'Širdies sustojimas – nėra pulso', why, todo });
       return out;   // kiti komentarai šiuo metu nebeaktualūs
     }
@@ -75,7 +84,7 @@ const PULSE_CM = (() => {
     if (v.rr != null && v.rr < 7) {
       const why = [], todo = [];
       if (c.ket && c.ket.r === 'IV' && t - c.ket.t < 400) { why.push(`Ketaminas ${c.ket.mg} mg IV ${ago(t, c.ket.t)}: greita injekcija gali sukelti trumpalaikę apnėją; dažniausiai praeina per 1–3 min.`); todo.push('Atverti kvėpavimo takus, ventiliuoti maišu su O₂; kitą kartą ketaminą leisti lėtai (per ~1 min).'); }
-      if (c.opioid) { why.push(`Opioidas (${c.opioid.s === 'Fentanyl' ? 'fentanilis' : 'morfinas'} ${c.opioid.s === 'Fentanyl' ? r0(c.opioid.mg * 1000) + ' mcg' : c.opioid.mg + ' mg'}) ${ago(t, c.opioid.t)} slopina kvėpavimo centrą${c.nalox ? '; naloksono poveikis trumpesnis už opioido – slopinimas gali grįžti' : ''}.`); todo.push('Naloksonas 0,4 mg IV, prireikus kartoti kas 2–3 min; ventiliacija maišu.'); }
+      if (c.opioid) { why.push(`Opioidas (${c.opioid.s === 'Fentanyl' ? 'fentanilis' : 'morfinas'} ${c.opioid.s === 'Fentanyl' ? r0(c.opioid.mg * 1000) + ' mcg' : c.opioid.mg + ' mg'}) ${ago(t, c.opioid.t)} slopina kvėpavimo centrą${c.nalox ? '; naloksono poveikis trumpesnis už opioido – slopinimas gali grįžti' : ''}.`); todo.push('Naloksonas IV / IO po 40 mcg titruoti, kol KD > 10; ventiliacija maišu.'); }
       if (c.mid) { why.push(`Midazolamas ${ago(t, c.mid.t)} – kvėpavimo slopinimas (ypač kartu su opioidais ar ketaminu).`); todo.push('Ventiliacija maišu; stebėti SpO₂.'); }
       if (c.tbi >= 0.6) { why.push('Sunki galvos smegenų trauma – didėjantis intrakranijinis spaudimas slopina kvėpavimo centrą.'); todo.push('Ventiliacija, galva pakelta 30°, skubi evakuacija.'); }
       if (lossP > 0.35 || (v.sys != null && v.sys < 60)) { why.push('Gilus šokas – retas, agoninis kvėpavimas prieš sustojimą.'); todo.push('Kraujavimo kontrolė ir kraujas nedelsiant.'); }

@@ -29,10 +29,10 @@ Principas: skaičiai ir laiko eiga paimti iš šaltinių ir perfrazuoti. Teksto 
 | Pasquier ir kt. SJTREM 2019 (šveicarų hipotermijos stadijos) | Stadijos 1–4 (35–32 / <32–28 / <28–24 / <24 °C), stadijas atitiko tik 61 % pacientų, optimalios ribos 32,1 / 27,5 / 24,1 °C; sustojimo rizika <30 °C | – | **CC BY 4.0** | https://sjtrem.biomedcentral.com/track/pdf/10.1186/s13049-019-0636-0 |
 | Pasquier ir kt. High Alt Med Biol 2021 „Vital signs in accidental hypothermia“ (n=216) | Kiekvienam −1 °C: ŠSD −2,54/min, sAKS −4,36 mm Hg, KD −0,50/min (regresija) | – | Santrauka (uždara prieiga) | https://serval.unil.ch/notice/serval:BIB_F162D7C6A778 |
 | Musi ir kt. Resuscitation 2021, Revised Swiss System (per EMCrit PDF) | Stadijos pagal AVPU ir gyvybės požymius; drebulys ≈ >30 °C | – | EMCrit PDF | https://emcrit.org/wp-content/uploads/2023/08/Hypothermia-Staging.pdf |
-| WMS hipotermijos gairės 2019 (AFP santrauka) | Stadijos, „afterdrop“, gelbėjimo kolapsas, <30 °C ne daugiau 1 (WMS) / 3 (ERC) defibriliacijų | – | AAFP | https://www.aafp.org/pubs/afp/issues/2020/1101/p571.html |
+| WMS hipotermijos gairės 2019 (AFP santrauka) | Stadijos, temperatūros kritimas po sušildymo pradžios, gelbėjimo kolapsas, <30 °C ne daugiau 1 (WMS) / 3 (ERC) defibriliacijų | – | AAFP | https://www.aafp.org/pubs/afp/issues/2020/1101/p571.html |
 | JTS CPG: Crush Syndrome PCC (ukrainiečių TCCC vertimas) | EKG eiga: bradikardija, smailūs T, ilgas PR, platūs QRS, VES/VT; K⁺ >5,5; Ca gliukonatas 10 ml 10 % (veikia iš karto, 30–60 min), insulinas + gliukozė (~20 min, 4–6 val.); 2 l bolusas prieš išlaisvinimą, paskui 1 l/val. | min–val. | JTS = JAV valstybės kūrinys (viešas); vertimas tccc.org.ua | https://tccc.org.ua/en/guide/crush-syndrome-under-prolonged-field-care-pcc |
-| TCCC modulis 11 – hemoraginio šoko skysčiai (Deployed Medicine, vertimas) | Tikslai: sąmonė, radialinis pulsas, sAKS 100; LTOWB prioritetas; Ca 1 g po 1 vnt.; TXA 2 g | – | CoTCCC/JTS (viešas) | https://tccc.org.ua/files/downloads/module-11-hemorrhagic-shock-fluid-resuscitation-in-tactical-field-care-tfc.pdf |
-| JTS TBI CPG (per NextGen Combat Medic 2024 santrauką) | GSmT tikslai: sAKS >110, SpO₂ >90 %; išvaržos požymiai; 23,4 % NaCl 30 ml | – | Santrauka; originalai jts.health.mil | https://nextgencombatmedic.com/2024/12/11/treating-tbi-from-the-aid-bag |
+| TCCC modulis 11 – hemoraginio šoko skysčiai (Deployed Medicine, vertimas) | Tikslai: sąmonė, radialinis pulsas, sAKS 100; pilno kraujo prioritetas; kalcis (30 ml 10 % gliukonato) po 1-ojo vnt.; TXA 2 g | – | CoTCCC/JTS (viešas) | https://tccc.org.ua/files/downloads/module-11-hemorrhagic-shock-fluid-resuscitation-in-tactical-field-care-tfc.pdf |
+| JTS TBI CPG (per NextGen Combat Medic 2024 santrauką) | GST tikslai: sAKS >110, SpO₂ >90 %; išvaržos požymiai; 23,4 % NaCl 30 ml | – | Santrauka; originalai jts.health.mil | https://nextgencombatmedic.com/2024/12/11/treating-tbi-from-the-aid-bag |
 | JTS Burn Resuscitation Flowsheet (2025) | „Dešimties taisyklė“ (%KPP × 10 ml/val., 40–80 kg), diurezė 30–50 ml/val., VAS >65, max 250 ml/kg per 24 val., stebėjimo lapas 1–70 val. | val. | JAV valstybės kūrinys (viešas) | https://jts.health.mil/assets/docs/forms/JTS_Burn_Resuscitation_Flowchart.pdf |
 | JTS CPG sąrašas | Visos CPG (DCR, TBI, burns, hypothermia, PCC) | – | Viešas | https://jts.health.mil/index.cfm/PI_CPGs/cpgs |
 | JK GM CGO „Traumatic Cardiac Arrest“ | HOTT/MARCH seka, abipusė torakostomija, ventiliacija 12–18/min, torakotomija tik jei sustojimas <15 min, beviltiškumo sprendimas ~20 min | min | © Crown (sąlygas tikrinti) | https://cgo.mod.uk/clinical-guidelines-for-operations/resuscitation-guidelines/traumatic-cardiac-arrest/ |
@@ -40,7 +40,7 @@ Principas: skaičiai ir laiko eiga paimti iš šaltinių ir perfrazuoti. Teksto 
 | RCUK 2021 anafilaksija | IM adrenalinas, kartoti po 5 min; refrakterinė = po 2 dozių; odos požymių nėra ~20 % | min | RCUK | https://www.resus.org.uk/print/pdf/node/11323 |
 | Pumphrey, Clin Exp Allergy 2000 | Mediana iki sustojimo: jatrogeninė 5 min, vabzdžiai 15 min, maistas 30 min; jatrogeninėse vyrauja šokas | min | Santrauka | https://read.qxmd.com/read/10931122/lessons-for-management-of-anaphylaxis-from-a-study-of-fatal-reactions |
 | StatPearls: Neurogenic Shock | sAKS <90, ŠSD <80, šilta oda, VAS 85–90 pirmas 7 d., atropinas, noradrenalinas | d–sav. | **CC BY-NC-ND 4.0** | https://www.ncbi.nlm.nih.gov/books/NBK459361/ |
-| StatPearls: Cardiac Tamponade | Beko triada, paradoksinis pulsas >10, tachikardija – pirmas požymis, BEA | – | CC BY-NC-ND 4.0 | https://www.ncbi.nlm.nih.gov/books/NBK431090/ |
+| StatPearls: Cardiac Tamponade | Becko triada, paradoksinis pulsas >10, tachikardija – pirmas požymis, BEA | – | CC BY-NC-ND 4.0 | https://www.ncbi.nlm.nih.gov/books/NBK431090/ |
 | StatPearls: Electrical Injuries | Žemos įtampos kintamoji srovė → VF (nuo 50–120 mA); vėlyvos aritmijos maža tikimybė po 24–48 val. | – | CC BY-NC-ND 4.0 | https://www.ncbi.nlm.nih.gov/books/NBK448087/ |
 | StatPearls / UMEM: Cushing reflex | Hipertenzija su platėjančiu pulsiniu spaudimu, bradikardija, netaisyklingas kvėpavimas | – | CC BY-NC-ND 4.0 | https://www.statpearls.com/point-of-care/20176 |
 | CDC „Explosions and Blast Injuries: A Primer“ (archyvas) | Sprogimo plaučių triada (apnėja, bradikardija, hipotenzija); požymiai gali atsirasti iki 48 val.; profilaktinis drenas prieš anesteziją ar skrydį | min–val. | JAV valstybės kūrinys | https://webarchive.library.unt.edu/web/20090114232933/http://www.bt.cdc.gov/masscasualties/pdf/explosions-blast-injuries.pdf |
@@ -63,7 +63,7 @@ Pastaba: scenarijų bibliotekomis remtasi tik kaip struktūros pavyzdžiu (etapa
 | id | Scenarijus | Pagrindiniai šaltiniai | Laikas |
 |---|---|---|---|
 | hem | Hemoraginis šokas I→IV kl. | ATLS lentelė; Schiller/Convertino 2017 (dekompensacijos bradikardija); TCCC mod. 11; CGO TCA; Mutschler 2013 (įspėjimas) | ⏱ suspaustas (etapas ~1,5–2 min) |
-| jun | Junkcinis kraujavimas | TCCC mod. 11; Pulse hemorrhage (srautai); ATLS | artimas realiam (arterinis) |
+| jun | Jungties kraujavimas | TCCC mod. 11; Pulse hemorrhage (srautai); ATLS | artimas realiam (arterinis) |
 | tpx | Įtampos PTX – kvėpuoja pats | Roberts 2015; Kheirabadi 2013; Leigh-Smith 2005; CGO TCA | ⏱ šiek tiek suspaustas |
 | tpv | Įtampos PTX – ventiliuojamas | Roberts 2015 (×12,6 / ×17,7, „per minutes“); BioGears multitrauma | realus (min) |
 | opx | Atviras PTX → įtampa po tvarsčiu | Kheirabadi 2013 | ⏱ 30–40 min → 5 min |
@@ -71,8 +71,8 @@ Pastaba: scenarijų bibliotekomis remtasi tik kaip struktūros pavyzdžiu (etapa
 | tam | Širdies tamponada | StatPearls Cardiac Tamponade; CGO TCA | min |
 | aw | Kvėpavimo takų obstrukcija | Benumof 1997 / Weingart & Levitan 2012; Farmery & Roe | realus (s–min) |
 | bls | Sprogimo plaučiai | CDC Blast primer | ⏱ valandos → min |
-| tbi | GSmT – Kušingo triada | StatPearls Cushing; JTS TBI CPG | ⏱ |
-| tbh | GSmT + hemoraginis šokas (AKS tikslai) | JTS DCR / TBI (sAKS >110); TCCC mod. 11 (sAKS 100) | ⏱ |
+| tbi | GST – Cushingo triada | StatPearls Cushing; JTS TBI CPG | ⏱ |
+| tbh | GST + hemoraginis šokas (AKS tikslai) | JTS DCR / TBI (sAKS >110); TCCC mod. 11 (sAKS 100) | ⏱ |
 | ns | Neurogeninis šokas | StatPearls Neurogenic Shock | ⏱ |
 | brn | Nudegimai 40 % + inhaliacija | JTS Burn flowsheet / CPG | ⏱ val. → 3 min/etapas |
 | hyp | Hipotermija (šveicarų stadijos) | Pasquier 2019 (CC BY); Pasquier 2021 regresija; Musi 2021; WMS 2019 | ⏱ |

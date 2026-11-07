@@ -7,7 +7,10 @@
 #    („asistolija“ tekste → asistolija); agonalinis kvėpavimas → KD 4, kitaip KD 0;
 #  - šokas (ŠSD ≥ 120 ir sAKS < 90, KD nenurodytas) → KD 26;
 #  - ŠSD ≥ 120, o AKS nenurodytas (liktų 120/78) → 108/84 (siauras pulsinis spaudimas);
-#  - hipoksinė bradikardija (ŠSD < 60 ir SpO₂ < 85, AKS nenurodytas) → 86/50.
+#  - hipoksinė bradikardija (ŠSD < 60 ir SpO₂ < 85, AKS nenurodytas) → 86/50;
+#  - AKS tekste („sAKS 88“, „AKS 92/60“) – naudojamas, kai gide (gp) nenurodytas;
+#  - radialinis pulsas silpnas (gp arba tekste) be AKS → 84/58 (bet kuriame klausime); nečiuopiamas → 66/40; stiprus, o paveldėtas sAKS < 95 → 112/72;
+#  - EtCO₂ – SIM jo nerodo, todėl iš teksto išbraukiamas.
 import json, re, os
 H = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(H)
 def load(app):
@@ -17,21 +20,31 @@ def load(app):
 num = lambda x: float(re.sub(r'[^\d,.]', '', x).replace(',', '.'))
 ARREST = re.compile(r'(centrinio|miego arterijos) pulso nėra|nėra (centrinio|miego arterijos) pulso|širdies sustojim|\bBEA\b', re.I)
 ROSC = re.compile(r'atsirado (centrinis )?pulsas|pulsas grįžo|ROSC', re.I)
+TBP = re.compile(r'\bs?AKS\s*(?:–|-|yra|buvo|krito iki|nukrito iki|iki)?\s*(\d{2,3})(?:\s*/\s*(\d{2,3}))?(?:\s*mm\s*Hg)?')
+ETCO2 = re.compile(r'[,;]?\s*EtCO₂\s*[^.;,)]*')
 BASE = {'hr': 90, 'sys': 120, 'dia': 78, 'spo2': 97, 'rr': 16, 'temp': 36.6}
 out = []
 for app, src in (('etc-gidas', 'ETC'), ('march-gidas', 'March')):
     for sc in load(app):
         st = []; prev = dict(BASE); anyv = False; arrest = False; ex = set()  # ex – gide nurodyti (paveldimi) rodikliai
         for k, q in enumerate(sc['q'], 1):
-            gp = q.get('gp') or {}; txt = q['sit']
+            gp = q.get('gp') or {}; txt = ETCO2.sub('', q['sit']).replace(' .', '.')
             v = {kk: (prev[kk] if kk in ex else BASE[kk]) for kk in BASE}
             rp = gp.get('Radialinis pulsas', '')
+            if not rp:
+                if re.search(r'radialinis pulsas (silpnas|susilpnėj|silpnėja)', txt, re.I): rp = 'silpnas'
+                elif re.search(r'radialinis pulsas (nečiuopiamas|neapčiuopiamas)|radialinio pulso nėra', txt, re.I): rp = 'nečiuopiamas'
+            mt = TBP.search(txt)
             has_hr, has_bp, has_rr = 'ŠSD' in gp, 'AKS' in gp and '/' in gp['AKS'], 'KD' in gp
             if has_hr: v['hr'] = int(num(gp['ŠSD'])); anyv = True; ex.add('hr')
             if has_bp:
                 a, b = gp['AKS'].split('/'); v['sys'] = int(num(a)); v['dia'] = int(num(b)); anyv = True; ex |= {'sys', 'dia'}
-            elif rp in ('silpnas',) and k == 1: v['sys'], v['dia'] = 86, 54; v['hr'] = max(v['hr'], 118); ex |= {'sys', 'dia', 'hr'}
+            elif mt and 60 <= int(mt.group(1)) <= 220:
+                v['sys'] = int(mt.group(1)); v['dia'] = int(mt.group(2)) if mt.group(2) else round(v['sys'] * 0.66); anyv = True; ex |= {'sys', 'dia'}
+                if v['sys'] < 90: v['hr'] = max(v['hr'], 118); ex.add('hr')
+            elif rp == 'silpnas': v['sys'], v['dia'] = 84, 58; v['hr'] = max(v['hr'], 118); ex |= {'sys', 'dia', 'hr'}
             elif rp == 'nečiuopiamas': v['sys'], v['dia'] = 66, 40; ex |= {'sys', 'dia'}
+            elif rp == 'stiprus' and 'sys' in ex and v['sys'] < 95: v['sys'], v['dia'] = 112, 72
             if 'SpO₂' in gp: v['spo2'] = int(num(gp['SpO₂'])); anyv = True; ex.add('spo2')
             if has_rr: v['rr'] = int(num(gp['KD'])); anyv = True; ex.add('rr')
             if 'T' in gp: v['temp'] = round(num(gp['T']), 1); anyv = True; ex.add('temp')

@@ -5,7 +5,7 @@
 // Fiziologija supaprastinta, mokomoji (≈ visas variklis): netektas kraujas → ATLS šoko klasės; pneumotorakso įtampos
 // indeksas; hemotoraksas; deguonis; temperatūra; vaistai; sustojimas ir HOTT. Skaičiai – TCCC / ETC / ATLS mokomosios reikšmės.
 const PLOCAL = (() => {
-  const ENGINE = 'Telefono modelis', VERSION = 'r2 · 2026-11';
+  const ENGINE = 'Telefono modelis', VERSION = 'r3 · 2026-11';
   const KEY = 'sim-plocal';
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   const lerp = (x, P) => { if (x <= P[0][0]) return P[0][1]; for (let i = 1; i < P.length; i++) if (x <= P[i][0]) { const a = P[i - 1], b = P[i]; return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]); } return P[P.length - 1][1]; };
@@ -28,16 +28,21 @@ const PLOCAL = (() => {
   const SUB = { Ketamine: 'ket', Fentanyl: 'fen', Morphine: 'mor', Naloxone: 'nal', Midazolam: 'mid', Epinephrine: 'adr' };
   const O2B = { NasalCannula: f => Math.min(4, 0.75 * f), SimpleMask: f => Math.min(7, 3 + 0.35 * f), NonRebreatherMask: f => Math.min(8.5, 4 + 0.3 * f) };
   const BLOODY = { Blood: 0.9, PackedRBC: 0.9, Plasma: 0.8 };
-  const SUPPORTED = ['hem', 'hem_stop', 'inf', 'inf_stop', 'o2', 'o2_off', 'tpx', 'ndc', 'occl', 'aw', 'intub', 'cric', 'sga', 'bolus', 'drug', 'tx', 'tbi', 'eff', 'burn', 'arrest', 'vf', 'rosc', 'pcd', 'htx', 'tube', 'bronch', 'asthma', 'stress', 'pain', 'temp'];
+  // kristaloidai: mažėjanti nauda – pirmas litras ~0,3, antras ~0,15, toliau ~0,05 (likusi dalis išeina iš kraujagyslių); nudegimų plazmos netekimą keičia ~1:1
+  const CRED = c => 0.3 * Math.min(c, 1000) + 0.15 * clamp(c - 1000, 0, 1000) + 0.05 * Math.max(0, c - 2000);
+  // preoksigenacijos efektyvumas pagal deguonies padidinimą (o2b): kaniulės 4 ≈ 0,1, kaukė 6 ≈ 0,4, kaukė 10 ≈ 0,6, kaukė su rezervuaru 15 – 1,0
+  const PREOX = b => b > 2 ? Math.pow(clamp((b - 2) / 6.5, 0, 1), 1.3) : 0;
+  const SUPPORTED = ['hem', 'hem_stop', 'inf', 'inf_stop', 'o2', 'o2_off', 'tpx', 'ndc', 'occl', 'burp', 'aw', 'intub', 'cric', 'sga', 'bolus', 'drug', 'tx', 'tbi', 'eff', 'burn', 'arrest', 'vf', 'rosc', 'pcd', 'htx', 'tube', 'bronch', 'asthma', 'stress', 'pain', 'temp'];
 
   function fresh(kg, t0, sex, age) {
     return { t: 0, kg, sex: sex === 'F' ? 'F' : 'M', age: age || 25, bv0: (sex === 'F' ? 65 : 70) * kg, lost: 0, inB: 0, inP: 0, inC: 0, hem: {}, inf: {}, ptx: {}, htx: {}, aw: 0, secured: false, vent: false, para: 0,
-      tbi: 0, tbiBase: 0, effR: 0, effV: 0, burn: 0, bronch: 0, pain: 0, o2: null, T: t0 || 36.6, hpmk: false, warm: false, drugs: [], ind: 0,
-      arrest: null, pT: 0, sT: 0, rT: 0, alive: true, spo2: 97, map: 93, apn: 0 };
+      tbi: 0, tbiBase: 0, effR: 0, effR0: 0, effRe: 0, effV: 0, burn: 0, burnT0: 0, plos: 0, bronch: 0, pain: 0, o2: null, T: t0 || 36.6, amb: null, hpmk: false, warm: false, drugs: [], ind: null,
+      arrest: null, pT: 0, sT: 0, s60T: 0, rT: 0, alive: true, spo2: 97, map: 93, apn: 0, o2T: 0 };
   }
 
   // ── veiksmai ──
   function apply(E, a) {
+    if (a && a.L && typeof a.L === 'object') a = a.L;   // telefono modelio variantas (Pulse gauna a be L)
     const k = a.k, side = a.side === 'R' ? 'R' : 'L';
     switch (k) {
       case 'hem': {
@@ -53,7 +58,7 @@ const PLOCAL = (() => {
       case 'tpx': {
         const sev = clamp(+a.sev || 0, 0, 1), P = E.ptx[side] || { idx: 0, rate: 0, open: false, drained: false };
         if (sev <= 0) { delete E.ptx[side]; return [true, '']; }
-        P.open = !!a.open; P.drained = false; P.sev = sev;
+        P.open = !!a.open; P.drained = false; P.sev = sev; P.vent = false; P.unv = false;
         P.idx = Math.max(P.idx, a.idx != null ? clamp(+a.idx, 0, 1) : sev * 0.4);
         P.rate = a.rate != null ? +a.rate : sev / 12;   // indekso augimas per min. (vidutinis ~20 min iki pilnos įtampos)
         E.ptx[side] = P; return [true, ''];
@@ -64,7 +69,9 @@ const PLOCAL = (() => {
         else { P.idx = Math.min(P.idx, 0.1); P.rate = (P.sev || 0.45) / 40; P.ndc = (P.ndc || 0) + 1; }
         return [true, ''];
       }
-      case 'occl': { const P = E.ptx[side]; if (P && P.open) { P.open = false; P.rate = (P.sev || 0.45) / 20; } return [true, '']; }
+      // krūtinės lipdukas: numatytasis – ventiliuojamas (oras išeina, įtampa nesivysto, PTX mažėja); be vožtuvo (unv) – oras kaupiasi, gali išsivystyti įtampa
+      case 'occl': { const P = E.ptx[side]; if (P && (P.open || a.unv) && !P.drained) { P.open = false; P.unv = !!a.unv; P.vent = !a.unv; P.rate = a.unv ? (P.sev || 0.45) / 20 : 0; } return [true, '']; }
+      case 'burp': { const P = E.ptx[side]; if (P && !P.drained) P.idx = Math.min(P.idx, 0.15); return [true, '']; }   // „atpūsti“ lipduką – įtampa atslūgsta (be vožtuvo vėl kaupsis)
       case 'tube': {
         const P = E.ptx[side]; if (P) { P.idx = 0; P.rate = 0; P.drained = true; P.open = false; }
         const H = E.htx[side]; if (H) { H.out = (H.out || 0) + H.vol; H.vol = 0; H.drained = true; }
@@ -78,18 +85,20 @@ const PLOCAL = (() => {
       case 'aw': E.aw = clamp(+a.sev || 0, 0, 1); if (E.aw > 0) E.secured = false; return [true, ''];
       case 'intub': case 'cric': case 'sga': E.aw = 0; E.secured = true; E.vent = true; return [true, ''];
       case 'tbi': E.tbi = E.tbiBase = clamp(+a.sev || 0, 0, 1); return [true, ''];
-      case 'eff': E.effR = Math.max(0, +a.rate || 0); return [true, ''];
-      case 'pcd': E.effR = 0; E.effV = Math.max(0, E.effV - Math.abs(+a.drain || 150)); return [true, ''];
-      case 'burn': E.burn = clamp(+a.tbsa || 0, 0, 1); return [true, ''];
+      case 'eff': E.effR = E.effR0 = Math.max(0, +a.rate || 0); E.effRe = 0; return [true, ''];   // rate 0 – chirurgiškai sustabdyta
+      // perikardiocentezė – laikinai: skystis vėl kaupiasi po ~20 min (60 % pradinio greičio), kol nesustabdoma chirurgiškai
+      case 'pcd': E.effV = Math.max(0, E.effV - Math.abs(+a.drain || 150)); if (E.effR > 0 || E.effRe) { E.effR0 = E.effR0 || E.effR; E.effR = 0; E.effRe = E.t + 1200; } return [true, ''];
+      case 'burn': { const b = clamp(+a.tbsa || 0, 0, 1); if (b > 0 && !E.burn) E.burnT0 = E.t; E.burn = b; return [true, '']; }
       case 'bronch': case 'asthma': E.bronch = clamp(+a.sev || 0, 0, 1); return [true, ''];
       case 'pain': case 'stress': E.pain = clamp(+a.sev || 0, 0, 1); return [true, ''];
-      case 'temp': E.T = clamp(+a.v || 36.6, 28, 40); return [true, ''];
+      case 'temp': if (a.v != null) E.T = clamp(+a.v || 36.6, 28, 40); if (a.amb !== undefined) E.amb = a.amb == null || !isFinite(a.amb) ? null : +a.amb; return [true, ''];
       case 'bolus': { const id = SUB[a.sub]; if (!id) return [false, 'nežinomas vaistas']; E.drugs.push([id, E.t, +a.mg || 0, a.route || '']); return [true, '']; }
       case 'drug': {
         const id = a.id, mg = +a.mg || 0;
         if (DRUG[id]) E.drugs.push([id, E.t, mg, a.route || '']);
         if (id === 'esket') E.drugs.push(['ket', E.t, mg * 2, a.route || 'IN']);
-        if (id === 'ket' && mg / E.kg >= 0.4) { E.ind = E.t; E.indK = Math.min(2, mg / E.kg); }   // sedacijos / indukcijos dozė (0,5–2 mg/kg)
+        // sedacijos / indukcijos dozė (≥ 0,5 mg/kg IV / IO) – šoke gali sumažinti AKS; analgezijos dozės (25 mg IV, 100 mg IM, 50 mg IN, esketaminas) – ne
+        if (id === 'ket' && (a.route === 'IV' || a.route === 'IO' || !a.route) && mg / E.kg >= 0.5) E.ind = { t: E.t, k: Math.min(2, mg / E.kg) };
         if (id === 'roc') { E.para0 = E.t + 60; E.para = E.t + 45 * 60; }   // paralyžius po ~60 s, trunka ~45 min (be ventiliacijos – apnėja)
         if (id === 'hts' || id === 'man') E.tbi = Math.max(0, E.tbi - 0.25);
         return [true, ''];
@@ -115,48 +124,66 @@ const PLOCAL = (() => {
   // ── vienas žingsnis (dt s) ──
   // vaisto poveikis „vienetais“: dozė × veikimo pradžios kreivė (pagal būdą) × mažėjimas
   const dEff = (E, id) => { const D = DRUG[id]; if (!D) return 0; let s = 0; E.drugs.forEach(x => { if (x[0] === id && E.t >= x[1]) { const mn = (E.t - x[1]) / 60; s += (x[2] / D[1]) * ramp(id, x[3], mn) * Math.exp(-mn / D[0]); } }); return s; };
-  function deficit(E) { return Math.max(0, E.lost - 0.9 * E.inB - 0.8 * E.inP - 0.25 * E.inC) / E.bv0; }
+  // kraujotakos tūrio deficitas: kraujo netekimas (atėmus kraują, plazmą ir mažėjančią kristaloidų naudą) + nudegimų plazmos netekimas (kristaloidai ~1:1)
+  function deficit(E) {
+    const pl = E.plos || 0, cB = Math.max(0, E.inC - pl);
+    return (Math.max(0, E.lost - 0.9 * E.inB - 0.8 * E.inP - CRED(cB)) + Math.max(0, pl - E.inC)) / E.bv0;
+  }
   function step(E, dt) {
     if (!E.alive) return;
     E.t += dt; const m = dt / 60;
-    const fac = clamp(E.map / 90, 0.4, 1.1), coag = E.T < 35 ? 1.2 : 1;
+    // praskiedimo koagulopatija: > 2 l kristaloidų (be nudegimų dalies) – kraujavimas ×1,1–1,3
+    const cB = Math.max(0, E.inC - (E.plos || 0)), fac = clamp(E.map / 90, 0.4, 1.1), coag = (E.T < 35 ? 1.2 : 1) * (1 + 0.3 * clamp((cB - 2000) / 2000, 0, 1));
     let loss = 0;
     Object.keys(E.hem).forEach(c => { const h = E.hem[c]; loss += (h.rate != null ? h.rate : (HEM_MAX[c] || 100) * lerp(h.sev, SEVF)) * fac * coag; });
     Object.keys(E.htx).forEach(s => { const H = E.htx[s], r = H.rate * fac * coag * m; if (H.drained) H.out += r; else H.vol += r; loss += H.rate * fac * coag; });
-    loss += E.burn * 25;
     E.lost += loss * m;
+    // nudegimai: plazmos išėjimas iš kraujagyslių ~2 ml/kg/% per 24 val., daugiausia pirmomis valandomis (eksponentiškai, τ 12 val.)
+    if (E.burn > 0) E.plos = (E.plos || 0) + E.burn * 100 * E.kg * 2 / (0.8647 * 720) * Math.exp(-(E.t - (E.burnT0 || 0)) / 43200) * m;
     Object.keys(E.inf).forEach(c => { const v = E.inf[c], d = Math.min(v[0], v[1] * m); v[0] -= d;
       if (BLOODY[c]) { if (c === 'Plasma') E.inP += d; else E.inB += d; } else E.inC += d;
       if (!E.warm) E.T -= d * 0.0002;
       if (v[0] <= 0.1) delete E.inf[c]; });
+    if (E.effRe && E.t >= E.effRe) { E.effR = (E.effR0 || 40) * 0.6; E.effRe = 0; }   // tamponada vėl kaupiasi po perikardiocentezės
     E.effV += E.effR * m;
-    Object.keys(E.ptx).forEach(s => { const P = E.ptx[s]; if (!P.open && !P.drained && P.rate > 0) P.idx = Math.min(1, P.idx + P.rate * m); if (P.open) P.idx = Math.min(P.idx, 0.4); });
-    E.T += (E.warm ? 0.02 : E.hpmk ? -0.005 : -0.02) * m; E.T = clamp(E.T, 28, 40);
+    Object.keys(E.ptx).forEach(s => { const P = E.ptx[s]; if (!P.open && !P.drained && P.rate > 0) P.idx = Math.min(1, P.idx + P.rate * m); if (P.open) P.idx = Math.min(P.idx, 0.4); if (P.vent && !P.drained) P.idx = Math.max(0.08, P.idx - 0.03 * m); });
+    // temperatūra: aktyvus šildymas – iki ~37 °C (be perkaitimo); vėsimas – pagal aplinką (jei nurodyta), kitaip ≤ 1 °C/val.; HPMK – ~4 kartus lėčiau
+    if (E.warm) { if (E.T < 37) E.T = Math.min(37, E.T + 1.5 / 60 * m); }
+    else {
+      let cool = E.amb != null ? clamp(0.05 * (E.T - E.amb), 0, 3) * (1 + E.burn) : Math.min(1, (0.5 + 0.5 * Math.min(1, deficit(E) / 0.3)) * (1 + E.burn));
+      if (E.hpmk) cool *= 0.25;
+      E.T -= cool / 60 * m;
+    }
+    E.T = clamp(E.T, 28, 40);
     // GST: hipoksija ir hipotenzija blogina
     if (E.tbiBase > 0 && (E.spo2 < 90 || E.map < 65)) E.tbi = Math.min(1, E.tbi + 0.01 * m);
     const V = vitals(E, true);
     E.map = V.map;
     // deguonies atsargos (preoksigenacija): kaupiasi kvėpuojant su O₂ (pilnai – per ~3 min su kauke su rezervuaru), oru išsivalo per ~1,5 min
+    // atsargos artėja prie prietaiso ribos (kaukė su rezervuaru 15 l/min – 300; paprasta kaukė 6 l/min – ~115), τ 60 s; oru išsivalo per ~1,5 min
     if (V._apnea) { /* apnėjos metu atsargos nekinta */ }
-    else if (V._o2b > 0 && V.rr > 0) E.o2T = Math.min(300, (E.o2T || 0) + dt * Math.min(1, V._o2b / 6));
+    else if (V._o2b > 0 && V.rr > 0) { const tgt = 300 * PREOX(V._o2b), o = E.o2T || 0; E.o2T = o < tgt ? o + (tgt - o) * Math.min(1, dt / 60) : Math.max(tgt, o - 2 * dt); }
     else E.o2T = Math.max(0, (E.o2T || 0) - 2 * dt);
     if (V._apnea) {
       // apnėja: plokščia dalis (oru ≈ 60 s; po O₂ – iki 3–5 min pagal preoksigenaciją; šoke / kraujuojant – trumpiau), tada sigmoidinis kritimas
-      if (!E.apT) { E.apT = dt; E.ap0 = E.spo2; const sh = clamp(1 - 1.2 * deficit(E), 0.4, 1); E.apTp = (60 + 240 * Math.min(1, (E.o2T || 0) / 180)) * sh * clamp((E.spo2 - 80) / 16, 0.15, 1); E.apK = 90 * clamp(1 - deficit(E), 0.6, 1); }
+      if (!E.apT) { E.apT = dt; E.ap0 = E.spo2; const sh = clamp(1 - 1.2 * deficit(E), 0.4, 1); E.apTp = (60 + 240 * Math.min(1, (E.o2T || 0) / 300)) * sh * clamp((E.spo2 - 80) / 16, 0.15, 1); E.apK = 90 * clamp(1 - deficit(E), 0.6, 1); }
       else E.apT += dt;
       const u = Math.max(0, E.apT - E.apTp);
       E.spo2 = 40 + (E.ap0 - 40) * Math.exp(-Math.pow(u / E.apK, 2));
     } else {
       E.apT = 0;
-      E.spo2 += (V._spo2t - E.spo2) * Math.min(1, dt / 20);   // SpO₂ artėja prie tikslo
+      // SpO₂ artėja prie tikslo: kyla greitai (τ 20 s), krenta lėčiau (deguonies atsargos; dalinė obstrukcija – dar lėčiau)
+      const tau = V._spo2t >= E.spo2 ? 20 : V._aw > 0 ? 60 + 120 * V._aw : 30;
+      E.spo2 += (V._spo2t - E.spo2) * Math.min(1, dt / tau);
     }
     // sustojimas
     const p = V._p;
     E.pT = p >= 0.99 ? E.pT + dt : 0;
     E.sT = E.spo2 < 50 ? E.sT + dt : 0;
+    E.s60T = E.spo2 < 60 ? (E.s60T || 0) + dt : 0;   // hipoksinis sustojimas: SpO₂ < 60 % > 2,5 min (apnėja / visiška obstrukcija) arba > 4 min (dalinė)
     const d = deficit(E);
-    const cause = d > 0.52 || E.pT > 180 || E.sT > 120 || E.effV > 350 || (V.sys < 35 && !E.arrest);
-    if (!E.arrest && cause) E.arrest = { t0: E.t, forced: '' };
+    const cause = d > 0.52 || E.pT > 180 || E.sT > 120 || E.s60T > (V._apnea ? 150 : 240) || E.effV > 350 || (V.sys < 35 && !E.arrest);
+    if (!E.arrest && cause) E.arrest = { t0: E.t, forced: '', hr0: V.hr };
     if (E.arrest && !E.arrest.forced) {
       const ok = d < 0.45 && p < 0.3 && V._spo2ok > 80 && E.effV < 200 && (E.vent || E.secured);   // HOTT: kraujavimas, tūris, dekompresija, ventiliacija
       E.rT = ok ? E.rT + dt : 0;
@@ -182,21 +209,27 @@ const PLOCAL = (() => {
     const anal = Math.min(1, ket + 0.8 * opi);
     hr += 12 * E.pain * (1 - anal); sys += 10 * E.pain * (1 - anal); rr += 4 * E.pain * (1 - anal);
     rr += 12 * E.bronch;
-    if (E.ind && E.t - E.ind < 600 && d > 0.25) { const f = Math.exp(-(E.t - E.ind) / 300) * (E.indK || 1); sys -= 20 * f; dia -= 12 * f; }   // indukcija šoke – hipotenzija
-    else { hr += 8 * Math.min(1.5, ket); sys += 8 * Math.min(1.5, ket); }
+    // ketaminas: simpatinis poveikis (ŠSD, AKS ↑); indukcijos dozė (≥ 0,5 mg/kg IV / IO) šoke – hipotenzija: veikimo pradžia ~1 min, sklandžiai praeina per ~10–15 min (be šuolio)
+    const shF = clamp((d - 0.15) / 0.15, 0, 1), ind = E.ind && typeof E.ind === 'object' ? E.ind : null;
+    if (ind) { const mn = (E.t - ind.t) / 60, f = ramp('ket', 'IV', mn) * Math.exp(-mn / 5) * ind.k * shF; sys -= 32 * f; dia -= 18 * f; }
+    hr += 8 * Math.min(1.5, ket); sys += 8 * Math.min(1.5, ket);
     hr += 35 * epi; sys += 35 * epi;
-    rr -= rdep + 0.8 * mid; sys -= (5 + 10 * d) * opi + 6 * mid;
-    const aw = E.secured ? 0 : E.aw;
+    // opioidų / midazolamo hipotenzija – mažėja ir diastolinis (proporcingai), pulsinis spaudimas nesiaurėja
+    { const ds = (5 + 10 * d) * opi + 6 * mid, pr = sys > 0 ? clamp(dia / sys, 0.4, 0.8) : 0.65; rr -= rdep + 0.8 * mid; sys -= ds; dia -= ds * pr; }
+    const aw = E.secured ? 0 : E.aw, awFull = aw >= 0.9;
     if (aw > 0) { rr += 10 * aw; hr += 20 * aw; }
+    if (E.T < 32) hr -= (32 - E.T) * 10;   // gili hipotermija – bradikardija
     if (E.tbi > 0.6 && sys > 90) { const f = (E.tbi - 0.6) / 0.4; hr -= 40 * f; sys += 45 * f; rr = Math.max(6, rr - 8 * f); }
     const para = E.para && E.t >= (E.para0 || 0) && E.t < E.para;
     let apnea = false;
     if (para || rr < 4) { if (E.vent || E.secured) rr = 14; else { rr = 0; apnea = true; } }
+    // visiška obstrukcija (≥ 0,9): pastangos matomos (impedansinis KD), bet oro srauto nėra – deguonies prisotinimas kaip apnėjos metu (O₂ kaukė nepadeda)
+    if (awFull && !apnea) { apnea = true; rr = rr * clamp((E.spo2 - 30) / 40, 0.15, 1); }
     rr = Math.max(0, rr);
     // SpO₂ tikslas
     let o2b = E.o2 && O2B[E.o2.dev] ? O2B[E.o2.dev](E.o2.flow) : 0;
     if (E.vent && E.secured) o2b = Math.max(o2b, 4);
-    let st = 98 - 20 * Math.min(1, p) - Math.min(20, htxV / 100) - 50 * aw - 25 * E.bronch - (d > 0.4 ? 3 + 10 * (d - 0.4) : 0) - (rr > 0 && rr < 8 ? (8 - rr) * 4 : 0) + o2b * (1 - 0.4 * Math.min(1, p));
+    let st = 98 - 20 * Math.min(1, p) - Math.min(20, htxV / 100) - 50 * aw - 25 * E.bronch - (d > 0.4 ? 3 + 10 * (d - 0.4) : 0) - (rr > 0 && rr < 8 ? (8 - rr) * 4 : 0) + o2b * (1 - 0.4 * Math.min(1, p)) * (1 - 0.5 * aw);
     if (apnea) st = 40;
     st = clamp(st, 30, 100);
     const st0 = st;
@@ -206,19 +239,20 @@ const PLOCAL = (() => {
     else if (E.arrest) {
       const at = E.t - E.arrest.t0;
       if (E.arrest.forced === 'vf' || E.arrest.forced === 'asys' || at > 600) out = { hr: 0, sys: 0, dia: 0, map: 0, spo2: Math.round(E.spo2), rr: 0 };
-      else out = { hr: Math.round(Math.max(30, 90 - at / 10)), sys: 12, dia: 8, map: 9, spo2: Math.round(E.spo2), rr: 0 };   // BEA
+      else out = { hr: Math.round(Math.max(30, Math.min(110, E.arrest.hr0 || 90) - at / 10)), sys: 12, dia: 8, map: 9, spo2: Math.round(E.spo2), rr: 0 };   // BEA (dažnis – nuo buvusio prieš sustojimą)
       st = 35;
     } else {
       sys = Math.max(0, sys); dia = clamp(dia, 0, sys - 8);
       out = { hr: Math.round(clamp(hr, 0, 220)), sys: Math.round(sys), dia: Math.round(Math.max(0, dia)), map: Math.round(dia + (sys - dia) / 3), spo2: Math.round(clamp(E.spo2, 30, 100)), rr: Math.round(rr) };
     }
     out.temp = Math.round(E.T * 10) / 10;
-    out.bv = Math.round(E.bv0 * (1 - d));
+    out.bv = Math.round(E.bv0 * (1 - d)); out.bv0 = Math.round(E.bv0);
     out.lost = Math.round(E.lost);
     out.htx = {}; Object.keys(E.htx).forEach(s => { out.htx[s] = { vol: Math.round(E.htx[s].vol), out: Math.round(E.htx[s].out), drained: !!E.htx[s].drained }; });
     out.ptx = {}; Object.keys(E.ptx).forEach(s => { out.ptx[s] = Math.round(E.ptx[s].idx * 100) / 100; });
     out.co = Math.round(Math.max(0.5, 5.2 * (1 - d * 1.4) - Math.min(1, p) * 1.5) * 10) / 10;
-    if (internal) { out._spo2t = st; out._spo2ok = st0; out._p = p; out._apnea = apnea; out._o2b = o2b; }
+    out.plos = Math.round(E.plos || 0);
+    if (internal) { out._spo2t = st; out._spo2ok = st0; out._p = p; out._apnea = apnea; out._o2b = o2b; out._aw = aw; }
     return out;
   }
   const advance = (E, s) => { const n = Math.max(1, Math.round(s)); for (let i = 0; i < n && E.alive; i++) step(E, s / n); return E.alive; };
@@ -251,6 +285,7 @@ const PLOCAL = (() => {
       case 'start': {
         const kg = clamp(+m.kg || 80, 30, 200);
         S = { sid: 'L' + Date.now().toString(36), E: fresh(kg, +m.temp0 || 36.6, m.sex, +m.age), speed: clamp(+m.speed || 1, 0.25, 20), paused: false, stopped: false, frozen: !!m.frozen };
+        if (m.amb != null && isFinite(m.amb)) S.E.amb = +m.amb;   // aplinkos temperatūra (jei scenarijuje nurodyta)
         (m.acts || []).forEach(a => { const r = apply(S.E, a); if (!r[0]) emit({ t: 'ack', id: a.id || 'init', ok: false, msg: r[1], simt: 0 }); });
         const ff = clamp(+m.ff || 0, 0, 7200);
         if (ff >= 1) advance(S.E, ff);

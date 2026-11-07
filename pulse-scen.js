@@ -44,7 +44,7 @@ const PSCEN = (() => {
   const injTxt = (sc, mist) => sc.inj.filter(j => j.k !== 'pain' && !(mist && j.hideMist && j.state !== 'drained' && txT(sc, 'efast') == null)).map(j => (j.lbl || PCAT.injName(j).name) + (j.state ? ': ' + (PCAT.STATES[j.state] || j.state).toLowerCase() : '')).join('; ');
   function txList(sc, upTo) {
     const T = [];
-    logs(sc).filter(l => l.kind === 'tx' && (upTo == null || l.t <= upTo) && !l.star && ['tq', 'tqre', 'jtq', 'tqloose'].indexOf(l.a) < 0 && !/^CLS: turniket/.test(l.n)).forEach(l => { const k = l.n.split(' (')[0].replace(/ – (Dešin|Kair)[^;]*$/, m0 => m0.length > 40 ? '' : m0) + ' ' + mm(l.t); if (T.indexOf(k) < 0) T.push(k); });
+    logs(sc).filter(l => l.kind === 'tx' && !l.ev && l.code !== 'probes' && (upTo == null || l.t <= upTo) && !l.star && ['tq', 'tqre', 'jtq', 'tqloose'].indexOf(l.a) < 0 && !/^CLS: turniket/.test(l.n)).forEach(l => { const k = l.n.split(' (')[0].replace(/ – (Dešin|Kair)[^;]*$/, m0 => m0.length > 40 ? '' : m0) + ' ' + mm(l.t); if (T.indexOf(k) < 0) T.push(k); });
     return T;
   }
   function handItems(P, kind) {
@@ -74,7 +74,7 @@ const PSCEN = (() => {
     const tx = drugT(sc, 'txa'); R.push([tx != null ? 'ok' : 'warn', 'TXA', tx != null ? '2 g ' + mm(tx) + ' – nekartoti' : 'neskirta – geriausia per 90 min nuo sužeidimo (liko ' + Math.max(0, Math.round((5400 - t) / 60)) + ' min)']);
     const bu = count(sc, l => l.code === 'fluid' && /Blood|PackedRBC|Plasma/.test(l.cmp || ''));
     R.push([bu ? 'ok' : 'warn', 'Kraujas', bu ? bu + ' vnt.' : 'neperpilta']);
-    const ca = drugT(sc, 'ca'); if (bu) R.push([ca != null ? 'ok' : 'bad', 'Kalcis', ca != null ? mm(ca) : 'neskirtas po 1-ojo vieneto']);
+    const ca = first(sc, l => l.code === 'drug' && /^(ca|cacl)$/.test(l.id || '')); if (bu) R.push([ca != null ? 'ok' : 'bad', 'Kalcis', ca != null ? mm(ca) : 'neskirtas po 1-ojo vieneto']);
     R.push([txT(sc, 'hpmk') != null ? 'ok' : 'bad', 'Hipotermijos prevencija', txT(sc, 'hpmk') != null ? 'HPMK ' + mm(txT(sc, 'hpmk')) : 'nėra' + (P.v && P.v.temp ? ' – T ' + String(P.v.temp).replace('.', ',') : '')]);
     const k = drugT(sc, 'ket'), a = txT(sc, 'avpu'); if (k != null) R.push([a != null && a <= k ? 'ok' : 'warn', 'AVPU prieš ketaminą', a != null && a <= k ? 'įrašytas' : 'neįrašytas – vaisto poveikio neatskirsite nuo šoko']);
     const ab = first(sc, l => l.code === 'drug' && /^(cro|amx|ert|cfd|mox|cfx)$/.test(l.id || '')); R.push([ab != null ? 'ok' : 'warn', 'Antibiotikas', ab != null ? mm(ab) : 'neskirtas – ETC: per 1 val. nuo sužeidimo']);
@@ -130,11 +130,15 @@ const PSCEN = (() => {
     // C
     if (bleeding && !gave('txa') && t < 10800) add('C', 'TXA 2 g IV / IO lėtai', (r1 ? 'geriausia per 90 min' : 'ne vėliau 3 val.') + ' – liko ' + Math.max(0, Math.round(((r1 && t < 5400 ? 5400 : 10800) - t) / 60)) + ' min', 10 + (shock ? 4 : 0), { k: 'drug', id: 'txa' });
     const bu = count(sc, l => l.code === 'fluid' && /Blood|PackedRBC|Plasma/.test(l.cmp || '')), left = sc.kit ? Math.max(0, sc.kit.max - Math.ceil(sc.kit.used)) : 0, running = (sc.inf || []).some(f => /Blood|PackedRBC|Plasma/.test(f.cmp) && t - f.t0 < f.tot);
-    const tgtLow = r1 ? 90 : 100;   // Role 1 (gaivinama krauju) 90–110; MEDEVAC ~100
-    const needBlood = sys != null && (r1 ? sys < 90 : (sys < 100 || (hr != null && hr / Math.max(1, sys) >= 1.3)));
-    if (needBlood && !running && left > 0) add('C', 'Kraujas 1 vnt.', (sys >= tgtLow ? 'ŠSD ' + hr + ' > sAKS ' + sys + ' (šoko indeksas)' : 'sAKS ' + sys) + ' – tikslas ' + (r1 ? '≈ 100 (90–110), kai gaivinama krauju (JTS); GST ≥ 110' : 'radialinis pulsas, sąmonė ar sAKS 100 (TCCC 2026); GST > 100') + ' · liko ' + left + ' vnt.', sys < 70 ? 22 : 12, { k: 'fluid' }, sys < 70 ? 'crit' : 'warn');
-    if (r1 && sys != null && sys > 110 && running) add('C', 'Stabdyti kraują – virš tikslo', 'sAKS ' + sys + ' > 110 (JTS tikslas 90–110, kai gaivinama krauju)', 9, { k: 'view', x: 'med' });
-    const caN = count(sc, l => l.code === 'drug' && l.id === 'ca');
+    // AKS tikslas: be GST – ≈ 100 (Role 1 90–110, gaivinant krauju – JTS; MEDEVAC – radialinis pulsas / sAKS 100, TCCC 2026);
+    // GST – Role 1 ≥ 110 (JTS), MEDEVAC > 100 arba normalus radialinis pulsas (TCCC 2026). Kraujas siūlomas, kol žemiau tikslo.
+    const tbi = sc.inj.some(j => j.k === 'tbi' && j.sev >= 0.5);
+    const tgt = tbi ? (r1 ? 110 : 101) : 100, hiLim = tbi ? 140 : 110;
+    const tgtTxt = tbi ? (r1 ? 'GST – sAKS ≥ 110 (JTS)' : 'GST – sAKS > 100 arba normalus radialinis pulsas (TCCC 2026)') : r1 ? '≈ 100 (90–110), kai gaivinama krauju (JTS)' : 'radialinis pulsas, sąmonė ar sAKS 100 (TCCC 2026)';
+    const needBlood = sys != null && (sys < tgt || (hr != null && hr / Math.max(1, sys) >= 1.3));
+    if (needBlood && !running && left > 0) add('C', 'Kraujas 1 vnt.', (sys >= tgt ? 'ŠSD ' + hr + ' > sAKS ' + sys + ' (šoko indeksas)' : 'sAKS ' + sys) + ' – tikslas ' + tgtTxt + ' · liko ' + left + ' vnt.', sys < 70 ? 22 : sys < (tbi ? tgt : 90) ? 14 : 12, { k: 'fluid' }, sys < 70 ? 'crit' : 'warn');
+    if (r1 && sys != null && sys > hiLim && running) add('C', 'Stabdyti kraują – virš tikslo', 'sAKS ' + sys + ' > ' + hiLim + ' (tikslas ' + tgtTxt + ')', 9, { k: 'view', x: 'med' });
+    const caN = count(sc, l => l.code === 'drug' && /^(ca|cacl)$/.test(l.id || ''));
     const caNeed = bu >= 1 && (caN === 0 || (r1 && Math.floor(bu / 4) > caN - 1));
     if (caNeed) add('C', 'Kalcio gliukonatas 10 % 30 ml', caN === 0 ? 'po 1-ojo kraujo vieneto – dar neskirtas' : 'kas 4 vienetus', 9, { k: 'drug', id: 'ca' });
     if (r1 && sc.reprobe != null && !logs(sc).some(l => l.t >= sc.reprobe && /^(ecgon|spo2on|nibpon|probes)$/.test(l.code || ''))) add('M', 'Prijungti monitoriaus jutiklius', 'monitorius rodo „– – –“, kol komanda neprijungs EKG, SpO₂, AKS', 9, { k: 'ev', x: 'probeson' });

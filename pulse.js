@@ -11,7 +11,8 @@ const PULSE = (() => {
   const DEF_TOKEN = ((p, q) => { const a = atob(p), b = atob(q); let h = ''; for (let i = 0; i < a.length; i++) h += ((a.charCodeAt(i) ^ b.charCodeAt(i)) & 255).toString(16).padStart(2, '0'); return h; })('GtrCprxesGV0fToGw6GNzw==', 'yelB7tcWZl6inOkldAJ0WQ==');
   const UNDO_S = 5;                                                                               // kiek sekundžių galima atšaukti veiksmą
   const cfg = () => { const c = Object.assign({ url: '', token: '', sid: '', state: '', eng: 'local' }, (() => { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } })()); if (!c.url) c.url = DEF_URL; if (!String(c.token || '').trim()) c.token = DEF_TOKEN; return c; };
-  const saveCfg = o => { try { localStorage.setItem(KEY, JSON.stringify(Object.assign(cfg(), o))); } catch (e) {} };
+  // numatytasis žetonas ir adresas nesaugomi (cfg() juos įrašo) – vietinėje atmintyje lieka tik savi
+  const saveCfg = o => { try { const c = Object.assign(cfg(), o); if (String(c.token || '').trim() === DEF_TOKEN) c.token = ''; if (String(c.url || '').trim() === DEF_URL) c.url = ''; localStorage.setItem(KEY, JSON.stringify(c)); } catch (e) {} };
   const r1 = x => Math.round(x * 10) / 10;
   const mmss = s => { s = Math.max(0, Math.round(+s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
 
@@ -70,22 +71,27 @@ const PULSE = (() => {
   const tx = o => { if (ws && ws.readyState === 1) { ws.send(JSON.stringify(o)); return true; } return false; };
   // Pulse veiksmo siuntimas
   // tgt: undefined – dabartiniam varikliui; 'L' – tik telefono modeliui; 'P' – tik Pulse (greito starto metu – įrašoma pakartojimui)
+  // veiksmo laukas L – telefono modelio variantas: Pulse gauna veiksmą be L; k: '_' – tik telefono modeliui
+  const forP = a => { if (!a || !a.L) return a; const o = Object.assign({}, a); delete o.L; return o; };
   function pa(a, n, by, silent, noLog, tgt) {
     if (FB && !FB.over && tgt !== 'P') { FB.rec.push({ t: Math.round(simt * 10) / 10, a }); if (FB.rec.length > 4000) FB.over = 1; }   // telefono modeliui skirti veiksmai (ir kai dabar skaičiuoja Pulse)
     if (tgt === 'L' && !useLoc()) return false;
     if (tgt === 'P' && !SH && isLocal()) return false;
-    if (SH && PP && tgt !== 'L') PP.rec.push({ t: simt, a });
+    const ap = forP(a), lo = !!(ap && ap.k === '_');
+    if (SH && PP && tgt !== 'L' && !lo) PP.rec.push({ t: simt, a: ap });
     if (tgt === 'P' && SH) { if (!noLog) alog.push({ a, t: simt }); return true; }
+    const loc = !!(ws && ws._local);
+    if (lo && !loc) { if (!noLog) alog.push({ a, t: simt }); return true; }   // Pulse šio veiksmo neturi – nesiunčiama
     const id = 'a' + (++reqId) + Date.now().toString(36).slice(-3);
     pend[id] = { n, a, by, silent };
-    if (!tx({ t: 'act', id, a })) { delete pend[id]; msg = 'Nėra ryšio su serveriu – veiksmas nepritaikytas'; return false; }
+    if (!tx({ t: 'act', id, a: loc ? a : ap })) { delete pend[id]; msg = 'Nėra ryšio su serveriu – veiksmas nepritaikytas'; return false; }
     if (!noLog) alog.push({ a, t: simt });
     return true;
   }
   function onMsg(m) {
     switch (m.t) {
       case 'info': info = m; onChange(); break;
-      case 'started': saveCfg({ sid: m.sid }); startFn = null; if (SC) SC.on = 1; simt = +m.simt || 0; ffInfo = null; if (m.speed) speed = m.speed; paused = !!m.paused; alive = true; setSt(paused ? 'pause' : 'run', m.cont ? 'Pulse ryšys nutrūko – tęsiama telefono modeliu ≈' : m.resumed ? 'Sesija atkurta' : ''); if (!m.resumed) L(engN() + ': modeliavimas pradėtas' + (simt ? ' (praėjus ' + mmss(simt) + ' nuo sužeidimo)' : '')); if (SC && SC.prep) prepTick(true); else if (!m.resumed) freeze(); break;
+      case 'started': saveCfg({ sid: m.sid }); startFn = null; if (SC) SC.on = 1; simt = +m.simt || 0; ffInfo = null; if (m.speed) speed = m.speed; paused = !!m.paused; alive = true; setSt(paused ? 'pause' : 'run', m.cont ? 'Pulse ryšys nutrūko – tęsiama telefono modeliu ≈' : m.resumed ? 'Sesija atkurta' : ''); if (!m.resumed) { const arr = SC && SC.prep ? SC.prep.stops[SC.prep.stops.length - 1] : simt; L(engN() + ': modeliavimas pradėtas' + (arr ? ' – komanda perima ' + mmss(arr) + ' nuo sužeidimo' + (SC && SC.prep && simt < arr - 0.5 ? ' (priešistorė prasukama nuo ' + mmss(simt) + ')' : '') : '')); } if (SC && SC.prep) prepTick(true); else if (!m.resumed) freeze(); break;
       case 'ff': ffInfo = { done: m.done, tot: m.tot }; setSt('load', 'Prasukama iki ' + mmss(m.tot) + ' nuo sužeidimo… ' + Math.round(m.done / Math.max(1, m.tot) * 100) + ' %'); break;
       case 'gone': saveCfg({ sid: '' }); wantRun = false; startFn = null; Q = []; if (SC && SC.on) { SC.end = simt; SC.lost = 1; } keep(); L('Pulse: sesija serveryje nebeegzistuoja'); setSt('off', 'Ankstesnė sesija serveryje nebeegzistuoja (serveris buvo paleistas iš naujo) – monitorius rodo paskutines Pulse reikšmes. Pradėkite iš naujo.'); break;
       case 'vit': {
@@ -98,9 +104,10 @@ const PULSE = (() => {
           scenTick(m.v || {});
           if (skipQ > 0 && !m.skip) setTimeout(skipStep, 0);
           SC.inf = SC.inf.filter(a => simt - a.t0 < a.tot + 20);
+          if (SC.vinf) SC.vinf = SC.vinf.filter(a => simt - a.t0 < a.tot + 20);
           const v = m.v || {};
           if (SC.bv0 == null && v.bv) SC.bv0 = v.bv;
-          if (v.sys != null && v.hr > 20) SC.min.sys = Math.min(SC.min.sys, v.sys);
+          if (v.sys != null) SC.min.sys = Math.min(SC.min.sys, v.sys);   // ir sustojimo metu (AKS 0)
           if (v.spo2 != null && v.hr > 20) SC.min.spo2 = Math.min(SC.min.spo2, v.spo2);
           if (typeof PULSE_CM !== 'undefined') PULSE_CM.evaluate(v, alog, { t: simt, live: alive, hems: SC.inj.filter(j => j.k === 'bleed' && isBleeding(j)).map(j => j.loc) }).forEach(c => L('Pulse komentaras: ' + c.title, 'sys'));
         }
@@ -171,10 +178,11 @@ const PULSE = (() => {
         (A[3] || []).forEach(a => pa(a, A[1] + ' – ' + PCAT.injName(j).name, by));
         if (A[2]) j.state = A[2];
         if (o.a === 'seal') j.sealed = simt;
+        if (o.a === 'occl' || o.a === 'occlu') { j.seal = o.a === 'occlu' ? 'u' : 'v'; j.sealed = simt; }
         if (o.a === 'tq' || o.a === 'jtq' || o.a === 'tqre') { j.tqOn = simt; if (j.tq0 == null) j.tq0 = simt; }
         if (o.a === 'tqloose' || o.a === 'tqconv') j.tqOn = null;
-        if (j.ctl == null && ['tq', 'jtq', 'pack', 'pdress', 'ndc', 'occl', 'tube', 'htube', 'fthor', 'sga', 'cric', 'ett', 'pos', 'npa', 'pcd'].indexOf(o.a) >= 0) j.ctl = simt;   // pirmoji kontrolė – ataskaitai
-        hpush(j, o.n || A[1]); if (!o.silent) rec((o.n || A[1] + ' – ' + PCAT.injName(j).name) + (!isLocal() && PCAT.apx('act:' + o.a) ? ' (≈ apytiksliai: Pulse tokios funkcijos neturi)' : ''), by, { iid: j.id, a: o.a, kind: A[4] === 'team' ? 'tx' : 'ev' });
+        if (j.ctl == null && ['tq', 'jtq', 'pack', 'pdress', 'ndc', 'occl', 'occlu', 'tube', 'htube', 'fthor', 'sga', 'cric', 'ett', 'pos', 'npa', 'pcd'].indexOf(o.a) >= 0) j.ctl = simt;   // pirmoji kontrolė – ataskaitai
+        hpush(j, o.n || A[1]); if (!o.silent) rec((o.n || A[1] + ' – ' + PCAT.injName(j).name) + (!isLocal() && PCAT.apx('act:' + o.a) ? APXP : ''), by, { iid: j.id, a: o.a, kind: A[4] === 'team' ? 'tx' : 'ev' });
         // krūtinės drenas – drenuoja visus tos pusės pleuros sužalojimus (pneumotoraksas + hemotoraksas)
         if (o.a === 'tube' || o.a === 'htube') SC.inj.filter(x => x !== j && x.side === j.side && ['ptx', 'optx', 'htx'].indexOf(x.k) >= 0 && x.state !== 'drained').forEach(x => {
           const B = PCAT.cardActions(x, SC.set).find(y => y[0] === 'tube' || y[0] === 'htube'); if (!B) return;
@@ -184,13 +192,36 @@ const PULSE = (() => {
         break;
       }
       case 'inj': {
-        const j = newInj(o.j, simt); SC.inj.push(j); sendInj(j); hpush(j, 'Atsirado'); rec('Naujas sužalojimas: ' + iname(j) + (PCAT.apx('inj:' + j.k) ? ' (≈ apytiksliai: Pulse tokios funkcijos neturi)' : ''), by, { iid: j.id, kind: 'inj' });
+        const j = newInj(o.j, simt); SC.inj.push(j); sendInj(j); hpush(j, 'Atsirado'); rec('Naujas sužalojimas: ' + iname(j) + (!isLocal() && PCAT.apx('inj:' + j.k) ? APXP : ''), by, { iid: j.id, kind: 'inj' });
         break;
       }
+      case 'site': return site(o, by);
       case 'tx': return treat(o.code, o.p || {}, by, o.n);
       case 'ev': return event(o.code, o.p || {}, by);
-      case 'istop': { const f = SC.inf.find(x => x.cmp === o.cmp); pa({ k: 'inf_stop', cmp: o.cmp, ml: 1 }, 'Infuzija sustabdyta', by); SC.inf = SC.inf.filter(x => x.cmp !== o.cmp); rec('Sustabdyta: ' + (f ? f.n : o.cmp), by); break; }
+      case 'istop': { const f = SC.inf.find(x => x.cmp === o.cmp); pa({ k: 'inf_stop', cmp: o.cmp, ml: 1 }, 'Infuzija sustabdyta', by); SC.inf = SC.inf.filter(x => x.cmp !== o.cmp); SC.vinf = (SC.vinf || []).filter(x => x.cmp !== o.cmp); rec('Sustabdyta: ' + (f ? f.n : o.cmp), by); break; }
     }
+  }
+  const APXP = ' (≈ apytiksliai: Pulse tokios funkcijos neturi)', APXL = ' (≈ telefono modelyje apytiksliai)';
+  // komandos veiksmas pagal kūno vietą (monitoriaus „＋ Gydymas“): mokiniai mato tik vietą ir veiksmą, ne diagnozę –
+  // pritaikoma tos vietos sužalojimams, kuriems veiksmas tinka; kitaip – tik įrašas žurnale
+  const SITEA = { tq: ['tq', 'tqre', 'jtq'], jtq: ['jtq', 'tqre'], pack: ['pack'], pdress: ['pdress'], ndc: ['ndc'], seal: ['occl', 'seal'], burp: ['burp'], fthor: ['fthor'], tube: ['tube', 'htube'], pos: ['pos'], npa: ['npa'], suct: ['suct'], sga: ['sga'], cric: ['cric'], ett: ['ett'], pcd: ['pcd'] };
+  function siteInj(st) {
+    const s = String(st || '');
+    if (s.indexOf('b:') === 0) return SC.inj.filter(j => j.k === 'bleed' && j.loc === s.slice(2));
+    if (s.indexOf('ch:') === 0) return SC.inj.filter(j => ['ptx', 'optx', 'htx'].indexOf(j.k) >= 0 && j.side === s.slice(3));
+    if (s === 'aw') return SC.inj.filter(j => j.k === 'aw');
+    if (s === 'hrt') return SC.inj.filter(j => j.k === 'tam');
+    return [];
+  }
+  function site(o, by) {
+    const LA = SITEA[o.a] || [o.a]; let done = 0;
+    for (const j of siteInj(o.site)) {
+      const A = PCAT.cardActions(j, SC.set).find(a => a[4] === 'team' && LA.indexOf(a[0]) >= 0);
+      if (A) { run({ op: 'card', iid: j.id, a: A[0], by }); done++; if (A[0] === 'tube' || A[0] === 'htube') break; }
+    }
+    if (done) return;
+    if (o.a === 'ett' && SC.set === 'role1') return treat('ett_g', {}, by, 'Intubacija (RSI)');
+    rec((o.n || o.a) + ' – būklė nesikeičia', by, { code: 'site:' + o.a, kind: 'tx' });
   }
   function sevStep(j, d, by) {
     const T = PCAT.injBy(j.k) || {}, S = T.sevs || PCAT.SEV;
@@ -201,21 +232,25 @@ const PULSE = (() => {
     hpush(j, d > 0 ? 'Stipresnis: ' + S[ni][1] : 'Silpnesnis: ' + S[ni][1]); rec((d > 0 ? 'Sustiprinta: ' : 'Susilpninta: ') + iname(j), by, { iid: j.id, kind: 'ev' });
   }
   const ROUTE = { IV: 'IV', IO: 'IV', IM: 'IM', IN: 'IM', OTFC: 'IM' };   // Pulse: į veną arba į raumenį (IO ≈ IV, IN/OTFC ≈ IM)
-  function treat(code, p, by, label) {
+  // ev – instruktoriaus įvykis (pvz. nukrito kaukė): keičia modelį, bet ne tai, ką komanda mato monitoriaus juostoje (vo2, vinf)
+  function treat(code, p, by, label, ev) {
     switch (code) {
       case 'o2': {
         const D = PCAT.O2DEV.find(d => d[0] === p.dev) || PCAT.O2DEV[0], fl = +p.flow || D[2][0];
         pa({ k: 'o2', dev: D[0], flow: fl }, 'Deguonis ' + fl + ' l/min', by);
-        SC.o2 = { dev: D[0], n: D[1], flow: fl, t: simt }; rec('Deguonis: ' + D[1].toLowerCase() + ' ' + fl + ' l/min', by, { code: 'o2' }); break;
+        SC.o2 = { dev: D[0], n: D[1], flow: fl, t: simt }; if (!ev) SC.vo2 = SC.o2;
+        rec('Deguonis: ' + D[1].toLowerCase() + ' ' + fl + ' l/min', by, { code: 'o2', p: { dev: D[0], flow: fl } }); break;
       }
-      case 'o2off': if (SC.o2) { pa({ k: 'o2_off' }, 'Deguonis nuimtas', by); SC.o2 = null; rec('Deguonis nuimtas', by, { code: 'o2off', kind: by === 'team' ? 'tx' : 'ev' }); } break;
+      case 'o2off': if (!ev) SC.vo2 = null; if (SC.o2) { pa({ k: 'o2_off' }, 'Deguonis nuimtas', by); SC.o2 = null; rec('Deguonis nuimtas', by, { code: 'o2off', kind: by === 'team' ? 'tx' : 'ev', ev: ev ? 1 : 0 }); } break;
       case 'fluid': {
         const F = PCAT.FLUIDS.find(f => f[0] === p.cmp) || PCAT.FLUIDS[0], ml = +p.ml || 500, rate = Math.max(5, +p.rate || 50), tot = Math.round(ml / rate * 60);
         const n = F[1] + ' ' + ml + ' ml';
         pa({ k: 'inf', cmp: F[0], ml, rate }, n, by);
-        SC.inf = SC.inf.filter(x => x.cmp !== F[0]); SC.inf.push({ id: 'f' + (++reqId), cmp: F[0], n, ml, rate, t0: simt, tot });
+        const fi = { id: 'f' + (++reqId), cmp: F[0], n, ml, rate, t0: simt, tot };
+        SC.inf = SC.inf.filter(x => x.cmp !== F[0]); SC.inf.push(fi);
+        SC.vinf = (SC.vinf || []).filter(x => x.cmp !== F[0]); SC.vinf.push(fi);
         if (/Blood|PackedRBC|Plasma/.test(F[0]) && by !== 'cls' && by !== 'cmc') { SC.kit.used += ml / 500; if (SC.tBlood == null) SC.tBlood = simt; }
-        rec(n + ' (' + rate + ' ml/min, ~' + Math.round(tot / 60) + ' min)' + (!isLocal() && PCAT.apx('fl:' + F[0]) ? ' (≈ modelyje NaCl)' : ''), by, { code: 'fluid', cmp: F[0] }); break;
+        rec(n + ' (' + rate + ' ml/min, ~' + Math.round(tot / 60) + ' min)' + (!isLocal() && PCAT.apx('fl:' + F[0]) ? ' (≈ apytiksliai: Pulse tokios funkcijos neturi – lašinamas NaCl)' : ''), by, { code: 'fluid', cmp: F[0], p: { cmp: F[0], ml, rate } }); break;
       }
       case 'drug': {
         const D = PCAT.drugBy(p.id, SC.set); const nm = (D ? D.n : p.id) + ' ' + String(p.dose).replace('.', ',') + ' ' + (p.unit || 'mg') + ' ' + p.route;
@@ -226,7 +261,7 @@ const PULSE = (() => {
         pa({ k: 'drug', id: p.id, mg, route: p.route }, nm, by, true, false, 'L');   // telefono modelis (ir greito starto metu)
         if (D && D.id === 'txa' && SC.tTxa == null) SC.tTxa = simt;
         if (['ket', 'esket', 'fen', 'mor', 'para', 'melox', 'suz'].indexOf(p.id) >= 0) SC.inj.filter(j => j.k === 'pain' && j.state === 'active').forEach(j => { j.state = 'relieved'; hpush(j, 'Analgezija'); });
-        rec(nm + (loc ? (PLOCAL.fx(p.id) ? '' : ' (tik žurnale – telefono modelis rodiklių nekeičia)') : sim ? (PCAT.apx('drug:' + p.id) || PCAT.apx('route:' + p.route) ? ' (≈ apytiksliai)' : '') : ' (tik žurnale – Pulse šio vaisto neturi)'), by, { code: 'drug', id: p.id }); break;
+        rec(nm + (loc ? (PLOCAL.fx(p.id) ? (p.id === 'esket' ? APXL : '') : ' (≈ telefono modelyje apytiksliai: tik žurnale, rodiklių nekeičia)') : sim ? (PCAT.apx('drug:' + p.id) || PCAT.apx('route:' + p.route) ? APXP : '') : ' (≈ tik žurnale: Pulse šio vaisto neturi)'), by, { code: 'drug', id: p.id, p: { id: p.id, route: p.route, dose: p.dose, unit: p.unit } }); break;
       }
       default: {
         const it = PCAT.TX.flatMap(g => g[2]).find(i => i[0] === code), ty = (it && it[4]) || code;   // daviklių kodai – katalogo 5-ame lauke (probe:ecg:1)
@@ -248,12 +283,12 @@ const PULSE = (() => {
       case 'tqloose': { const j = p.iid ? injById(p.iid) : firstBy(x => x.state === 'tq'); if (j) run({ op: 'card', iid: j.id, a: 'tqloose', by }); else recE('Atsileido turniketas – turniketo nėra', by); break; }
       case 'retens': { const j = firstBy(x => (x.k === 'ptx' || x.k === 'optx') && ['decomp', 'occl', 'thor'].indexOf(x.state) >= 0); if (j) run({ op: 'card', iid: j.id, a: 'retens', by }); else recE('Vėl įsitempė pneumotoraksas – dekompresuoto pneumotorakso nėra (naujas sužalojimas nesukurtas)', by); break; }
       case 'vomit': { let j = firstBy(x => x.k === 'aw'); if (j) { j.sev = Math.max(j.sev, 0.55); j.state = 'active'; sendInj(j); hpush(j, 'Vėmimas / aspiracija'); recE('Vėmimas / aspiracija – kvėpavimo takai užsikimšo', by, { iid: j.id }); } else run({ op: 'inj', j: { k: 'aw', sev: 0.55 }, by }); break; }
-      case 'o2off': treat('o2off', {}, by); recE('Nukrito deguonies kaukė', by); break;
+      case 'o2off': treat('o2off', {}, by, null, true); recE('Nukrito deguonies kaukė', by); break;
       case 'ivout': SC.inf.forEach(f => pa({ k: 'inf_stop', cmp: f.cmp, ml: 1 }, 'Infuzija sustabdyta', by)); SC.inf = []; recE('Ištraukta IV / IO – infuzijos sustojo', by); break;
       case 'ecgoff': exec({ c: 'probe', k: 'ecg', on: false }); recE('Atlipo EKG elektrodas', by); break;
       case 'spo2off': exec({ c: 'probe', k: 'spo2', on: false }); recE('Nukrito SpO₂ jutiklis', by); break;
       case 'nibpoff': exec({ c: 'probe', k: 'nibp', on: false }); recE('Nuimta AKS manžetė', by); break;
-      case 'probeson': ['ecg', 'spo2', 'nibp'].forEach(k => exec({ c: 'probe', k, on: true })); rec('Jutikliai prijungti (EKG, SpO₂, AKS)', by, { code: 'probes', kind: 'tx' }); break;
+      case 'probeson': ['ecg', 'spo2', 'nibp'].forEach(k => exec({ c: 'probe', k, on: true })); rec('Jutikliai prijungti (EKG, SpO₂, AKS)', by, { code: 'probes', kind: 'tx', ev: by === 'team' ? 0 : 1 }); break;
       case 'painup': { const j = firstBy(x => x.k === 'pain'); if (j) sevStep(j, 1, by); else run({ op: 'inj', j: { k: 'pain', sev: 0.8 }, by }); break; }
       case 'vib': { const on = p.on != null ? !!p.on : (!SIM.state().art || !SIM.state().art.motion); exec({ c: 'art', k: 'motion', on }); recE(on ? 'Vibracija – judesio artefaktai' : 'Vibracija baigėsi', by); break; }
       case 'noise': { const mn = +p.min || 10; exec({ c: 'mute', m: mn }); recE('Triukšmas – aliarmai negirdimi ' + mn + ' min', by); break; }
@@ -441,6 +476,7 @@ const PULSE = (() => {
     onChange();
   }
   function describe(o) {
+    if (o.op === 'site') return o.n || o.a;
     if (o.op === 'card') { const j = injById(o.iid); const A = j && PCAT.cardActions(j, SC.set).find(x => x[0] === o.a); return (A ? A[1] : o.a === 'sevup' ? 'Stiprinti' : o.a === 'sevdn' ? 'Silpninti' : o.a) + (j ? ' – ' + PCAT.injName(j).name : ''); }
     if (o.op === 'inj') return 'Naujas sužalojimas: ' + iname(o.j);
     if (o.op === 'tx') return o.n || o.code;
@@ -460,7 +496,8 @@ const PULSE = (() => {
   // ── komandos (vykdomos monitoriuje) ──
   function cmd(o) {
     const c = cfg();
-    if (o.url && String(o.token || '').trim() && o.token !== DEF_TOKEN) saveCfg({ url: o.url, token: o.token });   // instruktorius be savo žetono (tik numatytasis) – naudojami monitoriaus nustatymai
+    // instruktorius siunčia tik savus adresą / žetoną (numatytųjų – ne); be jų naudojami monitoriaus nustatymai
+    { const cu = String(o.url || '').trim(), ct = String(o.token || '').trim(); if ((cu && cu !== DEF_URL) || (ct && ct !== DEF_TOKEN)) saveCfg(Object.assign({}, cu ? { url: cu } : {}, ct && ct !== DEF_TOKEN ? { token: ct } : {})); }
     switch (o.op) {
       case 'start': {
         if (o.eng) saveCfg({ eng: ['pulse', 'local', 'manual'].indexOf(o.eng) >= 0 ? o.eng : 'local' });
@@ -468,7 +505,7 @@ const PULSE = (() => {
         ppKill(); forceLocal = false; SH = cfg().eng === 'pulse';   // Pulse – greitas startas: iš karto telefono modelis, Pulse ruošiasi fone
         if (SH && !String(c.token || o.token || '').trim()) SH = false;   // be žetono – įprasta klaida (žr. connect)
         wantRun = true; hist = []; alog = []; Q = []; startFn = null; connect.q = null; simt = 0; skipQ = 0; Object.keys(pend).forEach(k => delete pend[k]); saveCfg({ sid: '', deadSid: '' });
-        SC = { set, pat: S.pat || {}, mech: S.mech || '', mechN: S.mechN || '', inj: [], inf: [], o2: null, kit: { max: PCAT.SETTINGS[set].blood, used: 0 }, log: [], arrest: '', min: { sys: 999, spo2: 100 }, ff: +o.ff || 0, nonce: o.nonce || '' };
+        SC = { set, pat: S.pat || {}, mech: S.mech || '', mechN: S.mechN || '', inj: [], inf: [], vinf: [], o2: null, vo2: null, kit: { max: PCAT.SETTINGS[set].blood, used: 0 }, log: [], arrest: '', min: { sys: 999, spo2: 100 }, ff: +o.ff || 0, nonce: o.nonce || '' };
         let acts = [];
         SC.ph = set; SC.phs = [{ ph: set, t0: SC.ff }]; SC.evd = {}; SC.hand = {}; SC.vh = [];
         if (o.scen && typeof PSCEN !== 'undefined' && PSCEN.get(o.scen.id)) { const r = startScen(o); acts = r.acts; SC.ff = r.ff; }
@@ -512,7 +549,7 @@ const PULSE = (() => {
         break;
       }
       case 'resume': wantRun = true; if (c.sid) { if (ws && ws.readyState === 1) tx({ t: 'resume', sid: c.sid }); else connect(() => tx({ t: 'resume', sid: c.sid })); } break;
-      case 'card': case 'inj': case 'tx': case 'ev': case 'istop': if (SC && wantRun) enqueue(o); break;
+      case 'card': case 'inj': case 'tx': case 'ev': case 'istop': case 'site': if (SC && wantRun) enqueue(o); break;
       case 'undo': { const q = Q.find(x => x.uid === o.uid); Q = Q.filter(x => x.uid !== o.uid); if (q) L('Atšaukta: ' + q.n, 'sys'); onChange(); break; }
       case 'phase': if (SC && wantRun && o.to === 'role1' && SC.set !== 'role1') { if (SC.ph === 'medevac') closePh(); toRole1({ skip: Math.max(0, +o.skip || 0), reprobe: !!o.reprobe, team2: !!o.team2 }); keep(); onChange(); } break;
       case 'hand': if (SC) { SC.hand = SC.hand || {}; SC.hand[o.kind === 'atm' ? 'atm' : 'mist'] = { m: o.m || {}, t: Math.round(simt) }; if (o.kind !== 'atm' && SC.ph === 'medevac') { closePh(); SC.ph = 'handover'; } keep(); onChange(); } break;
@@ -589,7 +626,7 @@ const PULSE = (() => {
   function wakeStop() { if (W) { W.st = 'off'; try { W.s && W.s.close(); } catch (e) {} } }
   // ryšio patikra iš nustatymų (šiame telefone)
   function test(url, token, cb) {
-    const u = wsUrl({ url, token }); if (!u) return cb('Įveskite adresą');
+    const u = wsUrl({ url: String(url || '').trim() || DEF_URL, token: String(token || '').trim() || DEF_TOKEN }); if (!u) return cb('Įveskite adresą');
     let done = false, s;
     try { s = new WebSocket(u); } catch (e) { return cb('Netinkamas adresas'); }
     const to = setTimeout(() => { if (!done) { done = true; try { s.close(); } catch (e) {} cb('Serveris neatsako (jei jis ką tik pasileidžia – palaukite 1–2 min. ir bandykite dar kartą)'); } }, 90000);

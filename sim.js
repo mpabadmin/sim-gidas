@@ -18,7 +18,9 @@ const SIM = (() => {
   // aliarmų ribos: [žema (vid.), aukšta (vid.), žema (aukšto prior.), aukšta (aukšto prior.)]; null – išjungta
   const LIM0 = { hr: [50, 120, 40, 150], spo2: [90, null, 85, null], sys: [90, 180, 70, null], rr: [8, 30, 5, 40], temp: [35, 38.5, 32, 40] };
   const SPEEDS = [12.5, 25, 50], GAINS = [0.5, 1, 1.5, 2], NOISES = [0, 1, 2], SCHEMES = ['classic', 'hc'];
-  const CFG0 = () => ({ lim: JSON.parse(JSON.stringify(LIM0)), avol: 70, bvol: 60, speed: 25, gain: 1, pgain: 1, rgain: 1, noise: 1, show: { pleth: 1, resp: 1, rr: 1, temp: 1 }, big: 0, scheme: 'classic', clock: 0, scen: 0, rhy: 0, pat: '', wake: 1 });
+  // telefonas (mažas jutiklinis ekranas) – numatytai „Dideli skaičiai“
+  const isPhone = () => { try { return Math.min(screen.width, screen.height) < 600 && matchMedia('(pointer:coarse)').matches; } catch (e) { return false; } };
+  const CFG0 = () => ({ lim: JSON.parse(JSON.stringify(LIM0)), avol: 70, bvol: 60, speed: 25, gain: 1, pgain: 1, rgain: 1, noise: 1, show: { pleth: 1, resp: 1, rr: 1, temp: 1 }, big: isPhone() ? 1 : 0, scheme: 'classic', clock: 0, scen: 0, rhy: 0, pat: '', wake: 1, cv: 2 });
   function mergeCfg(o, b) {
     if (!o || typeof o !== 'object') return b;
     if (o.lim === 'def') b.lim = JSON.parse(JSON.stringify(LIM0));
@@ -36,9 +38,11 @@ const SIM = (() => {
     ['big', 'clock', 'scen', 'rhy', 'wake'].forEach(k => { if (k in o) b[k] = o[k] ? 1 : 0; });
     if (SCHEMES.indexOf(o.scheme) >= 0) b.scheme = o.scheme;
     if (typeof o.pat === 'string') b.pat = o.pat.slice(0, 40);
+    b.cv = 2;
     return b;
   }
-  let CFG = (() => { try { return mergeCfg(JSON.parse(localStorage.getItem(KCFG) || 'null'), CFG0()); } catch (e) { return CFG0(); } })();
+  // senesnės versijos nustatymai (be cv) – „Dideli skaičiai“ pagal įrenginį (telefone – įjungta)
+  let CFG = (() => { try { const o = JSON.parse(localStorage.getItem(KCFG) || 'null'); if (o && !o.cv) delete o.big; return mergeCfg(o, CFG0()); } catch (e) { return CFG0(); } })();
   function setCfg(o) {
     const old = JSON.stringify([CFG.show, CFG.big, CFG.scheme]);
     CFG = mergeCfg(o === 'def' ? CFG0() : o, o === 'def' ? CFG0() : CFG);
@@ -347,22 +351,29 @@ const SIM = (() => {
   function journal() { return { log: J.log.slice(), tr: J.tr.slice(), ses: { on: J.ses.on, el: elapsed(), start: J.ses.start }, n: J.n }; }
 
   // ── monitoriaus piešimas ──
-  let run = 0, raf = 0, lastT = 0, ch = [], boxes = {}, lastNum = 0, lastAlarm = 0, alarmShown = '', mroot = null, lastNumKey = '', lastAlarmKeys = new Set(), alarmLogT = {};
+  let run = 0, raf = 0, lastT = 0, ch = [], boxes = {}, lastNum = 0, lastAlarm = 0, alarmShown = '', mroot = null, lastNumKey = '', lastAlarmKeys = new Set(), alarmLogT = {}, ro = null, roF = 0, dprMq = null;
   const COL = { classic: { ecg: '#3ee06a', pleth: '#38d5f2', resp: '#f4d54a', nibp: '#f2f2f2', temp: '#f6a35b', lw: 2 }, hc: { ecg: '#00ff44', pleth: '#00eeff', resp: '#ffff00', nibp: '#ffffff', temp: '#ffa31a', lw: 3 } };
+  // dydžio pokyčiai (pasukimas, langas, kitas ekranas / DPR) – perpiešiama be perkrovimo
+  const reSize = () => { cancelAnimationFrame(roF); roF = requestAnimationFrame(() => { if (run) size(); }); };
+  function watchDpr() { try { if (dprMq) dprMq.removeEventListener('change', onDpr); dprMq = matchMedia('(resolution: ' + (window.devicePixelRatio || 1) + 'dppx)'); dprMq.addEventListener('change', onDpr); } catch (e) {} }
+  function onDpr() { reSize(); watchDpr(); }
   function mount(root) {
     stop(); run = 1; mroot = root; build(); size(); lastT = now();
-    window.addEventListener('resize', size);
+    window.addEventListener('resize', reSize); window.addEventListener('orientationchange', reSize);
+    try { ro = new ResizeObserver(reSize); ro.observe(mroot); } catch (e) { ro = null; }
+    watchDpr();
     raf = requestAnimationFrame(frame);
   }
   function build() {
     const K = COL[CFG.scheme] || COL.classic, sh = CFG.show;
     const CH = [['ecg', 'II', K.ecg, 1.25]].concat(sh.pleth ? [['pleth', 'Pleth', K.pleth, 1]] : [], sh.resp ? [['resp', 'Resp', K.resp, 0.8]] : []);
     const BX = [['hr', 'ŠSD', K.ecg, 'k./min'], ['spo2', 'SpO₂', K.pleth, '%'], ['nibp', 'AKS', K.nibp, 'mm Hg']].concat(sh.rr ? [['rr', 'KD', K.resp, 'k./min']] : [], sh.temp ? [['temp', 'T', K.temp, '°C']] : []);
+    try { if (mroot.id === 'monroot') document.body.classList.toggle('monbig', !!CFG.big); } catch (e) {}
     mroot.innerHTML = `<div class="mon${CFG.big ? ' big' : ''}${CFG.scheme === 'hc' ? ' hc' : ''}" id="mon"><div class="mtop"><span class="mlb" id="mlb"></span><span class="mal" id="mal" data-act="alist" role="status" aria-live="assertive"></span><span class="mtm" id="mtm"></span><span class="mclk" id="mclk"></span></div>` +
       `<div class="mwav" style="--wr:${CH.map(c => c[3] + 'fr').join(' ')}">${CH.map(([k, l, col]) => `<div class="mch"><span class="mchl" style="color:${col}" id="chl-${k}" data-act="mon-ch" data-k="${k}" role="button" aria-label="${l}: greitis ir amplitudė">${l}</span><canvas data-ch="${k}"></canvas></div>`).join('')}</div>` +
-      `<div class="mnum" id="mnum" style="--n:${BX.length}">${BX.map(([k, l, col, u]) => `<div class="mbx" data-k="${k}"${k === 'nibp' ? ' data-act="mon-nibp"' : ''}><span class="mbl" style="color:${col}">${l}</span><b style="color:${col}"></b><span class="mbu"></span><span class="mbn">${u}</span></div>`).join('')}</div></div>`;
+      `<div class="mnum n${BX.length}" id="mnum" style="--n:${BX.length}">${BX.map(([k, l, col, u]) => `<div class="mbx" data-k="${k}"${k === 'nibp' ? ' data-act="mon-nibp"' : ''}><span class="mbl" style="color:${col}">${l}</span><b style="color:${col}"></b><span class="mbu"></span><span class="mbn">${u}</span></div>`).join('')}</div></div>`;
     ch = CH.map(([k, l, col]) => { const cv = mroot.querySelector(`canvas[data-ch="${k}"]`); return { k, col, cv, cx: cv.getContext('2d', { alpha: false }), x: 0, py: null, w: 0, h: 0, dpr: 1, frac: 0 }; });
-    boxes = {}; BX.forEach(([k]) => { const el = mroot.querySelector(`.mbx[data-k="${k}"]`); boxes[k] = { el, b: el.querySelector('b'), u: el.querySelector('.mbu') }; });
+    boxes = {}; BX.forEach(([k]) => { const el = mroot.querySelector(`.mbx[data-k="${k}"]`); boxes[k] = { el, b: el.querySelector('b'), u: el.querySelector('.mbu'), l: el.querySelector('.mbl'), n: el.querySelector('.mbn') }; });
     chLabel(); lastNum = 0;
   }
   function chLabel() {
@@ -371,11 +382,36 @@ const SIM = (() => {
     if (p) p.textContent = 'Pleth' + ((CFG.pgain || 1) !== 1 ? '  ×' + f(CFG.pgain) : '');
     if (r) r.textContent = 'Resp' + ((CFG.rgain || 1) !== 1 ? '  ×' + f(CFG.rgain) : '');
   }
+  // kreivės piešiamos ekrano taškų tankiu (devicePixelRatio) – ryškios 2× / 3× ekranuose; dideliame ekrane kreivė išskleidžiama (≤ ~9 s ekrane)
+  const MMPX = 3.78 * 0.62;   // CSS taškų milimetre (~25 mm/s telefono ekrane, kad tilptų ≥ 4 s)
   function size() {
-    ch.forEach(c => { const r = c.cv.getBoundingClientRect(), d = window.devicePixelRatio || 1; c.dpr = d; c.w = Math.max(10, Math.round(r.width * d)); c.h = Math.max(10, Math.round(r.height * d)); c.cv.width = c.w; c.cv.height = c.h; c.x = 0; c.py = null; c.cx.fillStyle = '#000'; c.cx.fillRect(0, 0, c.w, c.h); });
+    const d = window.devicePixelRatio || 1;
+    ch.forEach(c => { const r = c.cv.getBoundingClientRect(), w = Math.max(10, Math.round(r.width * d)), h = Math.max(10, Math.round(r.height * d)); c.dpr = d; c.sc = Math.max(1, r.width / (9 * 25 * MMPX)); if (c.w === w && c.h === h && c.cv.width === w) return; c.w = w; c.h = h; c.cv.width = w; c.cv.height = h; c.x = 0; c.py = null; c.cx.fillStyle = '#000'; c.cx.fillRect(0, 0, c.w, c.h); });
+    fitNums();
   }
-  function stop() { run = 0; if (raf) cancelAnimationFrame(raf); raf = 0; window.removeEventListener('resize', size); }
-  const PXMM = () => (window.devicePixelRatio || 1) * 3.78 * 0.62; // ~25 mm/s telefono ekrane (sumažinta, kad tilptų ≥ 4 s)
+  // skaičiai – kuo didesni langelyje: plotis (be pavadinimo stulpelio) ir aukštis (be apatinės eilutės); be iškirpimo ir persidengimo
+  const NCH = { hr: 3, spo2: 3, nibp: 6.2, rr: 2.6, temp: 4 };
+  let digW = 0.6;
+  function fitNums() {
+    if (!mroot) return;
+    try { const b0 = mroot.querySelector('.mbx b'); if (b0) { const cs = getComputedStyle(b0), cv = fitNums.cv || (fitNums.cv = document.createElement('canvas')), cx = cv.getContext('2d'); cx.font = (cs.fontWeight || 700) + ' 100px ' + cs.fontFamily; const w = cx.measureText('0').width / 100; if (w > 0.3) digW = Math.max(0.5, Math.min(0.75, w + 0.02)); } } catch (e) {}
+    Object.keys(boxes).forEach(k => {
+      const e = boxes[k], el = e.el, W = el.clientWidth, H = el.clientHeight; if (!W || !H) return;
+      const cs = getComputedStyle(el), bp = parseFloat(cs.paddingLeft) || 6, uf = e.u ? parseFloat(getComputedStyle(e.u).fontSize) || 14 : 14;
+      const lw = Math.max(e.l ? e.l.offsetWidth : 0, e.n ? e.n.offsetWidth : 0), nl = bp + lw + Math.max(8, bp);
+      const aw = W - nl - bp, ah = H - 2 * bp - uf * 1.25;
+      const F = Math.max(16, Math.min(260, Math.min(ah * 1.02, aw / ((NCH[k] || 3) * digW))));
+      e.b.style.left = Math.round(nl) + 'px'; e.b.style.fontSize = Math.floor(F) + 'px';
+    });
+  }
+  // aliarmo eilutė – viena eilutė; netilpus mažinama (ne mažiau kaip 16 px)
+  function fitAlarm(mal) {
+    mal.style.fontSize = ''; if (!mal.textContent) return;
+    let f = parseFloat(getComputedStyle(mal).fontSize), n = 0;
+    while (mal.scrollWidth > mal.clientWidth + 1 && f > 16 && n++ < 20) { f -= 2; mal.style.fontSize = f + 'px'; }
+  }
+  function stop() { run = 0; if (raf) cancelAnimationFrame(raf); raf = 0; window.removeEventListener('resize', reSize); window.removeEventListener('orientationchange', reSize); if (ro) { try { ro.disconnect(); } catch (e) {} ro = null; } try { if (dprMq) dprMq.removeEventListener('change', onDpr); } catch (e) {} dprMq = null; }
+  const PXMM = () => (window.devicePixelRatio || 1) * MMPX;
   function frame() {
     if (!run) return;
     raf = requestAnimationFrame(frame);
@@ -396,7 +432,7 @@ const SIM = (() => {
   function draw(C, t, dt, pf, lw) {
     if (C.w < 20) return;
     const mm = C.k === 'resp' ? CFG.speed / 4 : CFG.speed;
-    const px = mm * PXMM() * dt + C.frac; let n = Math.floor(px); C.frac = px - n; if (n < 1) return; n = Math.min(n, C.w);
+    const px = mm * PXMM() * (C.sc || 1) * dt + C.frac; let n = Math.floor(px); C.frac = px - n; if (n < 1) return; n = Math.min(n, C.w);
     const cx = C.cx, gap = Math.round(14 * C.dpr), amp = C.h * 0.36, sdt = dt / n, gain = CFG.gain;
     // išvalyti priekį (su tarpu)
     cx.fillStyle = '#000';
@@ -458,9 +494,9 @@ const SIM = (() => {
     let msg = '', cls = 'mal';
     if (S.pause) { msg = 'PAUZĖ'; cls += ' p0'; }
     else if (shk) { msg = '⚡ ' + (S.shkS ? 'KARDIOVERSIJA ' : 'IŠKROVA ') + S.shkJ + ' J'; cls += ' p1'; }
-    else if (A.length) { const G = A.filter(a => a[0] === A[0][0]), i = Math.floor(Date.now() / 2500) % G.length; msg = G[i][1] + (G.length > 1 ? '  ' + (i + 1) + '/' + G.length : '') + (A.length > G.length ? '  +' + (A.length - G.length) : ''); cls += ' p' + G[i][0]; }
+    else if (A.length) { const G = A.filter(a => a[0] === A[0][0]), i = Math.floor(Date.now() / 2500) % G.length; msg = (G[i][0] === 2 ? '‼ ' : '! ') + G[i][1] + (G.length > 1 ? '  ' + (i + 1) + '/' + G.length : '') + (A.length > G.length ? '  +' + (A.length - G.length) : ''); cls += ' p' + G[i][0]; }
     if (mu && A.length && !S.pause) msg += '  🔕 ' + mmss(S.mute - Date.now());
-    if (mal) { if (mal.textContent !== msg) mal.textContent = msg; if (mal.className !== cls) mal.className = cls; }
+    if (mal) { const ch0 = mal.textContent !== msg || mal.className !== cls; if (mal.textContent !== msg) mal.textContent = msg; if (mal.className !== cls) mal.className = cls; if (ch0) fitAlarm(mal); }
     if (A.length && !mu && !S.pause && ac) { const per = A[0][0] === 2 ? 5 : 15; if (Date.now() - lastAlarm > per * 1000 || alarmShown !== A[0][1] && Date.now() - lastAlarm > 2500) { lastAlarm = Date.now(); alarmShown = A[0][1]; alarmTone(A[0][0]); } }
     // naujų aliarmų įrašas žurnale
     if (!S.pause && J.ses.on) {
