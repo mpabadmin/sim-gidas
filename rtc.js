@@ -20,9 +20,11 @@ const RTC = (() => {
     let u = unb64(m[2]); if (m[1] === 'z') { if (typeof DecompressionStream === 'undefined') throw new Error('Naršyklė per sena – atnaujinkite'); u = await pipe(u, DecompressionStream); }
     const o = JSON.parse(new TextDecoder().decode(u)); if (!o || !o.s || (o.t !== 'o' && o.t !== 'a')) throw new Error('Netinkamas kodas'); return o;
   }
-  function gather() {
-    return new Promise(res => { if (pc.iceGatheringState === 'complete') return res(); const to = setTimeout(res, 3500); pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') { clearTimeout(to); res(); } }); });
+  function gather(p) {
+    return new Promise(res => { if (p.iceGatheringState === 'complete') return res(); const to = setTimeout(res, 3500); p.addEventListener('icegatheringstatechange', () => { if (p.iceGatheringState === 'complete') { clearTimeout(to); res(); } }); });
   }
+  // susiejimas nutrauktas, kol buvo ruošiamas kodas (uždaryta ar pradėta iš naujo) – tyliai, be klaidos pranešimo
+  const gone = p => { if (pc !== p) { const e = new Error('Susiejimas nutrauktas'); e.cancel = true; throw e; } };
   function close() { try { dc && dc.close(); } catch (e) {} try { pc && pc.close(); } catch (e) {} pc = null; dc = null; role = ''; st('off'); }
   const st = s => { if (onState) onState(s); };
   function wire(ch) {
@@ -37,22 +39,22 @@ const RTC = (() => {
   }
   // ── monitorius ──
   async function host() {
-    mk(); role = 'host'; wire(pc.createDataChannel('sim', { ordered: true }));
-    await pc.setLocalDescription(await pc.createOffer()); await gather(); st('wait');
-    return enc('o', pc.localDescription.sdp);
+    mk(); role = 'host'; const p = pc; wire(p.createDataChannel('sim', { ordered: true }));
+    await p.setLocalDescription(await p.createOffer()); gone(p); await gather(p); gone(p); st('wait');
+    return enc('o', p.localDescription.sdp);
   }
   async function hostAccept(code) {
     if (!pc || role !== 'host') throw new Error('Pirmiausia sukurkite monitoriaus kodą');
-    const o = await dec(code); if (o.t !== 'a') throw new Error('Tai ne instruktoriaus atsakymo kodas');
-    await pc.setRemoteDescription({ type: 'answer', sdp: o.s }); st('conn');
+    const p = pc, o = await dec(code); if (o.t !== 'a') throw new Error('Tai ne instruktoriaus atsakymo kodas');
+    gone(p); await p.setRemoteDescription({ type: 'answer', sdp: o.s }); gone(p); st('conn');
   }
   // ── instruktorius ──
   async function join(code) {
     const o = await dec(code); if (o.t !== 'o') throw new Error('Tai ne monitoriaus kodas');
-    mk(); role = 'ctrl'; pc.ondatachannel = e => wire(e.channel);
-    await pc.setRemoteDescription({ type: 'offer', sdp: o.s });
-    await pc.setLocalDescription(await pc.createAnswer()); await gather(); st('wait');
-    return enc('a', pc.localDescription.sdp);
+    mk(); role = 'ctrl'; const p = pc; p.ondatachannel = e => { if (pc === p) wire(e.channel); };
+    await p.setRemoteDescription({ type: 'offer', sdp: o.s }); gone(p);
+    await p.setLocalDescription(await p.createAnswer()); gone(p); await gather(p); gone(p); st('wait');
+    return enc('a', p.localDescription.sdp);
   }
   function send(o) { if (dc && dc.readyState === 'open') { try { dc.send(JSON.stringify(o)); return true; } catch (e) {} } return false; }
   const open = () => !!(dc && dc.readyState === 'open');

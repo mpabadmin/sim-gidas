@@ -271,7 +271,8 @@ const PULSE = (() => {
         const it = PCAT.TX.flatMap(g => g[2]).find(i => i[0] === code), ty = (it && it[4]) || code;   // daviklių kodai – katalogo 5-ame lauke (probe:ecg:1)
         if (/^probe:/.test(ty)) { const [, k, on] = ty.split(':'); if (typeof exec === 'function') (k === 'all' ? PRK : [k]).forEach(kk => exec({ c: 'probe', k: kk, on: on === '1' })); }
         if (code === 'txa' && SC.tTxa == null) SC.tTxa = simt;
-        if (['hpmk', 'warm', 'bvm', 'vent', 'ett_g'].indexOf(code) >= 0) pa({ k: 'tx', id: code }, label || code, by, true, false, 'L');
+        if (code === 'bvm' || code === 'vent') SC.vnt = simt; else if (code === 'bvmoff') { if (SC.vnt == null) return; SC.vnt = null; }   // ventiliacija vyksta nuo … / nutraukta
+        if (['hpmk', 'warm', 'bvm', 'vent', 'bvmoff', 'ett_g'].indexOf(code) >= 0) pa({ k: 'tx', id: code }, label || code, by, true, false, 'L');
         if (code === 'ett_g') {   // intubacija be kvėpavimo takų sužalojimo: jei obstrukcija yra – ją pašalina
           const aw = SC.inj.find(x => x.k === 'aw' && x.state !== 'secured');
           if (aw) return run({ op: 'card', iid: aw.id, a: 'ett', by });

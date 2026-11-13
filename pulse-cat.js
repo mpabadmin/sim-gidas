@@ -147,7 +147,8 @@ const PCAT = (() => {
       ['o2', 'Deguonis', 'o2', '1 min', '', ''],
       ['o2off', 'Deguonis nuimtas', null, '', 'o2off', ''],
       ['bvm', 'Ventiliacija maišu (BVM)', null, 'nuolat', 'log', ''],
-      ['vent', 'Dirbtinė plaučių ventiliacija', null, '', 'log', 'role1']
+      ['vent', 'Dirbtinė plaučių ventiliacija', null, '', 'log', 'role1'],
+      ['bvmoff', 'Ventiliacija nutraukta', null, '', 'log', '']
     ]],
     ['H', 'Šiluma', [
       ['hpmk', 'Hipotermijos prevencija (HPMK)', null, '2–3 min', 'log', ''],
@@ -291,12 +292,12 @@ const PCAT = (() => {
     ['M', 'Kraujavimas', 'drop', ['tq', 'jtq', 'pack', 'pdress', 'tqre', 'tqconv']],
     ['A', 'Kvėpavimo takai', 'mouth', ['pos', 'npa', 'suct', 'sga', 'cric', 'ett']],
     ['R', 'Krūtinė', 'lung', ['occl', 'occlu', 'seal', 'burp', 'ndc', 'fthor', 'tube']],
-    ['B', 'Kvėpavimas', 'wind', ['o2', 'o2off', 'bvm', 'vent']],
+    ['B', 'Kvėpavimas', 'wind', ['o2', 'o2off', 'bvm', 'vent', 'bvmoff']],
     ['C', 'Širdis', 'heart', ['pcd', 'tamx']],
     ['H', 'Hipotermija', 'therm', ['hpmk', 'warm']]
   ];
   const PSHORT = { tq: 'Turniketas', jtq: 'Jungties turniketas', pack: 'Tamponavimas', pdress: 'Spaudž. tvarstis', tqre: 'Turniketas vėl', tqconv: 'Konversija', pos: 'Atlošti / stumti', npa: 'NPA', suct: 'Atsiurbti', sga: 'i-gel', cric: 'Krikotir.', ett: 'Intubacija',
-    occl: 'Krūtinės lipdukas', occlu: 'Lipdukas be vožtuvo', seal: 'Lipdukas', tamx: 'Chirurgija', burp: 'Atpūsti lipduką', ndc: 'Adatinė dekompr.', fthor: 'Pirštinė torakost.', tube: 'Krūtinės drenas', o2: 'Deguonis', o2off: 'O₂ nuimti', bvm: 'BVM', vent: 'DPV (ventiliacija)', pcd: 'Perikardiocentezė', hpmk: 'HPMK', warm: 'Šildymas' };
+    occl: 'Krūtinės lipdukas', occlu: 'Lipdukas be vožtuvo', seal: 'Lipdukas', tamx: 'Chirurgija', burp: 'Atpūsti lipduką', ndc: 'Adatinė dekompr.', fthor: 'Pirštinė torakost.', tube: 'Krūtinės drenas', o2: 'Deguonis', o2off: 'O₂ nuimti', bvm: 'BVM', vent: 'DPV (ventiliacija)', bvmoff: 'Nebeventiliuoti', pcd: 'Perikardiocentezė', hpmk: 'HPMK', warm: 'Šildymas' };
   // ≈ Pulse 4.3.1 tokios funkcijos neturi – rodiklių pokytis apytikslis (programėlės sprendimas)
   const APX = {
     'inj:burn': 'Pulse neturi nudegimų modelio – skysčių netekimas modeliuojamas kaip lėtas kraujavimas per odą',

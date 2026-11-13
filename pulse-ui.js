@@ -121,7 +121,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
   const INJIC = { bleed: 'drop', ptx: 'lung', optx: 'lung', htx: 'lung', aw: 'mouth', tbi: 'brain', tam: 'heart', burn: 'flame', bronch: 'wind', pain: 'bolt' };
   // procedūrų ir priešistorės ikonos
   const PIC = { tq: 'tq', jtq: 'tq', tqre: 'tq', pack: 'band', pdress: 'band', tqconv: 'band', pos: 'user', npa: 'npa', suct: 'wind', sga: 'mouth', cric: 'cric', ett: 'tube2', occl: 'seal', seal: 'seal', burp: 'seal', ndc: 'needle', fthor: 'cric', tube: 'drain',
-    o2: 'mask', o2off: 'mask', bvm: 'bvm', vent: 'bvm', pcd: 'needle', hpmk: 'blanket', warm: 'flame', cwmp: 'pill', abxpo: 'pill', txa: 'syr', ket: 'syr', blood: 'drop', ca: 'syr', cro: 'syr', occlu: 'seal', tamx: 'heart', probes: 'wave' };
+    o2: 'mask', o2off: 'mask', bvm: 'bvm', vent: 'bvm', bvmoff: 'bvm', pcd: 'needle', hpmk: 'blanket', warm: 'flame', cwmp: 'pill', abxpo: 'pill', txa: 'syr', ket: 'syr', blood: 'drop', ca: 'syr', cro: 'syr', occlu: 'seal', tamx: 'heart', probes: 'wave' };
   const INJS = { bleed: 'Kraujavimas', ptx: 'Įtampos PTX', optx: 'Atviras PTX', htx: 'Hemotoraksas', aw: 'Kv. takai', tbi: 'Galvos trauma', tam: 'Tamponada', burn: 'Nudegimai', bronch: 'Bronchų spazmas', pain: 'Skausmas' };
   const where = j => j.loc ? ((PCAT.locBy(j.loc) || [0, ''])[1]).replace(/ \(.*\)/, '') : j.side ? (j.side === 'R' ? 'Dešinė' : 'Kairė') + ' pusė' : '';
   const ENGN = { manual: ['hand', 'Rankinis', 'rodiklius keičiate patys'], local: ['phone', 'Telefono modelis ≈', 'automatiškai, be interneto'], pulse: ['cloud', 'Pulse simuliatorius', 'žmogaus fiziologijos modelis serveryje'] };
@@ -334,10 +334,11 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
   }
   // ── procedūros: tik tai, kas keičia būklę (sužalojimų kortelės + kvėpavimas, šiluma) ──
   // ── procedūros: plytelės pagal traumų grupes, tik tai, kas keičia būklę ──
-  const TXC = { o2: 1, o2off: 1, bvm: 1, vent: 1, hpmk: 1, warm: 1 };
+  const TXC = { o2: 1, o2off: 1, bvm: 1, vent: 1, bvmoff: 1, hpmk: 1, warm: 1 };
   const codesOf = c => c === 'tube' ? ['tube', 'htube'] : c === 'ett' ? ['ett', 'ett_g'] : [c];
   function procTargets(P, code) { const cs = codesOf(code); return P.sc.inj.map(j => { const A = PCAT.cardActions(j, P.sc.set).find(a => cs.indexOf(a[0]) >= 0 && a[4] === 'team'); return A ? { j, A } : null; }).filter(Boolean); }
-  function lastDone(P, cs) { const L = P.sc.log || []; for (let i = L.length - 1; i >= 0; i--) { const l = L[i]; if ((l.kind || 'tx') === 'tx' && (cs.indexOf(l.a) >= 0 || cs.indexOf(l.code) >= 0)) return l; } return null; }
+  function lastDone(P, cs) { const L = P.sc.log || [], vn = cs.indexOf('bvm') >= 0 || cs.indexOf('vent') >= 0; for (let i = L.length - 1; i >= 0; i--) { const l = L[i]; if (vn && l.code === 'bvmoff') return null;   // ventiliacija nutraukta – plytelė nebe „atlikta“
+ if ((l.kind || 'tx') === 'tx' && (cs.indexOf(l.a) >= 0 || cs.indexOf(l.code) >= 0)) return l; } return null; }
   function injStrip(P) {
     return '<div class="pxis">' + P.sc.inj.map(j => { const bad = PCAT.BAD.indexOf(j.state) >= 0, w = where(j); return `<button class="pxisb ${bad ? 'bad' : 'ok'}" data-act="px" data-k="icard" data-x="${j.id}">${ic(INJIC[j.k] || 'plus')}<span><b>${E(INJS[j.k] || j.k)}</b><small>${E((w ? w + ' · ' : '') + (PCAT.STATES[j.state] || j.state))}</small></span></button>`; }).join('') +
       `<button class="pxisb add" data-act="px" data-k="sh-inj" data-x="live" aria-label="Naujas sužalojimas">${ic('plus')}</button></div>`;
@@ -368,7 +369,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
       const tiles = codes.map(code => {
         let Tt = null;
         if (code === 'ett') { const tg = procTargets(P, 'ett'); if (tg.length) Tt = { tg }; else if (txs.indexOf('ett_g') >= 0) Tt = { tx: 'ett_g' }; }
-        else if (TXC[code]) { if (txs.indexOf(code) >= 0 && (code !== 'o2off' || sc.o2)) Tt = { tx: code }; }
+        else if (TXC[code]) { if (txs.indexOf(code) >= 0 && (code !== 'o2off' || sc.o2) && (code !== 'bvmoff' || sc.vnt != null)) Tt = { tx: code }; }
         else { const tg = procTargets(P, code); if (tg.length) Tt = { tg }; }
         const ld = lastDone(P, codesOf(code));
         if (ld && (code === 'hpmk' || code === 'warm' || code === 'vent')) Tt = null;   // vienkartiniai – lieka „atlikta“
@@ -470,7 +471,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
       h += `<section class="pnl" id="pxg-${L}"><h2>${E(L.replace('A2', 'AB').replace('Mon', '♥'))} · ${E(n)}</h2>`;
       items.forEach(it => {
         const pk = /^probe:(\w+):1$/.exec(it[4] || ''), att = pk && (pk[1] === 'all' ? SENS.every(x => sOn(x[0])) : sOn(pk[1]));
-        const ok = (it[0] !== 'o2' || sup(P, [{ k: 'o2' }])) && !att, pl = it[2] ? null : pend(P, it[1]);
+        const ok = (it[0] !== 'o2' || sup(P, [{ k: 'o2' }])) && !att && (it[0] !== 'bvmoff' || P.sc.vnt != null), pl = it[2] ? null : pend(P, it[1]);
         const dr = it[2] && it[2].indexOf('drug:') === 0 && it[2] !== 'drug:abx' ? PCAT.drugBy(it[2].slice(5), P.sc.set) : null, log = LOCAL ? it[2] === 'drug:abx' || (dr && !PLOCAL.fx(dr.id)) : (it[4] === 'log' || it[4] === 'rsi' || it[2] === 'drug:abx' || (dr && !dr.pulse));
         h += `<button class="pxrow${pl != null ? ' pend' : ''}" data-act="px" data-k="tx" data-x="${it[0]}"${by ? ` data-by="${by}"` : ''}${ok && pl == null ? '' : ' disabled'}><span><b>${E(it[1])}</b>${pl != null ? pendS(pl) : it[3] ? `<small>⏱ ${E(it[3])}</small>` : ''}</span><i>${log ? logB : ''}${it[2] ? ' ›' : ''}</i></button>`;
         if (it[0] === 'o2' && ok) h += o2Quick(P, by);
@@ -563,7 +564,7 @@ const apxB = (key, full) => { const t = LOCAL ? '' : PCAT.apx(key); return t ? (
   function railHtml(P) {
     return '<div class="pxrail" aria-label="MARCH-PAWS skyriai">' + PCAT.txFor(P.sc.set).map(g => btn('rail', g[0], g[0].replace('A2', 'AB').replace('Mon', '♥'), 'pxl', ` aria-label="${E(g[1])}"`)).join('') + '</div>';
   }
-  const EFX = { o2: 'SpO₂ kils per 1–2 min', o2off: 'SpO₂ gali kristi', hpmk: 'temperatūra nebekris', warm: 'temperatūra kils', bvm: 'ventiliuojama', vent: 'ventiliuojama', fluid: 'lašinama – stebėkite AKS', probes: 'monitorius vėl rodo' };
+  const EFX = { o2: 'SpO₂ kils per 1–2 min', o2off: 'SpO₂ gali kristi', hpmk: 'temperatūra nebekris', warm: 'temperatūra kils', bvm: 'ventiliuojama', vent: 'ventiliuojama', bvmoff: 'nebeventiliuojama – stebėkite KD ir SpO₂', fluid: 'lašinama – stebėkite AKS', probes: 'monitorius vėl rodo' };
   function undoHtml(P) {
     const q = (P.q || []).slice(-1)[0];
     if (q) return `<div class="pxsnack"><span><small>${ic('clock')} Bus atlikta po ${q.left} s${P.q.length > 1 ? ' · laukia dar ' + (P.q.length - 1) : ''}</small><b>${E(q.n)}</b></span>${btn('undo', q.uid, 'Atšaukti', 'pxb')}</div>`;

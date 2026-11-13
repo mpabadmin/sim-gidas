@@ -5,7 +5,7 @@
 // Fiziologija supaprastinta, mokomoji (≈ visas variklis): netektas kraujas → ATLS šoko klasės; pneumotorakso įtampos
 // indeksas; hemotoraksas; deguonis; temperatūra; vaistai; sustojimas ir HOTT. Skaičiai – TCCC / ETC / ATLS mokomosios reikšmės.
 const PLOCAL = (() => {
-  const ENGINE = 'Telefono modelis', VERSION = 'r3 · 2026-11';
+  const ENGINE = 'Telefono modelis', VERSION = 'r4 · 2026-11';
   const KEY = 'sim-plocal';
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   const lerp = (x, P) => { if (x <= P[0][0]) return P[0][1]; for (let i = 1; i < P.length; i++) if (x <= P[i][0]) { const a = P[i - 1], b = P[i]; return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]); } return P[P.length - 1][1]; };
@@ -34,6 +34,8 @@ const PLOCAL = (() => {
   const PREOX = b => b > 2 ? Math.pow(clamp((b - 2) / 6.5, 0, 1), 1.3) : 0;
   const SUPPORTED = ['hem', 'hem_stop', 'inf', 'inf_stop', 'o2', 'o2_off', 'tpx', 'ndc', 'occl', 'burp', 'aw', 'intub', 'cric', 'sga', 'bolus', 'drug', 'tx', 'tbi', 'eff', 'burn', 'arrest', 'vf', 'rosc', 'pcd', 'htx', 'tube', 'bronch', 'asthma', 'stress', 'pain', 'temp'];
 
+  // ROSC: sustojimo priežasčių laikmačiai nunulinami (SpO₂ sustojimo metu buvo žema – atsistato per ~1 min)
+  const rosc = E => { E.arrest = null; E.rT = 0; E.pT = 0; E.sT = 0; E.s60T = 0; E.apT = 0; };
   function fresh(kg, t0, sex, age) {
     return { t: 0, kg, sex: sex === 'F' ? 'F' : 'M', age: age || 25, bv0: (sex === 'F' ? 65 : 70) * kg, lost: 0, inB: 0, inP: 0, inC: 0, hem: {}, inf: {}, ptx: {}, htx: {}, aw: 0, secured: false, vent: false, para: 0,
       tbi: 0, tbiBase: 0, effR: 0, effR0: 0, effRe: 0, effV: 0, burn: 0, burnT0: 0, plos: 0, bronch: 0, pain: 0, o2: null, T: t0 || 36.6, amb: null, hpmk: false, warm: false, drugs: [], ind: null,
@@ -108,12 +110,13 @@ const PLOCAL = (() => {
         if (c === 'hpmk') E.hpmk = true;
         if (c === 'warm') { E.warm = true; E.hpmk = true; }
         if (c === 'bvm' || c === 'vent') E.vent = true;
+        if (c === 'bvmoff') E.vent = false;   // ventiliacija nutraukta (jei kvėpavimo takai užtikrinti vamzdeliu – laikoma, kad kvėpuoja pro jį)
         if (c === 'ett_g') { E.secured = true; E.vent = true; E.aw = 0; }
         return [true, ''];
       }
       case 'arrest': {
         const r = a.rhythm || '';
-        if (r === 'NormalSinus') { E.arrest = null; E.pT = 0; E.sT = 0; return [true, '']; }
+        if (r === 'NormalSinus') { rosc(E); return [true, '']; }
         E.arrest = { t0: E.t, forced: /Fibrillation/.test(r) ? 'vf' : 'asys' };
         return [true, ''];
       }
@@ -189,7 +192,7 @@ const PLOCAL = (() => {
     if (E.arrest && !E.arrest.forced) {
       const ok = d < 0.45 && p < 0.3 && V._spo2ok > 80 && E.effV < 200 && (E.vent || E.secured);   // HOTT: kraujavimas, tūris, dekompresija, ventiliacija
       E.rT = ok ? E.rT + dt : 0;
-      if (E.rT > 60) { E.arrest = null; E.rT = 0; E.pT = 0; E.sT = 0; }          // priežastys pašalintos (HOTT) – ROSC
+      if (E.rT > 60) rosc(E);          // priežastys pašalintos (HOTT) – ROSC
       else if (E.t - E.arrest.t0 > 1200) E.alive = false;                     // > 20 min be ROSC – negrįžtama (CGO: sprendimas ~20 min)
     }
   }
@@ -215,13 +218,13 @@ const PLOCAL = (() => {
     const shF = clamp((d - 0.15) / 0.15, 0, 1), ind = E.ind && typeof E.ind === 'object' ? E.ind : null;
     if (ind) { const mn = (E.t - ind.t) / 60, f = ramp('ket', 'IV', mn) * Math.exp(-mn / 5) * ind.k * shF; sys -= 32 * f; dia -= 18 * f; }
     hr += 8 * Math.min(1.5, ket); sys += 8 * Math.min(1.5, ket);
-    hr += 35 * epi; sys += 35 * epi;
+    { const ef = 1.6 * epi / (epi + 0.6); hr += 35 * ef; sys += 35 * ef; }   // sotinasi: 1 mg ≈ +35, kartotinės dozės – iki ≈ +55
     // opioidų / midazolamo hipotenzija – mažėja ir diastolinis (proporcingai), pulsinis spaudimas nesiaurėja
-    { const ds = (5 + 10 * d) * opi + 6 * mid, pr = sys > 0 ? clamp(dia / sys, 0.4, 0.8) : 0.65; rr -= rdep + 0.8 * mid; sys -= ds; dia -= ds * pr; }
+    { const ds = (5 + 10 * d) * (3 * opi / (opi + 2)) + 6 * mid,   /* opioidų hipotenzija sotinasi (didelė dozė – ne tiesinis kritimas iki sustojimo; pavojus – kvėpavimo slopinimas) */ pr = sys > 0 ? clamp(dia / sys, 0.4, 0.8) : 0.65; rr -= rdep + 0.8 * mid; sys -= ds; dia -= ds * pr; }
     const aw = E.secured ? 0 : E.aw, awFull = aw >= 0.9;
     if (aw > 0) { rr += 10 * aw; hr += 20 * aw; }
     if (E.T < 32) hr -= (32 - E.T) * 10;   // gili hipotermija – bradikardija
-    if (E.tbi > 0.6 && sys > 90) { const f = (E.tbi - 0.6) / 0.4; hr -= 40 * f; sys += 45 * f; rr = Math.max(6, rr - 8 * f); }
+    if (E.tbi > 0.6 && sys > 80) { const f = (E.tbi - 0.6) / 0.4 * clamp((sys - 80) / 20, 0, 1); hr -= 40 * f; sys += 45 * f; rr = Math.max(Math.min(rr, 6), rr - 8 * f); }   // Cushingo reakcija – sklandžiai išnyksta, kai AKS krenta (80–100)
     const para = E.para && E.t >= (E.para0 || 0) && E.t < E.para;
     let apnea = false;
     if (para || rr < 4) { if (E.vent || E.secured) rr = 14; else { rr = 0; apnea = true; } }
@@ -244,7 +247,7 @@ const PLOCAL = (() => {
       else out = { hr: Math.round(Math.max(30, Math.min(110, E.arrest.hr0 || 90) - at / 10)), sys: 12, dia: 8, map: 9, spo2: Math.round(E.spo2), rr: 0 };   // BEA (dažnis – nuo buvusio prieš sustojimą)
       st = 35;
     } else {
-      sys = Math.max(0, sys); dia = clamp(dia, 0, sys - 8);
+      sys = clamp(sys, 0, 250); dia = clamp(dia, 0, Math.max(0, Math.min(150, sys - 8)));
       out = { hr: Math.round(clamp(hr, 0, 220)), sys: Math.round(sys), dia: Math.round(Math.max(0, dia)), map: Math.round(dia + (sys - dia) / 3), spo2: Math.round(clamp(E.spo2, 30, 100)), rr: Math.round(rr) };
     }
     out.temp = Math.round(E.T * 10) / 10;

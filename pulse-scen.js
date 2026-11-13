@@ -61,7 +61,7 @@ const PSCEN = (() => {
     rCa: { ph: 'role1', id: 'ca1', n: 'Kalcis po 1-ojo kraujo vieneto (jei neskirtas MEDEVAC)', c: 'S', when: sc => bloodT(sc) != null, from: sc => bloodT(sc), win: 1500, done: sc => { const b = bloodT(sc); return b == null ? null : caT(sc, b); } },
     rWarm: { ph: 'role1', id: 'warm', n: 'Aktyvus šildymas, šilti skysčiai', c: 'S', win: 900, done: (sc, p0) => txT(sc, 'warm', p0) },
     rAbx: n => ({ ph: 'role1', id: 'abx', n: n || 'Antibiotikas (ETC – kuo greičiau; jei neskirtas MEDEVAC)', c: 'S', win: 900, done: sc => abxT(sc) }),
-    rHi: { ph: 'role1', id: 'target', n: 'Neperpilta – sAKS ≤ 110', c: 'S', bad: 'sAKS > 110', when: sc => bloodT(sc, sc.r1t0 || 0) != null, done: (sc, p0) => { const H = (sc.vh || []).filter(x => x[0] > p0 + 600 && x[2] != null); if (H.length < 4) return null; return H.filter(x => x[2] > 115).length >= 6 ? false : 'ok'; } },
+    rHi: { ph: 'role1', id: 'target', n: 'Neperpilta – sAKS ≤ 110', c: 'S', bad: 'sAKS > 110', when: sc => bloodT(sc, sc.r1t0 || 0) != null, done: (sc, p0) => { const A = (sc.vh || []).filter(x => x[0] > p0 + 600 && x[2] != null), H = A.filter(x => x[2] >= 40); if (H.length < 4) return A.length >= 4 ? 'na' : null; return H.filter(x => x[2] > 115).length >= 6 ? false : 'ok'; } },   // sustojimo metu (sAKS < 40) nevertinama – „neperpilta“ gaivinamam nieko nereiškia
     rAtm: { ph: 'role1', id: 'atm', n: 'ATMISTER perdavimas', c: 'S', done: atmOk }
   };
 
@@ -327,6 +327,7 @@ const PSCEN = (() => {
       const from = typeof e.from === 'function' ? e.from(sc) : e.from != null ? e.from : p0;
       const lim = e.abs != null ? e.abs : e.win != null && from != null ? from + e.win : null;
       if (from == null && d == null) return { id: e.id, n: e.n, c: e.c, st: P.t1 != null ? 'na' : 'wait', t: null, txt: P.t1 != null ? 'indikacijos nebuvo' : 'kai atsiras indikacija', win: e.win != null ? '≤ ' + Math.round(e.win / 60) + ' min' : '' };
+      if (d === 'na') return { id: e.id, n: e.n, c: e.c, st: 'na', t: null, txt: 'nevertinama – širdies sustojimas', win: '' };
       let st, txt = '';
       if (d === 'ok') { st = 'ok'; }
       else if (d === false) { st = 'bad'; txt = e.bad ? e.bad : e.id === 'txa1' ? 'kartota' : e.id === 'target' ? 'sAKS > 100' : e.id === 'avpu' ? 'neįrašytas' : 'ne visi punktai'; }
@@ -387,7 +388,7 @@ const PSCEN = (() => {
     const add = (L, n, why, sc0, act, lvl) => S.push({ L, n, why, s: (W[L] || 1) * 10 + sc0, act, lvl: lvl || (sc0 >= 20 ? 'crit' : sc0 >= 8 ? 'warn' : '') });
     if (isArrest(P)) {   // trauminis sustojimas – HOTT (ETC / CGO): priežastys pirmiau už paspaudimus
       sc.inj.filter(j => j.k === 'bleed' && PCAT.BAD.indexOf(j.state) >= 0).forEach(j => { const a = PCAT.cardActions(j, set).find(x => ['tqre', 'tq', 'jtq', 'pack'].indexOf(x[0]) >= 0); if (a) add('M', 'H: ' + a[1] + ' – ' + (j.lbl || PCAT.injName(j).name).toLowerCase(), 'trauminis sustojimas – pirmiausia sustabdyti kraujavimą', 40, { k: 'card', x: j.id + '|' + a[0] }, 'crit'); });
-      add('A', 'O: kvėpavimo takai + ventiliacija (BVM)', 'deguonis, ventiliacija – hipoksija kaip priežastis', 36, { k: 'tx', x: 'bvm' }, 'crit');
+      if (sc.vnt == null) add('A', 'O: kvėpavimo takai + ventiliacija (BVM)', 'deguonis, ventiliacija – hipoksija kaip priežastis', 36, { k: 'tx', x: 'bvm' }, 'crit');   // jau ventiliuojant – nebesiūloma
       sc.inj.filter(j => (j.k === 'ptx' || j.k === 'optx') && ['decomp', 'active', 'retension', 'occl'].indexOf(j.state) >= 0).forEach(j => { const a = PCAT.cardActions(j, set).find(x => x[0] === (r1 ? 'fthor' : 'ndc')); if (a) add('B', 'T: ' + a[1] + ' – ' + (j.side === 'R' ? 'dešinė' : 'kairė'), 'įtampos pneumotoraksas', 35, { k: 'card', x: j.id + '|' + a[0] }, 'crit'); });
       add('C', 'H: kraujas', 'hipovolemija – greitas perpylimas', 32, { k: 'fluid' }, 'crit');
       S.sort((a, b) => b.s - a.s); return S;
@@ -442,7 +443,7 @@ const PSCEN = (() => {
     const chest = sc.inj.some(j => ['ptx', 'optx', 'htx'].indexOf(j.k) >= 0 && j.state !== 'drained');
     if (!sc.o2 && spo2 != null && (spo2 < (r1 ? 94 : 90) || shock || chest || (hr != null && sys != null && hr / Math.max(1, sys) >= 1.3))) add('R', 'Deguonis', 'SpO₂ ' + spo2 + (shock ? ' · šokas' : '') + (chest ? ' · krūtinės trauma' : ''), spo2 < 90 ? 14 : 7, { k: 'tx', x: 'o2' });
     if (r1 && spo2 != null && spo2 < 90 && !sc.inj.some(j => (j.k === 'ptx' || j.k === 'optx' || j.k === 'aw') && bad(j))) add('A', 'Sprendimas: RSI?', 'SpO₂ ' + spo2 + ' nepaisant gydymo · ketamino indukcijos dozę šoke mažinti 50 %', 10, { k: 'tx', x: 'ett_g' });
-    if (v.rr != null && v.rr < 8 && !sc.arrest) add('R', 'Ventiliacija maišu (BVM)', 'KD ' + v.rr + ' – hipoventiliacija', 24, { k: 'tx', x: 'bvm' }, 'crit');
+    if (v.rr != null && v.rr < 8 && !sc.arrest && sc.vnt == null) add('R', 'Ventiliacija maišu (BVM)', 'KD ' + v.rr + ' – hipoventiliacija', 24, { k: 'tx', x: 'bvm' }, 'crit');
     // H
     const T0 = v.temp;
     if (!r1 && !did('hpmk')) add('H', 'Hipotermijos prevencija (HPMK)', 'T ' + (T0 != null ? String(T0).replace('.', ',') : '?') + ' – šalta kabina', T0 != null && T0 < 35.5 ? 8 : 5, { k: 'tx', x: 'hpmk' });
