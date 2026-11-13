@@ -5,7 +5,7 @@
 // Fiziologija supaprastinta, mokomoji (≈ visas variklis): netektas kraujas → ATLS šoko klasės; pneumotorakso įtampos
 // indeksas; hemotoraksas; deguonis; temperatūra; vaistai; sustojimas ir HOTT. Skaičiai – TCCC / ETC / ATLS mokomosios reikšmės.
 const PLOCAL = (() => {
-  const ENGINE = 'Telefono modelis', VERSION = 'r4 · 2026-11';
+  const ENGINE = 'Telefono modelis', VERSION = 'r5 · 2026-11';
   const KEY = 'sim-plocal';
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   const lerp = (x, P) => { if (x <= P[0][0]) return P[0][1]; for (let i = 1; i < P.length; i++) if (x <= P[i][0]) { const a = P[i - 1], b = P[i]; return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]); } return P[P.length - 1][1]; };
@@ -209,8 +209,10 @@ const PLOCAL = (() => {
     // naloksonas – konkurencinis antagonistas: 40 mcg ≈ pusė opioido poveikio, 0,4 mg ≈ 90 % (veikia trumpiau nei opioidas)
     const ket = dEff(E, 'ket'), nal = dEff(E, 'nal'), opi = (dEff(E, 'fen') + dEff(E, 'mor')) * (1 - nal / (nal + 0.1)), mid = dEff(E, 'mid'), epi = dEff(E, 'adr');
     // kvėpavimo slopinimas: standartinė dozė (fentanilis 50–100 mcg, morfinas 5–10 mg) sveikam 80 kg – KD −2…−4;
-    // ryškus – didelės / kartotinės dozės arba sinergija (midazolamas, GST, hipovolemija), skaičiuojama mcg/kg
-    const xo = opi * (80 / E.kg) * (1 + 0.15 * mid) * (1 + 0.8 * E.tbi) * (1 + 3 * Math.min(0.4, d)), rdep = 14 * xo / (xo + 6.6);
+    // ryškus – didelės / kartotinės dozės arba sinergija (midazolamas, GST, hipovolemija), skaičiuojama mcg/kg.
+    // Slopinama proporcingai esamam KD (šoko tachipnėja – taip pat), o perdozavus (≈ > 600 mcg fentanilio sveikam, mažiau šoke)
+    // likęs kvėpavimas gęsta iki apnėjos (≈ 1,5 mg sveikam; ~1 mg III klasės šoke; ~0,7 mg giliame šoke).
+    const xo = opi * (80 / E.kg) * (1 + 0.15 * mid) * (1 + 0.8 * E.tbi) * (1 + 3 * Math.min(0.4, d)), rfrac = xo / (xo + 6.6), odF = clamp(1 - (xo - 12) / 18, 0, 1);
     const anal = Math.min(1, ket + 0.8 * opi);
     hr += 12 * E.pain * (1 - anal); sys += 10 * E.pain * (1 - anal); rr += 4 * E.pain * (1 - anal);
     rr += 12 * E.bronch;
@@ -220,7 +222,7 @@ const PLOCAL = (() => {
     hr += 8 * Math.min(1.5, ket); sys += 8 * Math.min(1.5, ket);
     { const ef = 1.6 * epi / (epi + 0.6); hr += 35 * ef; sys += 35 * ef; }   // sotinasi: 1 mg ≈ +35, kartotinės dozės – iki ≈ +55
     // opioidų / midazolamo hipotenzija – mažėja ir diastolinis (proporcingai), pulsinis spaudimas nesiaurėja
-    { const ds = (5 + 10 * d) * (3 * opi / (opi + 2)) + 6 * mid,   /* opioidų hipotenzija sotinasi (didelė dozė – ne tiesinis kritimas iki sustojimo; pavojus – kvėpavimo slopinimas) */ pr = sys > 0 ? clamp(dia / sys, 0.4, 0.8) : 0.65; rr -= rdep + 0.8 * mid; sys -= ds; dia -= ds * pr; }
+    { const ds = (5 + 10 * d) * (3 * opi / (opi + 2)) + 6 * mid,   /* opioidų hipotenzija sotinasi (didelė dozė – ne tiesinis kritimas iki sustojimo; pavojus – kvėpavimo slopinimas) */ pr = sys > 0 ? clamp(dia / sys, 0.4, 0.8) : 0.65; rr -= Math.max(14, rr) * rfrac + 0.8 * mid; rr *= odF; sys -= ds; dia -= ds * pr; }
     const aw = E.secured ? 0 : E.aw, awFull = aw >= 0.9;
     if (aw > 0) { rr += 10 * aw; hr += 20 * aw; }
     if (E.T < 32) hr -= (32 - E.T) * 10;   // gili hipotermija – bradikardija
@@ -265,14 +267,15 @@ const PLOCAL = (() => {
   // ── sesija (imituoja serverį) ──
   let S = null, sock = null, loopT = null, lastWall = 0, lastSend = 0, saveT = 0;
   const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { return null; } };
-  const save = () => { if (!S) return; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+  const save = () => { if (!S) return; S.wall = Date.now(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
   const info = () => ({ t: 'info', engine: ENGINE, version: VERSION, pulse: false, local: true, sessions: S ? 1 : 0, max: 1, states: ['Soldier@0s.json', 'StandardMale@0s.json', 'StandardFemale@0s.json', 'Underweight@0s.json', 'Overweight@0s.json'],
     compounds: ['Blood', 'PackedRBC', 'Plasma', 'Saline', 'LactatedRingers'], substances: Object.keys(SUB), supported: SUPPORTED.reduce((o, k) => (o[k] = true, o), {}), hem_cmp: Object.keys(HEM_MAX) });
   function emit(m) { const s = sock; if (!s) return; setTimeout(() => { if (s.readyState === 1 && s.onmessage) s.onmessage({ data: JSON.stringify(m) }); }, 0); }
   const vit = extra => { const v = S.frozen && S.v0 ? S.v0 : vitals(S.E); S.v = v; emit(Object.assign({ t: 'vit', simt: Math.round(S.E.t * 10) / 10, v, alive: S.E.alive, speed: S.speed }, extra || {})); };
   function tick() {
     if (!S || S.stopped) return;
-    const now = Date.now(), dw = Math.min(5, (now - lastWall) / 1000); lastWall = now;
+    const now = Date.now(), gap = (now - lastWall) / 1000, dw = Math.min(5, gap); lastWall = now;
+    if (gap > 8 && !S.paused) lag(gap - dw);   // skirtukas buvo paslėptas ar telefonas užmigęs – laikas pasivejamas
     if (!S.paused && S.frozen) { S.E.t += dw * S.speed; if (now - lastSend >= 950) { lastSend = now; vit(); } }
     else if (!S.paused && S.E.alive) {
       const wasAlive = S.E.alive;
@@ -282,6 +285,7 @@ const PLOCAL = (() => {
     }
     if (now - saveT > 2000) { saveT = now; save(); }
   }
+  const lag = g => { if (g > 3 && S && !S.stopped && !S.paused && S.E.alive) emit({ t: 'lag', s: Math.round(g) }); };
   function startLoop() { stopLoop(); lastWall = Date.now(); loopT = setInterval(tick, 250); }
   function stopLoop() { if (loopT) clearInterval(loopT); loopT = null; }
   function onMsg(m) {
@@ -308,7 +312,7 @@ const PLOCAL = (() => {
       }
       case 'resume': {
         const L0 = S && S.sid === m.sid ? S : load();
-        if (L0 && L0.sid === m.sid && !L0.stopped) { S = L0; emit({ t: 'started', sid: S.sid, simt: Math.round(S.E.t), resumed: true, engine: ENGINE, paused: S.paused, speed: S.speed }); vit(); startLoop(); if (!S.E.alive) emit({ t: 'dead', simt: Math.round(S.E.t) }); }
+        if (L0 && L0.sid === m.sid && !L0.stopped) { const g = L0 !== S && L0.wall ? (Date.now() - L0.wall) / 1000 : 0; S = L0; emit({ t: 'started', sid: S.sid, simt: Math.round(S.E.t), resumed: true, engine: ENGINE, paused: S.paused, speed: S.speed }); vit(); startLoop(); if (!S.E.alive) emit({ t: 'dead', simt: Math.round(S.E.t) }); else if (g > 8) lag(g);   /* naršyklė skirtuką buvo iškrovusi – pasivyti */ }
         else emit({ t: 'gone', sid: m.sid });
         break;
       }

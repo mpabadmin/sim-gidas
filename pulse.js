@@ -127,6 +127,13 @@ const PULSE = (() => {
       }
       case 'dead': { alive = false; const c = cfg(); if (c.deadSid && c.deadSid === c.sid) { setSt('dead', 'Modeliuojamas pacientas mirė – pradėkite iš naujo'); break; } saveCfg({ deadSid: c.sid }); }
         L('Pulse: negrįžtama būklė (mirtis) – ' + mmss(m.simt)); setSt('dead', 'Modeliuojamas pacientas mirė – pradėkite iš naujo'); break;
+      case 'lag': {   // telefono modelis: monitorius buvo paslėptas ar užmigęs – laikas pasivejamas (iki 30 min); planuoti įvykiai įvyksta savo laiku
+        const g = +m.s || 0; if (!(g > 0) || !wantRun || paused || !alive || (SC && SC.prep)) break;
+        if (g > 1800) { L('Monitorius buvo neaktyvus ' + Math.round(g / 60) + ' min – laikas nepasivytas (riba 30 min)', 'sys'); onChange(); break; }
+        const sec = Math.min(7200, Math.round(g * (speed || 1)));
+        if (SC && SC.scen) { const was = skipQ > 0; skipQ += sec; skipLeft = skipQ; if (!was) skipStep(); } else if (tx({ t: 'skip', s: sec })) skipLeft = sec;
+        L('Monitorius buvo neaktyvus ' + mmss(g) + ' – laikas pasivytas', 'sys'); onChange(); break;
+      }
       case 'stopped': if (st !== 'err') setSt('off'); break;
       case 'err': if (m.code === 'auth' && cfg().token !== DEF_TOKEN) { saveCfg({ token: '' }); m.msg = 'Senas žetonas netinka – įrašytas numatytasis, bandykite dar kartą'; } if (m.code === 'auth') { wantRun = false; startFn = null; } setSt(wantRun ? st : 'err', m.msg || 'Serverio klaida'); if (/užimtas|Variklio/.test(m.msg || '')) { wantRun = false; startFn = null; setSt('err', m.msg); } break;
     }
